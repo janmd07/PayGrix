@@ -21,3 +21,6 @@ export const arcTestnet = defineChain({
   },
   testnet: true,
 });
+
+export const PAYROLL_CONTRACT_ADDRESS = "0x24e9cbc99ab4d696f7ad9ffa42d15dc84ce5a006";
+

@@ -6,6 +6,7 @@ import {
   Settings,
   UsersRound,
   ArrowLeftRight,
+  LineChart,
 } from "lucide-react";
 
 export const navItems = [
@@ -13,6 +14,11 @@ export const navItems = [
     title: "Dashboard",
     href: "/dashboard",
     icon: BarChart3,
+  },
+  {
+    title: "Analytics",
+    href: "/analytics",
+    icon: LineChart,
   },
   {
     title: "Contributors",

@@ -21,6 +21,7 @@
     "next": "^15.5.19",
     "react": "19.0.0-rc-66855b96-20241106",
     "react-dom": "19.0.0-rc-66855b96-20241106",
+    "recharts": "^3.9.1",
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
     "viem": "^2.21.55",
