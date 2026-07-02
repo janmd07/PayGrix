@@ -15,6 +15,134 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen" style={{ background: "#03142f" }}>
+      {/* Premium Sidebar Styling Definitions */}
+      <style>{`
+        @keyframes smoke-float {
+          0% {
+            transform: translate(0px, 0px) scale(1) rotate(0deg);
+          }
+          50% {
+            transform: translate(6px, -4px) scale(1.15) rotate(4deg);
+          }
+          100% {
+            transform: translate(0px, 0px) scale(1) rotate(0deg);
+          }
+        }
+
+        @keyframes shimmer-move {
+          0% {
+            transform: translateX(-100%);
+          }
+          100% {
+            transform: translateX(100%);
+          }
+        }
+
+        .nav-item-glass {
+          position: relative;
+          overflow: hidden;
+          background: rgba(10, 25, 53, 0.45);
+          border: 1px solid rgba(255, 255, 255, 0.03);
+          box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.04);
+          transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .nav-item-glass:hover {
+          transform: translateX(3px) scale(1.02);
+          background: rgba(16, 35, 75, 0.7);
+          border-color: rgba(99, 102, 241, 0.35);
+          box-shadow: 
+            inset 0 1px 1px rgba(255, 255, 255, 0.08),
+            0 0 25px rgba(109, 93, 252, 0.3),
+            0 4px 12px rgba(0, 0, 0, 0.45);
+        }
+
+        .nav-item-active-glass {
+          position: relative;
+          overflow: hidden;
+          background: rgba(109, 93, 252, 0.15);
+          border: 1px solid rgba(109, 93, 252, 0.45);
+          box-shadow: 
+            inset 0 1px 1px rgba(255, 255, 255, 0.12),
+            0 0 18px rgba(109, 93, 252, 0.25);
+          transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .nav-item-active-glass:hover {
+          transform: translateX(3px) scale(1.02);
+          background: rgba(109, 93, 252, 0.22);
+          border-color: rgba(99, 102, 241, 0.6);
+          box-shadow: 
+            inset 0 1px 1px rgba(255, 255, 255, 0.18),
+            0 0 28px rgba(109, 93, 252, 0.45),
+            0 4px 15px rgba(0, 0, 0, 0.5);
+        }
+
+        .smoke-cloud-1 {
+          position: absolute;
+          bottom: -25%;
+          right: -10%;
+          width: 85%;
+          height: 85%;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(99, 102, 241, 0.18) 0%, transparent 65%);
+          filter: blur(12px);
+          pointer-events: none;
+          mix-blend-mode: screen;
+          transition: background 0.3s ease;
+        }
+
+        .smoke-cloud-2 {
+          position: absolute;
+          top: -15%;
+          left: -15%;
+          width: 75%;
+          height: 75%;
+          border-radius: 50%;
+          background: radial-gradient(circle, rgba(59, 130, 246, 0.08) 0%, transparent 70%);
+          filter: blur(14px);
+          pointer-events: none;
+          mix-blend-mode: screen;
+          transition: background 0.3s ease;
+        }
+
+        .nav-item-glass:hover .smoke-cloud-1,
+        .nav-item-active-glass:hover .smoke-cloud-1 {
+          background: radial-gradient(circle, rgba(109, 93, 252, 0.38) 0%, transparent 55%);
+          animation: smoke-float 6s infinite ease-in-out;
+        }
+
+        .nav-item-glass:hover .smoke-cloud-2,
+        .nav-item-active-glass:hover .smoke-cloud-2 {
+          background: radial-gradient(circle, rgba(59, 130, 246, 0.24) 0%, transparent 60%);
+          animation: smoke-float 8s infinite ease-in-out reverse;
+        }
+
+        .active-glowing-indicator {
+          position: absolute;
+          left: 0;
+          top: 15%;
+          bottom: 15%;
+          width: 4px;
+          background: linear-gradient(to bottom, #4f8cff, #6d5dfc);
+          border-radius: 0 4px 4px 0;
+          box-shadow: 0 0 12px rgba(109, 93, 252, 0.9);
+          z-index: 10;
+        }
+
+        .shimmer-reflection {
+          position: absolute;
+          inset: 0;
+          background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.06), transparent);
+          transform: translateX(-100%);
+          pointer-events: none;
+        }
+
+        .nav-item-glass:hover .shimmer-reflection,
+        .nav-item-active-glass:hover .shimmer-reflection {
+          animation: shimmer-move 1.2s ease-out;
+        }
+      `}</style>
 
       {/* ── Sidebar ───────────────────────────────────────── */}
       <aside
@@ -26,17 +154,16 @@ export function AppShell({ children }: { children: ReactNode }) {
         }}
       >
         <div className="flex h-full flex-col">
-
           {/* Brand */}
           <Link href="/" className="flex h-16 items-center gap-3 px-5">
             <div
-              className="flex h-9 w-9 items-center justify-center rounded-xl"
+              className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
               style={{
                 background: "linear-gradient(135deg, #4f8cff 0%, #6d5dfc 50%, #d65dfc 100%)",
                 boxShadow: "0 0 16px rgba(109, 93, 252, 0.35)",
               }}
             >
-              <ProductIcon className="h-4.5 w-4.5 text-white" />
+              <ProductIcon className="h-5 w-5 text-white" />
             </div>
             <div>
               <p className="text-sm font-semibold text-white">Arc Payroll</p>
@@ -54,7 +181,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           />
 
           {/* Nav */}
-          <nav className="flex-1 space-y-0.5 p-3 mt-2">
+          <nav className="flex-1 space-y-2 p-3 mt-2">
             {navItems.map((item) => {
               const isActive = pathname === item.href;
               return (
@@ -62,14 +189,31 @@ export function AppShell({ children }: { children: ReactNode }) {
                   key={item.href}
                   href={item.href}
                   className={cn(
-                    "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                    "group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-250 relative overflow-hidden",
                     isActive
-                      ? "nav-item-active text-[#4f8cff]"
-                      : "nav-item text-[#b7c4d6] hover:text-white hover:bg-white/5",
+                      ? "nav-item-active-glass text-white font-semibold"
+                      : "nav-item-glass text-[#b7c4d6] hover:text-white"
                   )}
                 >
-                  <item.icon className="h-4 w-4" />
-                  {item.title}
+                  {/* Left glowing indicator for active item */}
+                  {isActive && <div className="active-glowing-indicator" />}
+
+                  {/* Shimmer moving reflection */}
+                  <div className="shimmer-reflection" />
+
+                  {/* Subtle smoky nebula elements */}
+                  <div className="smoke-cloud-2" />
+                  <div className="smoke-cloud-1" />
+
+                  <item.icon
+                    className={cn(
+                      "h-4.5 w-4.5 transition-all duration-250 relative z-10 shrink-0",
+                      isActive
+                        ? "text-[#4f8cff] drop-shadow-[0_0_8px_rgba(79,140,255,0.45)]"
+                        : "text-[#b7c4d6] group-hover:text-[#4f8cff] group-hover:drop-shadow-[0_0_8px_rgba(79,140,255,0.4)]"
+                    )}
+                  />
+                  <span className="relative z-10 transition-colors duration-250">{item.title}</span>
                 </Link>
               );
             })}
@@ -109,7 +253,6 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* ── Main area ─────────────────────────────────────── */}
       <div className="lg:pl-64">
-
         {/* Header */}
         <header
           className="sticky top-0 z-20"
@@ -120,7 +263,6 @@ export function AppShell({ children }: { children: ReactNode }) {
           }}
         >
           <div className="flex min-h-16 flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
-
             {/* Mobile brand */}
             <div className="flex items-center justify-between gap-3">
               <Link href="/" className="flex items-center gap-2 lg:hidden">
