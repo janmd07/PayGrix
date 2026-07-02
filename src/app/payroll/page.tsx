@@ -871,72 +871,88 @@ export default function PayrollPage() {
         {/* ── 1. Payroll Overview Cards (Top) ─────────────────────── */}
         <div className="relative z-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {/* Card 1: Total USDC Paid */}
-          <Card className="glass-card-component relative overflow-hidden group">
+          <Card className="glass-card-component relative overflow-hidden group transition-all duration-300 ease-in-out hover:translate-y-[-3px] hover:shadow-[0_8px_30px_rgba(16,185,129,0.12)] hover:border-emerald-500/20">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent_45%)] pointer-events-none" />
+            <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-emerald-500/5 blur-xl group-hover:bg-emerald-500/10 transition-all duration-300 animate-[pulse_4s_infinite]" />
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              <CardTitle className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
                 Total USDC Paid
               </CardTitle>
-              <Coins className="h-5 w-5 text-slate-400 group-hover:text-[#4f8cff] transition-colors" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/12 to-emerald-500/2 border border-emerald-500/15">
+                <Coins className="h-5.5 w-5.5 text-emerald-400 group-hover:scale-110 transition-transform duration-300" />
+              </div>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold tracking-tight text-white mt-1">
+              <p className="text-3xl font-extrabold tracking-tight text-white mt-1">
                 {stats.totalUsdcPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
-              <p className="text-[10px] text-slate-500 mt-1">
+              <p className="text-[10px] text-slate-400 mt-1">
                 Aggregated successful payouts
               </p>
             </CardContent>
           </Card>
 
           {/* Card 2: Contributors Paid */}
-          <Card className="glass-card-component relative overflow-hidden group">
+          <Card className="glass-card-component relative overflow-hidden group transition-all duration-300 ease-in-out hover:translate-y-[-3px] hover:shadow-[0_8px_30px_rgba(59,130,246,0.12)] hover:border-blue-500/20">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent_45%)] pointer-events-none" />
+            <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-blue-500/5 blur-xl group-hover:bg-blue-500/10 transition-all duration-300 animate-[pulse_4s_infinite]" />
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              <CardTitle className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
                 Contributors Paid
               </CardTitle>
-              <UsersRound className="h-5 w-5 text-slate-400 group-hover:text-[#6d5dfc] transition-colors" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/12 to-blue-500/2 border border-blue-500/15">
+                <UsersRound className="h-5.5 w-5.5 text-blue-400 group-hover:scale-110 transition-transform duration-300" />
+              </div>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold tracking-tight text-white mt-1">
+              <p className="text-3xl font-extrabold tracking-tight text-white mt-1">
                 {stats.contributorsPaidCount}
               </p>
-              <p className="text-[10px] text-slate-500 mt-1">
+              <p className="text-[10px] text-slate-400 mt-1">
                 Unique receiving addresses
               </p>
             </CardContent>
           </Card>
 
           {/* Card 3: Payroll Runs */}
-          <Card className="glass-card-component relative overflow-hidden group">
+          <Card className="glass-card-component relative overflow-hidden group transition-all duration-300 ease-in-out hover:translate-y-[-3px] hover:shadow-[0_8px_30px_rgba(168,85,247,0.12)] hover:border-purple-500/20">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent_45%)] pointer-events-none" />
+            <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-purple-500/5 blur-xl group-hover:bg-purple-500/10 transition-all duration-300 animate-[pulse_4s_infinite]" />
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              <CardTitle className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
                 Payroll Runs
               </CardTitle>
-              <FileSpreadsheet className="h-5 w-5 text-slate-400 group-hover:text-cyan-400 transition-colors" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500/12 to-purple-500/2 border border-purple-500/15">
+                <FileSpreadsheet className="h-5.5 w-5.5 text-purple-400 group-hover:scale-110 transition-transform duration-300" />
+              </div>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold tracking-tight text-white mt-1">
+              <p className="text-3xl font-extrabold tracking-tight text-white mt-1">
                 {stats.payrollRunsCount}
               </p>
-              <p className="text-[10px] text-slate-500 mt-1">
+              <p className="text-[10px] text-slate-400 mt-1">
                 Batches successfully executed
               </p>
             </CardContent>
           </Card>
 
           {/* Card 4: Success Rate */}
-          <Card className="glass-card-component relative overflow-hidden group">
+          <Card className="glass-card-component relative overflow-hidden group transition-all duration-300 ease-in-out hover:translate-y-[-3px] hover:shadow-[0_8px_30px_rgba(6,182,212,0.12)] hover:border-cyan-500/20">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent_45%)] pointer-events-none" />
+            <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-cyan-500/5 blur-xl group-hover:bg-cyan-500/10 transition-all duration-300 animate-[pulse_4s_infinite]" />
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              <CardTitle className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
                 Success Rate
               </CardTitle>
-              <TrendingUp className="h-5 w-5 text-slate-400 group-hover:text-emerald-400 transition-colors" />
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/12 to-cyan-500/2 border border-cyan-500/15">
+                <TrendingUp className="h-5.5 w-5.5 text-cyan-400 group-hover:scale-110 transition-transform duration-300" />
+              </div>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-bold tracking-tight text-white mt-1">
+              <p className="text-3xl font-extrabold tracking-tight text-white mt-1">
                 {stats.successRate.toFixed(1)}%
               </p>
-              <p className="text-[10px] text-slate-500 mt-1">
+              <p className="text-[10px] text-slate-400 mt-1">
                 Broadcasting success ratio
               </p>
             </CardContent>
