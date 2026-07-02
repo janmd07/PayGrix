@@ -871,88 +871,120 @@ export default function PayrollPage() {
         {/* ── 1. Payroll Overview Cards (Top) ─────────────────────── */}
         <div className="relative z-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {/* Card 1: Total USDC Paid */}
-          <Card className="glass-card-component relative overflow-hidden group transition-all duration-300 ease-in-out hover:translate-y-[-3px] hover:shadow-[0_8px_30px_rgba(16,185,129,0.12)] hover:border-emerald-500/20">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent_45%)] pointer-events-none" />
-            <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-emerald-500/5 blur-xl group-hover:bg-emerald-500/10 transition-all duration-300 animate-[pulse_4s_infinite]" />
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+          <Card className="glass-card-component relative overflow-hidden group transition-all duration-250 ease-out hover:translate-y-[-4px] hover:shadow-[0_20px_40px_-5px_rgba(16,185,129,0.16)] hover:border-emerald-500/35">
+            {/* Top glass highlights & shimmers */}
+            <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/15 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-b from-white/[0.05] to-transparent h-1/2 pointer-events-none" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.04),transparent_50%)] pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.04] to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-out pointer-events-none" />
+            
+            {/* Pulsing card background glow */}
+            <div className="absolute -top-10 -right-10 w-28 h-28 rounded-full bg-emerald-500/10 blur-2xl group-hover:bg-emerald-500/15 transition-all duration-500 animate-[pulse_3s_infinite]" />
+            
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0 relative z-10">
+              <CardTitle className="text-xs font-bold text-slate-200 uppercase tracking-wider">
                 Total USDC Paid
               </CardTitle>
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/12 to-emerald-500/2 border border-emerald-500/15">
-                <Coins className="h-5.5 w-5.5 text-emerald-400 group-hover:scale-110 transition-transform duration-300" />
+              {/* Glowing Icon Container */}
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/25 to-emerald-500/2 border border-emerald-500/25 shadow-[0_0_15px_rgba(16,185,129,0.25)] group-hover:shadow-[0_0_22px_rgba(16,185,129,0.45)] transition-all duration-300">
+                <Coins className="h-6 w-6 text-emerald-400 group-hover:scale-110 transition-transform duration-300" />
               </div>
             </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-extrabold tracking-tight text-white mt-1">
+            <CardContent className="relative z-10">
+              <p className="text-4xl font-black tracking-tight text-white mt-1">
                 {stats.totalUsdcPaid.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
-              <p className="text-[10px] text-slate-400 mt-1">
+              <p className="text-[10px] text-slate-400 mt-1.5 font-medium">
                 Aggregated successful payouts
               </p>
             </CardContent>
           </Card>
 
           {/* Card 2: Contributors Paid */}
-          <Card className="glass-card-component relative overflow-hidden group transition-all duration-300 ease-in-out hover:translate-y-[-3px] hover:shadow-[0_8px_30px_rgba(59,130,246,0.12)] hover:border-blue-500/20">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent_45%)] pointer-events-none" />
-            <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-blue-500/5 blur-xl group-hover:bg-blue-500/10 transition-all duration-300 animate-[pulse_4s_infinite]" />
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+          <Card className="glass-card-component relative overflow-hidden group transition-all duration-250 ease-out hover:translate-y-[-4px] hover:shadow-[0_20px_40px_-5px_rgba(59,130,246,0.16)] hover:border-blue-500/35">
+            {/* Top glass highlights & shimmers */}
+            <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/15 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-b from-white/[0.05] to-transparent h-1/2 pointer-events-none" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.04),transparent_50%)] pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.04] to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-out pointer-events-none" />
+            
+            {/* Pulsing card background glow */}
+            <div className="absolute -top-10 -right-10 w-28 h-28 rounded-full bg-blue-500/10 blur-2xl group-hover:bg-blue-500/15 transition-all duration-500 animate-[pulse_3s_infinite]" />
+            
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0 relative z-10">
+              <CardTitle className="text-xs font-bold text-slate-200 uppercase tracking-wider">
                 Contributors Paid
               </CardTitle>
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/12 to-blue-500/2 border border-blue-500/15">
-                <UsersRound className="h-5.5 w-5.5 text-blue-400 group-hover:scale-110 transition-transform duration-300" />
+              {/* Glowing Icon Container */}
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/25 to-blue-500/2 border border-blue-500/25 shadow-[0_0_15px_rgba(59,130,246,0.25)] group-hover:shadow-[0_0_22px_rgba(59,130,246,0.45)] transition-all duration-300">
+                <UsersRound className="h-6 w-6 text-blue-400 group-hover:scale-110 transition-transform duration-300" />
               </div>
             </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-extrabold tracking-tight text-white mt-1">
+            <CardContent className="relative z-10">
+              <p className="text-4xl font-black tracking-tight text-white mt-1">
                 {stats.contributorsPaidCount}
               </p>
-              <p className="text-[10px] text-slate-400 mt-1">
+              <p className="text-[10px] text-slate-400 mt-1.5 font-medium">
                 Unique receiving addresses
               </p>
             </CardContent>
           </Card>
 
           {/* Card 3: Payroll Runs */}
-          <Card className="glass-card-component relative overflow-hidden group transition-all duration-300 ease-in-out hover:translate-y-[-3px] hover:shadow-[0_8px_30px_rgba(168,85,247,0.12)] hover:border-purple-500/20">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent_45%)] pointer-events-none" />
-            <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-purple-500/5 blur-xl group-hover:bg-purple-500/10 transition-all duration-300 animate-[pulse_4s_infinite]" />
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+          <Card className="glass-card-component relative overflow-hidden group transition-all duration-250 ease-out hover:translate-y-[-4px] hover:shadow-[0_20px_40px_-5px_rgba(168,85,247,0.16)] hover:border-purple-500/35">
+            {/* Top glass highlights & shimmers */}
+            <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/15 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-b from-white/[0.05] to-transparent h-1/2 pointer-events-none" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.04),transparent_50%)] pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.04] to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-out pointer-events-none" />
+            
+            {/* Pulsing card background glow */}
+            <div className="absolute -top-10 -right-10 w-28 h-28 rounded-full bg-purple-500/10 blur-2xl group-hover:bg-purple-500/15 transition-all duration-500 animate-[pulse_3s_infinite]" />
+            
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0 relative z-10">
+              <CardTitle className="text-xs font-bold text-slate-200 uppercase tracking-wider">
                 Payroll Runs
               </CardTitle>
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500/12 to-purple-500/2 border border-purple-500/15">
-                <FileSpreadsheet className="h-5.5 w-5.5 text-purple-400 group-hover:scale-110 transition-transform duration-300" />
+              {/* Glowing Icon Container */}
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500/25 to-purple-500/2 border border-purple-500/25 shadow-[0_0_15px_rgba(168,85,247,0.25)] group-hover:shadow-[0_0_22px_rgba(168,85,247,0.45)] transition-all duration-300">
+                <FileSpreadsheet className="h-6 w-6 text-purple-400 group-hover:scale-110 transition-transform duration-300" />
               </div>
             </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-extrabold tracking-tight text-white mt-1">
+            <CardContent className="relative z-10">
+              <p className="text-4xl font-black tracking-tight text-white mt-1">
                 {stats.payrollRunsCount}
               </p>
-              <p className="text-[10px] text-slate-400 mt-1">
+              <p className="text-[10px] text-slate-400 mt-1.5 font-medium">
                 Batches successfully executed
               </p>
             </CardContent>
           </Card>
 
           {/* Card 4: Success Rate */}
-          <Card className="glass-card-component relative overflow-hidden group transition-all duration-300 ease-in-out hover:translate-y-[-3px] hover:shadow-[0_8px_30px_rgba(6,182,212,0.12)] hover:border-cyan-500/20">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.03),transparent_45%)] pointer-events-none" />
-            <div className="absolute -top-10 -right-10 w-24 h-24 rounded-full bg-cyan-500/5 blur-xl group-hover:bg-cyan-500/10 transition-all duration-300 animate-[pulse_4s_infinite]" />
-            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+          <Card className="glass-card-component relative overflow-hidden group transition-all duration-250 ease-out hover:translate-y-[-4px] hover:shadow-[0_20px_40px_-5px_rgba(6,182,212,0.16)] hover:border-cyan-500/35">
+            {/* Top glass highlights & shimmers */}
+            <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-white/15 to-transparent pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-b from-white/[0.05] to-transparent h-1/2 pointer-events-none" />
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.04),transparent_50%)] pointer-events-none" />
+            <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.04] to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-out pointer-events-none" />
+            
+            {/* Pulsing card background glow */}
+            <div className="absolute -top-10 -right-10 w-28 h-28 rounded-full bg-cyan-500/10 blur-2xl group-hover:bg-cyan-500/15 transition-all duration-500 animate-[pulse_3s_infinite]" />
+            
+            <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0 relative z-10">
+              <CardTitle className="text-xs font-bold text-slate-200 uppercase tracking-wider">
                 Success Rate
               </CardTitle>
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/12 to-cyan-500/2 border border-cyan-500/15">
-                <TrendingUp className="h-5.5 w-5.5 text-cyan-400 group-hover:scale-110 transition-transform duration-300" />
+              {/* Glowing Icon Container */}
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/25 to-cyan-500/2 border border-cyan-500/25 shadow-[0_0_15px_rgba(6,182,212,0.25)] group-hover:shadow-[0_0_22px_rgba(6,182,212,0.45)] transition-all duration-300">
+                <TrendingUp className="h-6 w-6 text-cyan-400 group-hover:scale-110 transition-transform duration-300" />
               </div>
             </CardHeader>
-            <CardContent>
-              <p className="text-3xl font-extrabold tracking-tight text-white mt-1">
+            <CardContent className="relative z-10">
+              <p className="text-4xl font-black tracking-tight text-white mt-1">
                 {stats.successRate.toFixed(1)}%
               </p>
-              <p className="text-[10px] text-slate-400 mt-1">
+              <p className="text-[10px] text-slate-400 mt-1.5 font-medium">
                 Broadcasting success ratio
               </p>
             </CardContent>
