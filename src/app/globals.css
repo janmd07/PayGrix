@@ -263,7 +263,7 @@
     0 4px 20px rgba(99, 102, 241, 0.40),
     0 10px 44px rgba(99, 102, 241, 0.18),
     inset 0 1px 0 rgba(255, 255, 255, 0.18);
-  transition: all 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .btn-electric::after {
@@ -273,7 +273,7 @@
   background: linear-gradient(
     90deg,
     transparent 0%,
-    rgba(255, 255, 255, 0.18) 50%,
+    rgba(255, 255, 255, 0.22) 50%,
     transparent 100%
   );
   width: 45%;
@@ -287,17 +287,18 @@
     #e879f9 100%);
   box-shadow:
     0 0 0 1px rgba(59, 130, 246, 0.55),
-    0 8px 36px rgba(99, 102, 241, 0.55),
-    0 20px 60px rgba(99, 102, 241, 0.25),
+    0 8px 36px rgba(99, 102, 241, 0.65),
+    0 0 25px rgba(79, 140, 255, 0.35),
+    0 20px 60px rgba(99, 102, 241, 0.28),
     inset 0 1px 0 rgba(255, 255, 255, 0.22);
-  transform: translateY(-2px);
+  transform: translateY(-2px) scale(1.02);
 }
 
 .btn-electric:hover::after {
   animation: shimmer-slide 0.65s ease-out forwards;
 }
 
-.btn-electric:active { transform: translateY(0px); }
+.btn-electric:active { transform: translateY(0px) scale(1); }
 
 .btn-glass {
   position: relative;
@@ -306,7 +307,7 @@
     0 0 0 1px rgba(79, 140, 255, 0.07),
     0 4px 16px rgba(2, 8, 23, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  transition: all 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .btn-glass:hover {
@@ -318,10 +319,10 @@
     0 0 28px rgba(109, 93, 252, 0.22),
     0 8px 28px rgba(2, 8, 23, 0.35),
     inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  transform: translateY(-2px);
+  transform: translateY(-2px) scale(1.02);
 }
 
-.btn-glass:active { transform: translateY(0px); }
+.btn-glass:active { transform: translateY(0px) scale(1); }
 
 /* ══════════════════════════════════════════════════════════
    BADGES
@@ -432,24 +433,67 @@
 
 /* Card component base override */
 .glass-card-component {
-  background: linear-gradient(rgba(4, 10, 28, 0.72), rgba(4, 10, 28, 0.72)) padding-box,
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(rgba(4, 10, 28, 0.78), rgba(4, 10, 28, 0.78)) padding-box,
               linear-gradient(135deg, rgba(79, 140, 255, 0.12) 0%, rgba(109, 93, 252, 0.12) 50%, rgba(214, 93, 252, 0.12) 100%) border-box;
   border: 1px solid transparent !important;
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   box-shadow:
-    0 2px 20px rgba(2, 8, 23, 0.50),
-    inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  transition: border-color 0.30s ease, box-shadow 0.30s ease, background 0.30s ease;
+    0 4px 30px rgba(2, 8, 23, 0.65),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .glass-card-component:hover {
-  background: linear-gradient(rgba(4, 10, 28, 0.72), rgba(4, 10, 28, 0.72)) padding-box,
-              linear-gradient(135deg, rgba(79, 140, 255, 0.35) 0%, rgba(109, 93, 252, 0.35) 50%, rgba(214, 93, 252, 0.35) 100%) border-box;
+  transform: translateY(-3px) scale(1.02);
+  background: linear-gradient(rgba(6, 14, 38, 0.85), rgba(6, 14, 38, 0.85)) padding-box,
+              linear-gradient(135deg, rgba(79, 140, 255, 0.45) 0%, rgba(109, 93, 252, 0.45) 50%, rgba(214, 93, 252, 0.45) 100%) border-box;
   box-shadow:
-    0 0 0 1px rgba(79, 140, 255, 0.14),
-    0 0 24px rgba(109, 93, 252, 0.10),
-    0 24px 60px rgba(2, 8, 23, 0.50) !important;
+    0 20px 45px -5px rgba(109, 93, 252, 0.24),
+    0 0 30px rgba(79, 140, 255, 0.16),
+    0 4px 15px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Moving light shimmer reflection inside glass cards */
+.glass-card-component::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.05), transparent);
+  transform: translateX(-100%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.glass-card-component:hover::after {
+  transition: transform 1.2s ease-out;
+  transform: translateX(100%);
+}
+
+/* Subtle glowing icon highlights */
+.glass-card-component:hover svg {
+  transform: scale(1.1);
+  color: #4f8cff !important;
+  filter: drop-shadow(0 0 8px rgba(79, 140, 255, 0.6));
+  transition: all 0.3s ease;
+}
+
+/* Small copy, link, and explorer buttons subtle glow */
+button[title*="copy"]:hover,
+button[title*="Copy"]:hover,
+button[title*="address"]:hover,
+button[title*="Address"]:hover,
+button[title*="explorer"]:hover,
+button[title*="Explorer"]:hover,
+button[title*="Scan"]:hover,
+button[title*="scan"]:hover,
+a[target="_blank"] button:hover,
+a[target="_blank"]:hover button {
+  box-shadow: 0 0 12px rgba(79, 140, 255, 0.3) !important;
+  border-color: rgba(79, 140, 255, 0.4) !important;
+  background-color: rgba(255, 255, 255, 0.08) !important;
 }
 
 /* ── Breathing Glow Animation for Logo Centerpiece ── */
