@@ -1095,23 +1095,26 @@ export default function PayrollPage() {
                         <p className="text-xs text-slate-400 leading-relaxed">
                           Compiles active monthly contributors due for payments (e.g. 1st or 15th of month schedules).
                         </p>
-                        <Button
-                          type="submit"
-                          disabled={isActionPending}
-                          className="w-full btn-electric whitespace-nowrap gap-2"
-                        >
-                          {isActionPending ? (
-                            <>
-                              <Loader2 className="h-4.5 w-4.5 animate-spin" />
-                              Operation pending...
-                            </>
-                          ) : (
-                            <>
-                              <Plus className="h-4.5 w-4.5" />
-                              Generate Monthly Batch
-                            </>
-                          )}
-                        </Button>
+                        <div className="flex justify-center w-full pt-2">
+                          <Button
+                            type="submit"
+                            disabled={isActionPending}
+                            className="w-full md:max-w-[360px] relative overflow-hidden bg-gradient-to-r from-[#6d5dfc] via-[#5c4df0] to-[#00c2ff] text-white font-semibold py-2.5 rounded-xl transition-all duration-300 shadow-[0_0_15px_rgba(109,93,252,0.3)] hover:shadow-[0_0_25px_rgba(109,93,252,0.5)] hover:-translate-y-0.5 hover:scale-[1.01] active:translate-y-0 active:scale-100 group whitespace-nowrap gap-2 border-0"
+                          >
+                            <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-[shimmer-slide_0.8s_ease-out_forwards] skew-x-12" />
+                            {isActionPending ? (
+                              <>
+                                <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                                Operation pending...
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="h-4.5 w-4.5" />
+                                Generate Monthly Batch
+                              </>
+                            )}
+                          </Button>
+                        </div>
                       </form>
                     ) : (
                       <form onSubmit={handleGenerateWeeklyBatch} className="space-y-4">
@@ -1135,23 +1138,26 @@ export default function PayrollPage() {
                         <p className="text-xs text-slate-400 leading-relaxed">
                           Compiles active weekly contributors due for payments (e.g. weekly Friday schedules) in the selected period.
                         </p>
-                        <Button
-                          type="submit"
-                          disabled={isActionPending}
-                          className="w-full btn-electric whitespace-nowrap gap-2"
-                        >
-                          {isActionPending ? (
-                            <>
-                              <Loader2 className="h-4.5 w-4.5 animate-spin" />
-                              Operation pending...
-                            </>
-                          ) : (
-                            <>
-                              <Plus className="h-4.5 w-4.5" />
-                              Generate Weekly Batch
-                            </>
-                          )}
-                        </Button>
+                        <div className="flex justify-center w-full pt-2">
+                          <Button
+                            type="submit"
+                            disabled={isActionPending}
+                            className="w-full md:max-w-[360px] relative overflow-hidden bg-gradient-to-r from-[#6d5dfc] via-[#5c4df0] to-[#00c2ff] text-white font-semibold py-2.5 rounded-xl transition-all duration-300 shadow-[0_0_15px_rgba(109,93,252,0.3)] hover:shadow-[0_0_25px_rgba(109,93,252,0.5)] hover:-translate-y-0.5 hover:scale-[1.01] active:translate-y-0 active:scale-100 group whitespace-nowrap gap-2 border-0"
+                          >
+                            <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-[shimmer-slide_0.8s_ease-out_forwards] skew-x-12" />
+                            {isActionPending ? (
+                              <>
+                                <Loader2 className="h-4.5 w-4.5 animate-spin" />
+                                Operation pending...
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="h-4.5 w-4.5" />
+                                Generate Weekly Batch
+                              </>
+                            )}
+                          </Button>
+                        </div>
                       </form>
                     )}
                   </CardContent>
