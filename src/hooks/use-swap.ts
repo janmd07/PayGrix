@@ -230,11 +230,20 @@ export function useSwap() {
       const signature = buildData.transaction.signature;
       const inputAmount = BigInt(buildData.amount);
 
+      const tokenInputs = [
+        {
+          permitType: 0, // PermitType.NONE
+          token: tokenInAddress as `0x${string}`,
+          amount: inputAmount,
+          permitCalldata: "0x" as `0x${string}`,
+        },
+      ];
+
       const preparedSwap = await adapter.prepareAction(
         "swap.execute",
         {
           executeParams,
-          tokenInputs: [], // Tokens are pre-approved above
+          tokenInputs,
           signature,
           inputAmount,
           tokenInAddress,
