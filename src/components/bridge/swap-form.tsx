@@ -33,6 +33,7 @@ export function SwapForm({
   const [tokenOut, setTokenOut] = useState<"USDC" | "EURC">("EURC");
   const [amount, setAmount] = useState<string>("");
   const [hasQuote, setHasQuote] = useState<boolean>(false);
+  const isSwapDisabled = true;
 
   const { isConnected, availableConnector, connect } = useArcWallet();
   const {
@@ -57,6 +58,7 @@ export function SwapForm({
   }, [amount, tokenIn, tokenOut, resetSwapState]);
 
   const handleSwapDirection = () => {
+    if (isSwapDisabled) return;
     const temp = tokenIn;
     setTokenIn(tokenOut);
     setTokenOut(temp);
@@ -64,11 +66,12 @@ export function SwapForm({
   };
 
   const handleMaxClick = () => {
+    if (isSwapDisabled) return;
     setAmount(currentBalance);
   };
 
   const handleGetQuote = async () => {
-    if (isFormInvalid) return;
+    if (isFormInvalid || isSwapDisabled) return;
     const est = await getSwapEstimate(amount, tokenIn, tokenOut);
     if (est) {
       setHasQuote(true);
@@ -76,7 +79,7 @@ export function SwapForm({
   };
 
   const handleExecuteSwap = async () => {
-    if (isFormInvalid || !hasQuote || !estimate) return;
+    if (isFormInvalid || !hasQuote || !estimate || isSwapDisabled) return;
     const result = await executeSwap(amount, tokenIn, tokenOut);
     if (result && result.txHash) {
       const outputVal = result.amountOut || estimate.estimatedOutput;
@@ -101,8 +104,17 @@ export function SwapForm({
         </CardHeader>
 
         <CardContent className="space-y-4">
+          {/* Coming Soon Notice */}
+          <div className="flex items-start gap-3 rounded-xl bg-purple-500/10 border border-purple-500/20 p-4 text-xs text-purple-300 leading-normal">
+            <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5 text-purple-400" />
+            <div className="space-y-1">
+              <p className="font-semibold text-white">Swap Feature Coming Soon</p>
+              <p>Swap on Arc requires a Circle Stablecoin Kit server-side API key configuration. This service will be online shortly.</p>
+            </div>
+          </div>
+
           {/* 1. Token In (Source) */}
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 opacity-50">
             <div className="flex justify-between items-center">
               <label className="block text-xs font-semibold text-slate-400">Pay With</label>
               <span className="text-[10px] text-slate-500 font-medium font-mono">
@@ -117,8 +129,8 @@ export function SwapForm({
                   setTokenIn(val);
                   setTokenOut(val === "USDC" ? "EURC" : "USDC");
                 }}
-                disabled={status === "swapping" || status === "waiting-wallet"}
-                className="w-full appearance-none rounded-xl bg-white/5 border border-white/8 px-4 py-3 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all cursor-pointer"
+                disabled={isSwapDisabled || status === "swapping" || status === "waiting-wallet"}
+                className="w-full appearance-none rounded-xl bg-white/5 border border-white/8 px-4 py-3 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all cursor-not-allowed"
               >
                 <option value="USDC" className="bg-[#060f24] text-white">USDC (USD Coin)</option>
                 <option value="EURC" className="bg-[#060f24] text-white">EURC (Euro Coin)</option>
@@ -130,11 +142,11 @@ export function SwapForm({
           </div>
 
           {/* Reverse Button */}
-          <div className="flex justify-center -my-2 relative z-10">
+          <div className="flex justify-center -my-2 relative z-10 opacity-50">
             <button
               onClick={handleSwapDirection}
-              disabled={status === "swapping" || status === "waiting-wallet"}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10 hover:text-white hover:border-primary hover:shadow-[0_0_12px_rgba(109,93,252,0.3)] transition-all cursor-pointer active:scale-95 disabled:opacity-40"
+              disabled={isSwapDisabled || status === "swapping" || status === "waiting-wallet"}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10 hover:text-white hover:border-primary hover:shadow-[0_0_12px_rgba(109,93,252,0.3)] transition-all cursor-not-allowed active:scale-95 disabled:opacity-40"
               title="Reverse direction"
             >
               <ArrowUpDown className="h-4 w-4" />
@@ -142,7 +154,7 @@ export function SwapForm({
           </div>
 
           {/* 2. Token Out (Destination) */}
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 opacity-50">
             <label className="block text-xs font-semibold text-slate-400">Receive</label>
             <div className="relative">
               <select
@@ -152,8 +164,8 @@ export function SwapForm({
                   setTokenOut(val);
                   setTokenIn(val === "USDC" ? "EURC" : "USDC");
                 }}
-                disabled={status === "swapping" || status === "waiting-wallet"}
-                className="w-full appearance-none rounded-xl bg-white/5 border border-white/8 px-4 py-3 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all cursor-pointer"
+                disabled={isSwapDisabled || status === "swapping" || status === "waiting-wallet"}
+                className="w-full appearance-none rounded-xl bg-white/5 border border-white/8 px-4 py-3 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all cursor-not-allowed"
               >
                 <option value="EURC" className="bg-[#060f24] text-white">EURC (Euro Coin)</option>
                 <option value="USDC" className="bg-[#060f24] text-white">USDC (USD Coin)</option>
@@ -165,12 +177,12 @@ export function SwapForm({
           </div>
 
           {/* 3. Amount Input */}
-          <div className="space-y-1.5">
+          <div className="space-y-1.5 opacity-50">
             <div className="flex justify-between items-center">
               <label className="block text-xs font-semibold text-slate-400">Amount</label>
               <button
                 onClick={handleMaxClick}
-                disabled={isLoadingBalance || parseFloat(currentBalance) <= 0 || status === "swapping" || status === "waiting-wallet"}
+                disabled={isSwapDisabled || isLoadingBalance || parseFloat(currentBalance) <= 0 || status === "swapping" || status === "waiting-wallet"}
                 className="text-[10px] font-bold text-primary hover:text-white hover:bg-primary/10 border border-primary/20 px-2 py-0.5 rounded transition-all disabled:opacity-40"
               >
                 MAX
@@ -184,9 +196,9 @@ export function SwapForm({
                 placeholder="0.00"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
-                disabled={status === "swapping" || status === "waiting-wallet"}
+                disabled={isSwapDisabled || status === "swapping" || status === "waiting-wallet"}
                 className={cn(
-                  "w-full rounded-xl bg-white/5 border px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none transition-all font-mono",
+                  "w-full rounded-xl bg-white/5 border px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none transition-all font-mono cursor-not-allowed",
                   isOverBalance
                     ? "border-rose-500/50 focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
                     : "border-white/8 focus:border-primary focus:ring-1 focus:ring-primary"
@@ -257,9 +269,9 @@ export function SwapForm({
           {!hasQuote ? (
             <Button
               type="button"
-              disabled={isFormInvalid || status === "estimating"}
+              disabled={isSwapDisabled || isFormInvalid || status === "estimating"}
               variant="default"
-              className="w-full text-sm font-bold animate-transition"
+              className="w-full text-sm font-bold animate-transition cursor-not-allowed opacity-50"
               onClick={handleGetQuote}
             >
               {status === "estimating" ? "Estimating..." : "Get Quote"}
@@ -267,9 +279,9 @@ export function SwapForm({
           ) : (
             <Button
               type="button"
-              disabled={status === "swapping" || status === "waiting-wallet"}
+              disabled={isSwapDisabled || status === "swapping" || status === "waiting-wallet"}
               variant="default"
-              className="w-full text-sm font-bold animate-transition bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500"
+              className="w-full text-sm font-bold animate-transition bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 cursor-not-allowed opacity-50"
               onClick={() => {
                 if (!isConnected) {
                   if (availableConnector) {
