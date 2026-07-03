@@ -14,7 +14,10 @@ import {
   X,
   DollarSign,
   AlertTriangle,
-  Lock
+  Lock,
+  CalendarClock,
+  Calendar,
+  Users
 } from "lucide-react";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -99,6 +102,7 @@ export default function ContributorsPage() {
   const [mounted, setMounted] = useState(false);
   const [contributors, setContributors] = useState<Contributor[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeFilter, setActiveFilter] = useState<string>("All");
   const [storageError, setStorageError] = useState(false);
   const { isConnected } = useArcWallet();
   
@@ -113,6 +117,8 @@ export default function ContributorsPage() {
   
   // Clipboard copied states
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const FILTER_OPTIONS = ["All", "Active", "Weekly", "Monthly", "High payout"] as const;
 
   useEffect(() => {
     setMounted(true);
@@ -268,14 +274,47 @@ export default function ContributorsPage() {
     setDeleteConfirmId(null);
   };
 
+  const getInitials = (name: string) => {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 0) return "";
+    if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
+  const averageSalary = contributors.length > 0
+    ? contributors.reduce((sum, c) => sum + c.salaryAmount, 0) / contributors.length
+    : 0;
+
   const filteredContributors = contributors.filter(c => {
     const query = searchQuery.toLowerCase();
-    return (
+    const matchesSearch = (
       c.fullName.toLowerCase().includes(query) ||
       c.role.toLowerCase().includes(query) ||
       c.walletAddress.toLowerCase().includes(query)
     );
+    if (!matchesSearch) return false;
+
+    if (activeFilter === "Active") {
+      return c.status === "Active";
+    }
+    if (activeFilter === "Weekly") {
+      return c.frequency === "Weekly";
+    }
+    if (activeFilter === "Monthly") {
+      return c.frequency === "Monthly";
+    }
+    if (activeFilter === "High payout") {
+      return c.salaryAmount >= averageSalary;
+    }
+    return true;
   });
+
+  const totalContributors = contributors.length;
+  const totalMonthlyPayroll = contributors
+    .filter(c => c.status === "Active")
+    .reduce((sum, c) => sum + c.salaryAmount, 0);
+  const weeklyContributorsCount = contributors.filter(c => c.frequency === "Weekly").length;
+  const monthlyContributorsCount = contributors.filter(c => c.frequency === "Monthly").length;
 
   if (!mounted) {
     return (
@@ -294,7 +333,7 @@ export default function ContributorsPage() {
 
   return (
     <AppShell>
-      <div className="relative space-y-6">
+      <div className="relative space-y-6 pb-12">
         {/* Ambient background glows */}
         <div className="orb orb-1 opacity-40" />
         <div className="orb orb-2 opacity-30" />
@@ -306,17 +345,21 @@ export default function ContributorsPage() {
             description="Manage contributor profiles, wallet addresses, and monthly compensations. Setup direct payroll pipelines."
             action={
               isConnected && (
-                <Button onClick={handleOpenAddModal} className="btn-electric gap-2">
-                  <Plus className="h-4.5 w-4.5" />
-                  Add Contributor
-                </Button>
+                <button
+                  onClick={handleOpenAddModal}
+                  className="inline-flex items-center gap-2 relative overflow-hidden bg-gradient-to-r from-[#6d5dfc] via-[#5c4df0] to-[#00c2ff] text-white font-semibold py-2 px-4.5 rounded-xl transition-all duration-300 shadow-[0_0_15px_rgba(109,93,252,0.35)] hover:shadow-[0_0_25px_rgba(109,93,252,0.55)] hover:-translate-y-0.5 hover:scale-[1.02] active:translate-y-0 active:scale-100 group shrink-0"
+                >
+                  <Plus className="h-4.5 w-4.5 shrink-0" />
+                  <span className="text-sm">Add Contributor</span>
+                  <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-[shimmer-slide_0.8s_ease-out_forwards] skew-x-12" />
+                </button>
               )
             }
           />
         </div>
 
         {storageError && (
-          <div className="relative z-10 flex gap-3 p-4 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-200 text-sm">
+          <div className="relative z-10 flex gap-3 p-4 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-200 text-sm animate-in fade-in slide-in-from-top-4 duration-200">
             <AlertTriangle className="h-5 w-5 shrink-0 text-amber-400 mt-0.5" />
             <div>
               <p className="font-semibold">Local Storage Corrupted</p>
@@ -328,7 +371,7 @@ export default function ContributorsPage() {
         )}
 
         {!isConnected ? (
-          <Card className="relative z-10 glass-card-component">
+          <Card className="relative z-10 glass-card-component border border-white/5 bg-[#060f24]/30 backdrop-blur-xl">
             <CardContent className="py-16 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#6d5dfc]/10 border border-[#6d5dfc]/15 text-[#4f8cff] mx-auto mb-4 animate-pulse">
                 <Lock className="h-6 w-6" />
@@ -343,132 +386,305 @@ export default function ContributorsPage() {
             </CardContent>
           </Card>
         ) : (
-          /* Directory Card */
-          <Card className="relative z-10 glass-card-component">
-            <CardHeader className="gap-4 md:flex-row md:items-center md:justify-between md:space-y-0 pb-4">
-              <CardTitle>Team roster</CardTitle>
-              <div className="relative w-full md:w-72">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
-                <input
-                  type="text"
-                  placeholder="Search contributors..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 text-sm bg-white/5 border border-white/8 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-[#6d5dfc] focus:ring-1 focus:ring-[#6d5dfc] transition-all"
-                />
-              </div>
-            </CardHeader>
-            <CardContent className="pt-2">
-              {filteredContributors.length === 0 ? (
-                <div className="text-center py-12 border border-white/5 rounded-2xl bg-white/[0.01]">
-                  <UserRoundCheck className="h-10 w-10 text-slate-600 mx-auto mb-3" />
-                  <p className="text-sm font-semibold text-slate-300">No contributors found</p>
-                  <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto">
-                    Try adjusting your search criteria or add a new team member to the directory.
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <div className="min-w-[750px] space-y-2">
-                    {/* Table Headers */}
-                    <div className="grid grid-cols-[1.2fr_1.5fr_1fr_0.8fr_0.7fr] bg-white/5 px-4 py-2.5 text-xs font-semibold text-slate-400 rounded-lg">
-                      <span>CONTRIBUTOR / ROLE</span>
-                      <span>WALLET ADDRESS</span>
-                      <span>MONTHLY COMP</span>
-                      <span>STATUS</span>
-                      <span className="text-right">ACTIONS</span>
+          <>
+            {/* Overview Stats Cards Grid */}
+            <div className="relative z-10 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-in fade-in slide-in-from-top-4 duration-300">
+              <Card className="relative overflow-hidden border border-white/5 bg-[#060f24]/40 backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.3)]">
+                <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-blue-500 to-[#6d5dfc]" />
+                <CardContent className="p-5 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Total Contributors</span>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-3xl font-extrabold text-white tracking-tight">{totalContributors}</span>
+                      <span className="text-xs text-slate-400 font-medium">members</span>
+                    </div>
+                  </div>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                    <Users className="h-5 w-5" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="relative overflow-hidden border border-white/5 bg-[#060f24]/40 backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.3)]">
+                <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#6d5dfc] to-purple-500" />
+                <CardContent className="p-5 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Active Monthly Payroll</span>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-3xl font-extrabold text-emerald-400 tracking-tight">${totalMonthlyPayroll.toLocaleString()}</span>
+                      <span className="text-xs text-slate-400 font-medium">/ mo</span>
+                    </div>
+                  </div>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                    <DollarSign className="h-5 w-5" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="relative overflow-hidden border border-white/5 bg-[#060f24]/40 backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.3)]">
+                <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-purple-500 to-[#4f8cff]" />
+                <CardContent className="p-5 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Weekly Payouts</span>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-3xl font-extrabold text-white tracking-tight">{weeklyContributorsCount}</span>
+                      <span className="text-xs text-slate-400 font-medium">schedules</span>
+                    </div>
+                  </div>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+                    <CalendarClock className="h-5 w-5" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="relative overflow-hidden border border-white/5 bg-[#060f24]/40 backdrop-blur-xl shadow-[0_4px_24px_rgba(0,0,0,0.3)]">
+                <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#4f8cff] to-cyan-500" />
+                <CardContent className="p-5 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Monthly Payouts</span>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-3xl font-extrabold text-white tracking-tight">{monthlyContributorsCount}</span>
+                      <span className="text-xs text-slate-400 font-medium">schedules</span>
+                    </div>
+                  </div>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-cyan-500/10 border border-cyan-500/20 text-cyan-400">
+                    <Calendar className="h-5 w-5" />
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Directory Card */}
+            <Card className="relative z-10 glass-card-component border border-white/5 bg-[#060f24]/30 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.4)] animate-in fade-in slide-in-from-top-6 duration-300">
+              <CardHeader className="pb-4">
+                <CardTitle className="text-xl font-bold text-white tracking-tight">Team Roster</CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                {contributors.length === 0 ? (
+                  <div className="text-center py-20 max-w-md mx-auto px-6 border border-dashed border-white/10 rounded-2xl bg-white/[0.01]">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-[#6d5dfc]/10 border border-[#6d5dfc]/15 text-[#4f8cff] mx-auto mb-6 shadow-[0_0_30px_rgba(109,93,252,0.15)] animate-pulse">
+                      <UserRoundCheck className="h-8 w-8" />
+                    </div>
+                    <h3 className="text-lg font-bold text-white mb-2">No contributors yet</h3>
+                    <p className="text-sm text-slate-400 leading-relaxed mb-6">
+                      No contributors yet. Add your first team member to start payroll.
+                    </p>
+                    <button 
+                      onClick={handleOpenAddModal} 
+                      className="inline-flex items-center gap-2 relative overflow-hidden bg-gradient-to-r from-[#6d5dfc] via-[#5c4df0] to-[#4f8cff] text-white font-semibold py-2.5 px-6 rounded-xl transition-all duration-300 shadow-[0_0_20px_rgba(109,93,252,0.35)] hover:shadow-[0_0_30px_rgba(109,93,252,0.55)] hover:-translate-y-0.5 hover:scale-[1.02] active:translate-y-0 active:scale-100 group"
+                    >
+                      <Plus className="h-4.5 w-4.5" />
+                      <span>Add team member</span>
+                      <span className="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-[shimmer-slide_0.8s_ease-out_forwards] skew-x-12" />
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {/* Search & Filter Controls Panel */}
+                    <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between pb-6 border-b border-white/5 mb-6">
+                      {/* Search Bar */}
+                      <div className="relative w-full md:w-80">
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Search name, role, or wallet..."
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          className="w-full pl-10 pr-10 py-2.5 text-sm bg-[#020817]/40 border border-white/10 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-[#6d5dfc] focus:ring-2 focus:ring-[#6d5dfc]/20 focus:shadow-[0_0_15px_rgba(109,93,252,0.15)] transition-all duration-300"
+                        />
+                        {searchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setSearchQuery("")}
+                            className="absolute right-3.5 top-1/2 -translate-y-1/2 h-5 w-5 flex items-center justify-center rounded-full hover:bg-white/10 text-slate-400 hover:text-white transition-all"
+                            title="Clear search"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Filter Chips */}
+                      <div className="flex flex-wrap gap-2 items-center">
+                        {FILTER_OPTIONS.map((filter) => {
+                          const isActive = activeFilter === filter;
+                          const label = filter === "High payout"
+                            ? `High payout (≥ $${Math.round(averageSalary).toLocaleString()})`
+                            : filter;
+                          return (
+                            <button
+                              key={filter}
+                              type="button"
+                              onClick={() => setActiveFilter(filter)}
+                              className={`px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide transition-all duration-200 border ${
+                                isActive
+                                  ? "bg-[#6d5dfc]/15 text-white border-[#6d5dfc] shadow-[0_0_12px_rgba(109,93,252,0.25)]"
+                                  : "bg-white/[0.03] text-slate-400 border-white/5 hover:text-white hover:bg-white/[0.08] hover:border-white/10"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
 
-                    {/* Roster Rows */}
-                    {filteredContributors.map((c) => (
-                      <div 
-                        key={c.id} 
-                        className="grid grid-cols-[1.2fr_1.5fr_1fr_0.8fr_0.7fr] items-center border border-white/5 px-4 py-3.5 text-sm text-white hover:bg-white/[0.02] rounded-xl transition-all"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#6d5dfc]/10 border border-[#6d5dfc]/15 text-[#4f8cff] shrink-0">
-                            <UserRoundCheck className="h-4.5 w-4.5" />
-                          </div>
-                          <div className="truncate">
-                            <p className="font-semibold text-white truncate">{c.fullName}</p>
-                            <p className="text-xs text-slate-400 truncate mt-0.5">{c.role}</p>
-                            <p className="text-[10px] text-[#4f8cff] mt-0.5 font-medium">
-                              Starts {c.startDate || "2026-06-01"} · {c.frequency === "Weekly" ? `Weekly on ${c.payoutDay}` : `Monthly on Day ${c.payoutDay}`}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-xs text-slate-300">{shortenAddress(c.walletAddress)}</span>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 px-2 hover:bg-white/10"
-                              onClick={() => handleCopy(c.id, c.walletAddress)}
-                              title="Copy address"
-                            >
-                              {copiedId === c.id ? (
-                                <Check className="h-3.5 w-3.5 text-emerald-400" />
-                              ) : (
-                                <Copy className="h-3.5 w-3.5 text-slate-500" />
-                              )}
-                            </Button>
-                            <a
-                              href={`https://testnet.arcscan.app/address/${c.walletAddress}`}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-7 px-2 hover:bg-white/10"
-                                title="View on ArcScan"
-                              >
-                                <ExternalLink className="h-3.5 w-3.5 text-slate-500" />
-                              </Button>
-                            </a>
-                          </div>
-                        </div>
-
-                        <div className="font-semibold text-white flex items-center gap-0.5">
-                          <DollarSign className="h-4 w-4 text-emerald-400 shrink-0" />
-                          {c.salaryAmount.toLocaleString()} / mo
-                        </div>
-
-                        <div>
-                          <Badge variant={c.status === "Active" ? "success" : "warning"}>
-                            {c.status}
-                          </Badge>
-                        </div>
-
-                        <div className="flex justify-end gap-1.5">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-8 w-8 p-0 hover:bg-white/10 text-slate-400 hover:text-white"
-                            onClick={() => handleOpenEditModal(c)}
-                            title="Edit contributor"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-8 w-8 p-0 hover:bg-rose-500/10 text-slate-400 hover:text-rose-400"
-                            onClick={() => setDeleteConfirmId(c.id)}
-                            title="Remove contributor"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+                    {filteredContributors.length === 0 ? (
+                      <div className="text-center py-16 border border-dashed border-white/5 rounded-2xl bg-white/[0.01] px-6">
+                        <Search className="h-10 w-10 text-slate-600 mx-auto mb-4" />
+                        <h4 className="text-sm font-semibold text-slate-300">No results found</h4>
+                        <p className="text-xs text-slate-500 mt-1 max-w-xs mx-auto leading-relaxed">
+                          No team members match your current filter or search criteria. Try adjusting your terms or resetting filters.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSearchQuery("");
+                            setActiveFilter("All");
+                          }}
+                          className="mt-4 text-xs font-semibold text-[#4f8cff] hover:underline"
+                        >
+                          Reset filters & search
+                        </button>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                    ) : (
+                      <div className="space-y-3">
+                        {filteredContributors.map((c) => {
+                          const initials = getInitials(c.fullName);
+                          return (
+                            <div
+                              key={c.id}
+                              className="group relative flex flex-col lg:flex-row lg:items-center justify-between gap-4 p-4.5 rounded-2xl border border-white/5 bg-[#060f24]/40 hover:bg-[#0b1735]/40 hover:border-[#6d5dfc]/25 hover:shadow-[0_0_20px_rgba(109,93,252,0.1)] transition-all duration-300 hover:-translate-y-0.5"
+                            >
+                              {/* Contributor Main Info */}
+                              <div className="flex items-center gap-4 min-w-[240px]">
+                                {/* Initials Badge */}
+                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#6d5dfc]/20 to-[#4f8cff]/20 text-[#4f8cff] font-bold text-sm border border-[#6d5dfc]/30 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]">
+                                  {initials}
+                                </div>
+                                <div className="space-y-0.5 truncate">
+                                  <h4 className="font-semibold text-white text-base leading-snug truncate">{c.fullName}</h4>
+                                  <p className="text-xs text-slate-400 font-medium truncate">{c.role}</p>
+                                  {/* Payout Schedule indicator */}
+                                  <div className="flex items-center gap-1 text-[10px] text-slate-500 font-mono mt-1">
+                                    <CalendarClock className="h-3 w-3 text-[#4f8cff] shrink-0" />
+                                    <span>
+                                      Starts {c.startDate || "2026-06-01"}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Wallet Address section */}
+                              <div className="flex flex-col gap-1 min-w-[190px]">
+                                <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">Wallet</span>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-mono text-xs text-slate-300 bg-[#020817]/40 border border-white/5 px-2 py-1 rounded-lg">
+                                    {shortenAddress(c.walletAddress)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopy(c.id, c.walletAddress)}
+                                    className="p-1.5 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 text-slate-400 hover:text-white transition-all transform hover:scale-105 active:scale-95"
+                                    title="Copy address"
+                                  >
+                                    {copiedId === c.id ? (
+                                      <Check className="h-3.5 w-3.5 text-emerald-400" />
+                                    ) : (
+                                      <Copy className="h-3.5 w-3.5" />
+                                    )}
+                                  </button>
+                                  <a
+                                    href={`https://testnet.arcscan.app/address/${c.walletAddress}`}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="p-1.5 rounded-lg bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 text-slate-400 hover:text-white transition-all transform hover:scale-105 active:scale-95"
+                                    title="View on ArcScan"
+                                  >
+                                    <ExternalLink className="h-3.5 w-3.5" />
+                                  </a>
+                                </div>
+                              </div>
+
+                              {/* Compensation details */}
+                              <div className="flex flex-col gap-1 min-w-[130px]">
+                                <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">Compensation</span>
+                                <div className="flex items-baseline gap-1">
+                                  <span className="font-extrabold text-emerald-400 text-lg leading-none">
+                                    ${c.salaryAmount.toLocaleString()}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-medium">/ month</span>
+                                </div>
+                                <div className="mt-0.5">
+                                  <Badge 
+                                    className={`text-[9px] font-bold tracking-wide uppercase px-2 py-0 border-0 ${
+                                      c.frequency === "Weekly" 
+                                        ? "bg-blue-500/10 text-blue-400 border border-blue-500/20" 
+                                        : "bg-purple-500/10 text-purple-400 border border-purple-500/20"
+                                    }`}
+                                  >
+                                    {c.frequency}
+                                  </Badge>
+                                </div>
+                              </div>
+
+                              {/* Next Payout / Schedule */}
+                              <div className="flex flex-col gap-1 min-w-[120px]">
+                                <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">Schedule Details</span>
+                                <span className="text-xs font-semibold text-slate-300 font-mono">
+                                  {c.frequency === "Weekly" ? `Friday (${c.payoutDay})` : `Day ${c.payoutDay}`}
+                                </span>
+                                <span className="text-[9px] text-slate-500 font-medium leading-none">
+                                  {c.frequency === "Weekly" ? `Every week` : `Every month`}
+                                </span>
+                              </div>
+
+                              {/* Status Indicator */}
+                              <div className="flex flex-col gap-1 min-w-[90px]">
+                                <span className="text-[10px] uppercase tracking-wider font-semibold text-slate-500">Status</span>
+                                <div>
+                                  <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${
+                                    c.status === "Active"
+                                      ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shadow-[0_0_10px_rgba(16,185,129,0.1)]"
+                                      : "bg-amber-500/10 text-amber-400 border border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.1)]"
+                                  }`}>
+                                    <span className={`h-1.5 w-1.5 rounded-full ${
+                                      c.status === "Active" ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
+                                    }`} />
+                                    {c.status}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Actions Menu */}
+                              <div className="flex items-center gap-2 justify-end lg:self-center border-t border-white/5 pt-3 lg:border-t-0 lg:pt-0 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditModal(c)}
+                                  className="p-2 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 text-slate-400 hover:text-white transition-all transform hover:scale-105 active:scale-95"
+                                  title="Edit contributor"
+                                >
+                                  <Edit2 className="h-4 w-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setDeleteConfirmId(c.id)}
+                                  className="p-2 rounded-xl bg-rose-500/5 border border-rose-500/5 hover:bg-rose-500/10 hover:border-rose-500/15 text-rose-400/85 hover:text-rose-400 transition-all transform hover:scale-105 active:scale-95"
+                                  title="Remove contributor"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          </>
         )}
 
         {/* Custom Edit/Add Modal Overlay */}
