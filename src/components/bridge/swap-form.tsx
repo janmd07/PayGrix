@@ -6,12 +6,12 @@ import {
   Coins,
   Clock,
   ExternalLink,
-  Activity,
   AlertTriangle,
+  ChevronDown,
+  RefreshCw,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { useSwap } from "@/hooks/use-swap";
@@ -35,6 +35,12 @@ export function SwapForm({
   const [hasQuote, setHasQuote] = useState<boolean>(false);
   const [isEnabled, setIsEnabled] = useState<boolean>(false);
   const [isLoadingStatus, setIsLoadingStatus] = useState<boolean>(true);
+  const [lastUpdated, setLastUpdated] = useState<string>("");
+
+  useEffect(() => {
+    const now = new Date();
+    setLastUpdated(now.toTimeString().split(" ")[0]);
+  }, []);
 
   useEffect(() => {
     async function checkStatus() {
@@ -94,6 +100,8 @@ export function SwapForm({
     const est = await getSwapEstimate(amount, tokenIn, tokenOut);
     if (est) {
       setHasQuote(true);
+      const now = new Date();
+      setLastUpdated(now.toTimeString().split(" ")[0]);
     }
   };
 
@@ -106,11 +114,69 @@ export function SwapForm({
     }
   };
 
+  const isSelectDisabled = isSwapDisabled || status === "swapping" || status === "waiting-wallet";
+
+  const UsdcLogo = () => (
+    <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0 select-none">
+      {/* Outer blue circle */}
+      <circle cx="12" cy="12" r="11" fill="#2775CA" />
+      {/* Inner ring */}
+      <circle cx="12" cy="12" r="9" fill="none" stroke="white" strokeWidth="1" strokeOpacity="0.4" />
+      {/* "$" sign */}
+      <text x="12" y="15.5" fill="white" fontSize="11" fontWeight="bold" textAnchor="middle" fontFamily="sans-serif">$</text>
+    </svg>
+  );
+
+  const EurcLogo = () => (
+    <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0 select-none">
+      {/* Outer purple/blue circle */}
+      <circle cx="12" cy="12" r="11" fill="#155A96" />
+      {/* Inner ring */}
+      <circle cx="12" cy="12" r="9" fill="none" stroke="white" strokeWidth="1" strokeOpacity="0.4" />
+      {/* "€" sign */}
+      <text x="12" y="15.5" fill="white" fontSize="11" fontWeight="bold" textAnchor="middle" fontFamily="sans-serif">€</text>
+    </svg>
+  );
+
+  const renderTokenSelector = (
+    value: "USDC" | "EURC",
+    onChangeHandler: (val: "USDC" | "EURC") => void
+  ) => {
+    return (
+      <div className="relative">
+        <div className={cn(
+          "flex items-center bg-[#070f21] border border-white/8 hover:bg-white/[0.04] rounded-full pl-2.5 pr-4 py-2 text-white hover:border-purple-500/30 transition-all duration-200 cursor-pointer select-none",
+          isSelectDisabled && "opacity-50 cursor-not-allowed pointer-events-none"
+        )}>
+          {value === "USDC" ? <UsdcLogo /> : <EurcLogo />}
+          <span className="font-bold text-sm tracking-wider ml-2 mr-1">{value}</span>
+          <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
+        </div>
+        <select
+          value={value}
+          onChange={(e) => {
+            const val = e.target.value as "USDC" | "EURC";
+            onChangeHandler(val);
+          }}
+          disabled={isSelectDisabled}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-20"
+        >
+          <option value="USDC">USDC</option>
+          <option value="EURC">EURC</option>
+        </select>
+      </div>
+    );
+  };
+
+  const rate = hasQuote && estimate && amount && parseFloat(amount) > 0
+    ? (parseFloat(estimate.estimatedOutput) / parseFloat(amount)).toFixed(6)
+    : null;
+
   return (
     <div className="space-y-6">
-      <Card className="border border-white/10 bg-[#060f24]/50 backdrop-blur-md relative overflow-hidden">
-        {/* Shimmer top line */}
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500 via-pink-500 to-[#d65dfc]" />
+      <Card className="border border-white/10 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_8px_32px_rgba(6,15,36,0.5)]">
+        {/* Elegant top gradient accent line */}
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf]" />
 
         <CardHeader className="pb-4">
           <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
@@ -123,290 +189,313 @@ export function SwapForm({
         </CardHeader>
 
         <CardContent className="space-y-4">
-          {/* Coming Soon / Setup Required Notice */}
-          {!isEnabled && !isLoadingStatus && (
-            <div className="flex items-start gap-3 rounded-xl bg-purple-500/10 border border-purple-500/20 p-4 text-xs text-purple-300 leading-normal">
-              <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5 text-purple-400" />
-              <div className="space-y-1">
-                <p className="font-semibold text-white">Setup Required</p>
-                <p>Swap on Arc requires a Circle Stablecoin Kit server-side API key configuration. Please set the <code>STABLECOIN_KIT_API_KEY</code> environment variable on your server to enable swapping.</p>
-              </div>
-            </div>
-          )}
-
-          {isLoadingStatus && (
-            <div className="flex items-center justify-center py-4">
-              <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-            </div>
-          )}
-
-          {/* 1. Token In (Source) */}
-          <div className={cn("space-y-1.5", isSwapDisabled && "opacity-50")}>
-            <div className="flex justify-between items-center">
-              <label className="block text-xs font-semibold text-slate-400">Pay With</label>
-              <span className="text-[10px] text-slate-500 font-medium font-mono">
-                Bal: {parseFloat(currentBalance).toLocaleString(undefined, { minimumFractionDigits: 2 })} {tokenIn}
-              </span>
-            </div>
-            <div className="relative">
-              <select
-                value={tokenIn}
-                onChange={(e) => {
-                  const val = e.target.value as "USDC" | "EURC";
-                  setTokenIn(val);
-                  setTokenOut(val === "USDC" ? "EURC" : "USDC");
-                }}
-                disabled={isSwapDisabled || status === "swapping" || status === "waiting-wallet"}
-                className={cn(
-                  "w-full appearance-none rounded-xl bg-white/5 border border-white/8 px-4 py-3 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all",
-                  isSwapDisabled ? "cursor-not-allowed" : "cursor-pointer"
-                )}
-              >
-                <option value="USDC" className="bg-[#060f24] text-white">USDC (USD Coin)</option>
-                <option value="EURC" className="bg-[#060f24] text-white">EURC (Euro Coin)</option>
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-400">
-                <ArrowUpDown className="h-4 w-4" />
-              </div>
-            </div>
-          </div>
-
-          {/* Reverse Button */}
-          <div className={cn("flex justify-center -my-2 relative z-10", isSwapDisabled && "opacity-50")}>
-            <button
-              onClick={handleSwapDirection}
-              disabled={isSwapDisabled || status === "swapping" || status === "waiting-wallet"}
-              className={cn(
-                "flex h-8 w-8 items-center justify-center rounded-full bg-white/5 border border-white/10 text-slate-400 hover:bg-white/10 hover:text-white hover:border-primary hover:shadow-[0_0_12px_rgba(109,93,252,0.3)] transition-all active:scale-95 disabled:opacity-40",
-                isSwapDisabled ? "cursor-not-allowed" : "cursor-pointer"
-              )}
-              title="Reverse direction"
-            >
-              <ArrowUpDown className="h-4 w-4" />
-            </button>
-          </div>
-
-          {/* 2. Token Out (Destination) */}
-          <div className={cn("space-y-1.5", isSwapDisabled && "opacity-50")}>
-            <label className="block text-xs font-semibold text-slate-400">Receive</label>
-            <div className="relative">
-              <select
-                value={tokenOut}
-                onChange={(e) => {
-                  const val = e.target.value as "USDC" | "EURC";
-                  setTokenOut(val);
-                  setTokenIn(val === "USDC" ? "EURC" : "USDC");
-                }}
-                disabled={isSwapDisabled || status === "swapping" || status === "waiting-wallet"}
-                className={cn(
-                  "w-full appearance-none rounded-xl bg-white/5 border border-white/8 px-4 py-3 text-sm text-white focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all",
-                  isSwapDisabled ? "cursor-not-allowed" : "cursor-pointer"
-                )}
-              >
-                <option value="EURC" className="bg-[#060f24] text-white">EURC (Euro Coin)</option>
-                <option value="USDC" className="bg-[#060f24] text-white">USDC (USD Coin)</option>
-              </select>
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-slate-400">
-                <ArrowUpDown className="h-4 w-4" />
-              </div>
-            </div>
-          </div>
-
-          {/* 3. Amount Input */}
-          <div className={cn("space-y-1.5", isSwapDisabled && "opacity-50")}>
-            <div className="flex justify-between items-center">
-              <label className="block text-xs font-semibold text-slate-400">Amount</label>
+          {/* Centered Compact Swap Widget */}
+          <div className="mx-auto w-full max-w-[500px] space-y-4">
+            {/* Top row: Last updated indicator & refresh icon button */}
+            <div className="flex justify-end items-center gap-2 text-xs text-slate-500 font-mono pr-1">
+              <span>Last updated: {lastUpdated || "--:--:--"}</span>
               <button
-                onClick={handleMaxClick}
-                disabled={isSwapDisabled || isLoadingBalance || parseFloat(currentBalance) <= 0 || status === "swapping" || status === "waiting-wallet"}
-                className="text-[10px] font-bold text-primary hover:text-white hover:bg-primary/10 border border-primary/20 px-2 py-0.5 rounded transition-all disabled:opacity-40"
+                onClick={handleGetQuote}
+                disabled={isSwapDisabled || isFormInvalid || status === "estimating"}
+                className="p-1.5 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 hover:text-white transition-all disabled:opacity-40"
+                title="Refresh quote"
               >
-                MAX
+                <RefreshCw className={cn("h-3.5 w-3.5", status === "estimating" && "animate-spin")} />
               </button>
             </div>
-            <div className="relative">
-              <input
-                type="number"
-                min="0"
-                step="any"
-                placeholder="0.00"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                disabled={isSwapDisabled || status === "swapping" || status === "waiting-wallet"}
-                className={cn(
-                  "w-full rounded-xl bg-white/5 border px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none transition-all font-mono",
-                  isSwapDisabled ? "cursor-not-allowed" : "",
-                  isOverBalance
-                    ? "border-rose-500/50 focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
-                    : "border-white/8 focus:border-primary focus:ring-1 focus:ring-primary"
-                )}
-              />
-              <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
-                <span className={cn("text-xs font-bold font-mono", tokenIn === "USDC" ? "text-[#4f8cff]" : "text-purple-400")}>
-                  {tokenIn}
-                </span>
+
+            {/* Coming Soon / Setup Required Notice */}
+            {!isEnabled && !isLoadingStatus && (
+              <div className="flex items-start gap-3 rounded-xl bg-purple-500/10 border border-purple-500/20 p-4 text-xs text-purple-300 leading-normal">
+                <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5 text-purple-400" />
+                <div className="space-y-1">
+                  <p className="font-semibold text-white">Setup Required</p>
+                  <p>Swap on Arc requires a Circle Stablecoin Kit server-side API key configuration. Please set the <code>STABLECOIN_KIT_API_KEY</code> environment variable on your server to enable swapping.</p>
+                </div>
               </div>
-            </div>
-          </div>
+            )}
 
-          {/* Over-balance Warning */}
-          {isOverBalance && (
-            <div className="flex items-start gap-2 rounded-xl bg-rose-500/10 border border-rose-500/20 p-3 text-xs text-rose-400">
-              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-              <span>Insufficient balance. Enter an amount lower than or equal to {currentBalance} {tokenIn}.</span>
-            </div>
-          )}
-
-          {/* 4. Estimated Output Details */}
-          {hasQuote && estimate && (
-            <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 space-y-3">
-              <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                <span className="text-xs font-medium text-slate-400">Quote Details</span>
-                <Badge variant="success" className="text-[10px] py-0 px-2 flex gap-1 items-center">
-                  <Activity className="h-2.5 w-2.5" /> Live Quote
-                </Badge>
+            {isLoadingStatus && (
+              <div className="flex items-center justify-center py-4">
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
               </div>
+            )}
 
-              <div className="grid grid-cols-2 gap-y-2 text-xs font-mono">
-                <div className="text-slate-400">You Swap:</div>
-                <div className="text-right text-white font-semibold">
-                  {amount} {tokenIn}
-                </div>
-
-                <div className="text-slate-400">Estimated Output:</div>
-                <div className="text-right text-white font-semibold">
-                  {estimate.estimatedOutput} {tokenOut}
-                </div>
-
-                <div className="text-slate-400">Minimum Received:</div>
-                <div className="text-right text-slate-300">
-                  {estimate.stopLimit} {tokenOut}
-                </div>
-
-                {estimate.fees && estimate.fees.length > 0 && estimate.fees.map((fee, idx) => (
-                  <div key={idx} className="contents">
-                    <div className="text-slate-400 capitalize">{fee.type} Fee:</div>
-                    <div className="text-right text-slate-300">
-                      {fee.amount !== null ? `${parseFloat(fee.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })} ${fee.token}` : "N/A"}
-                    </div>
+            {/* Swap Cards Section */}
+            <div className={cn("relative space-y-1.5", isSwapDisabled && "opacity-50")}>
+              {/* 1. Pay/Sell Input Card */}
+              <div className={cn(
+                "bg-[#070e1c] border rounded-2xl p-5 space-y-3.5 transition-all duration-200",
+                isOverBalance
+                  ? "border-rose-500/30 bg-rose-500/5 focus-within:border-rose-500/50"
+                  : "border-white/5 focus-within:border-purple-500/30"
+              )}>
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Sell</span>
+                  <div className="flex items-center gap-2 text-slate-500 font-mono">
+                    <span>Balance: {parseFloat(currentBalance).toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 6 })}</span>
+                    <button
+                      onClick={handleMaxClick}
+                      disabled={isSwapDisabled || isLoadingBalance || parseFloat(currentBalance) <= 0 || status === "swapping" || status === "waiting-wallet"}
+                      className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all disabled:opacity-40"
+                    >
+                      MAX
+                    </button>
                   </div>
-                ))}
+                </div>
 
-                <div className="col-span-2 text-slate-400 flex items-start gap-1.5 pt-1.5 border-t border-white/5 mt-1 font-sans">
-                  <Clock className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" />
-                  <span className="text-[10px] leading-4 text-slate-400">
-                    Slippage tolerance is set to 1% to protect your swap rate from front-running.
+                <div className="flex justify-between items-center gap-4 pt-1">
+                  <div className="flex-1 min-w-0">
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0"
+                      value={amount}
+                      onChange={(e) => setAmount(e.target.value)}
+                      disabled={isSwapDisabled || status === "swapping" || status === "waiting-wallet"}
+                      className="w-full bg-transparent text-4xl font-bold text-white placeholder-slate-700 focus:outline-none transition-all font-mono"
+                    />
+                  </div>
+
+                  <div className="shrink-0">
+                    {renderTokenSelector(tokenIn, (val) => {
+                      setTokenIn(val);
+                      setTokenOut(val === "USDC" ? "EURC" : "USDC");
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* 2. Switch Control Button */}
+              <div className="flex justify-center -my-4.5 relative z-10">
+                <button
+                  onClick={handleSwapDirection}
+                  disabled={isSwapDisabled || status === "swapping" || status === "waiting-wallet"}
+                  className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-full bg-[#070e1c] border border-white/10 text-slate-400 hover:text-white hover:border-purple-500/50 hover:shadow-[0_0_10px_rgba(157,78,221,0.4)] transition-all duration-200 active:scale-95 disabled:opacity-40",
+                    isSwapDisabled ? "cursor-not-allowed" : "cursor-pointer"
+                  )}
+                  title="Switch direction"
+                >
+                  <ArrowUpDown className="h-3.5 w-3.5" />
+                </button>
+              </div>
+
+              {/* 3. Receive/Buy Output Card */}
+              <div className="bg-[#070e1c] border border-white/5 rounded-2xl p-5 space-y-3.5 transition-all duration-200 focus-within:border-purple-500/30">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-slate-400 uppercase tracking-wider">Buy</span>
+                </div>
+
+                <div className="flex justify-between items-center gap-4 pt-1">
+                  <div className="flex-1 min-w-0">
+                    <input
+                      type="text"
+                      readOnly
+                      placeholder="0"
+                      value={hasQuote && estimate ? estimate.estimatedOutput : ""}
+                      className="w-full bg-transparent text-4xl font-bold text-white placeholder-slate-700 focus:outline-none font-mono cursor-default"
+                    />
+                  </div>
+
+                  <div className="shrink-0">
+                    {renderTokenSelector(tokenOut, (val) => {
+                      setTokenOut(val);
+                      setTokenIn(val === "USDC" ? "EURC" : "USDC");
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Daily Swaps Remaining / Info Row */}
+            <div className="flex justify-between items-center text-xs text-slate-400 px-1 py-1.5 border-t border-b border-white/5">
+              <div className="flex items-center gap-1.5">
+                <div className="h-4 w-4 rounded-full border border-slate-500/30 flex items-center justify-center text-[10px] text-slate-500 font-bold shrink-0">i</div>
+                <span>Daily swaps remaining</span>
+              </div>
+              <span className="font-semibold text-white">10 / 10</span>
+            </div>
+
+            {/* Over-balance Warning */}
+            {isOverBalance && (
+              <div className="flex items-start gap-2 rounded-xl bg-rose-500/10 border border-rose-500/20 p-3 text-xs text-rose-400">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>Insufficient balance. Enter an amount lower than or equal to {currentBalance} {tokenIn}.</span>
+              </div>
+            )}
+
+            {/* 4. Estimated Output Details (Quote Info) */}
+            {hasQuote && estimate && (
+              <div className="rounded-2xl border border-white/5 bg-[#070e1c] p-4.5 space-y-2 text-xs">
+                <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                  <span className="font-semibold text-slate-300">Quote Details</span>
+                  <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    Live Quote
                   </span>
                 </div>
-              </div>
-            </div>
-          )}
 
-          {/* 5. Swap/Quote Action Button */}
-          {!hasQuote ? (
-            <Button
-              type="button"
-              disabled={isSwapDisabled || isFormInvalid || status === "estimating"}
-              variant="default"
-              className={cn("w-full text-sm font-bold animate-transition", isSwapDisabled ? "cursor-not-allowed opacity-50" : "")}
-              onClick={handleGetQuote}
-            >
-              {status === "estimating" ? "Estimating..." : "Get Quote"}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              disabled={isSwapDisabled || status === "swapping" || status === "waiting-wallet"}
-              variant="default"
-              className={cn("w-full text-sm font-bold animate-transition bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500", isSwapDisabled ? "cursor-not-allowed opacity-50" : "")}
-              onClick={() => {
-                if (!isConnected) {
-                  if (availableConnector) {
-                    connect({ connector: availableConnector });
+                <div className="space-y-1.5 pt-1">
+                  {rate && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400">Rate</span>
+                      <span className="text-white font-mono font-medium">1 {tokenIn} ≈ {rate} {tokenOut}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">You Swap</span>
+                    <span className="text-white font-mono font-medium">{amount} {tokenIn}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">Estimated Output</span>
+                    <span className="text-white font-mono font-medium">{estimate.estimatedOutput} {tokenOut}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">Minimum Received</span>
+                    <span className="text-slate-300 font-mono">{estimate.stopLimit} {tokenOut}</span>
+                  </div>
+
+                  {estimate.fees && estimate.fees.length > 0 && estimate.fees.map((fee, idx) => (
+                    <div key={idx} className="flex justify-between items-center">
+                      <span className="text-slate-400 capitalize">{fee.type} Fee</span>
+                      <span className="text-slate-300 font-mono">
+                        {fee.amount !== null ? `${parseFloat(fee.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })} ${fee.token}` : "N/A"}
+                      </span>
+                    </div>
+                  ))}
+
+                  <div className="pt-1.5 border-t border-white/5 text-[10px] text-slate-500 flex items-center gap-1">
+                    <Clock className="h-3 w-3 text-purple-400 shrink-0" />
+                    <span>Slippage tolerance is set to 1% to protect your rate.</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 5. Swap/Quote Action Button */}
+            {!hasQuote ? (
+              <Button
+                type="button"
+                disabled={isSwapDisabled || isFormInvalid || status === "estimating"}
+                variant="default"
+                className={cn(
+                  "w-full text-sm font-bold py-3.5 rounded-xl transition-all duration-300 active:scale-[0.98]",
+                  "bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf] hover:from-[#3b7cff] hover:via-[#8c3ed9] hover:to-[#6a1cb0]",
+                  "text-white shadow-[0_4px_14px_rgba(157,78,221,0.3)] hover:shadow-[0_4px_20px_rgba(157,78,221,0.5)]",
+                  (isSwapDisabled || isFormInvalid || status === "estimating") && "opacity-50 cursor-not-allowed hover:shadow-none hover:from-[#4f8cff] hover:via-[#9d4edd] hover:to-[#7b2cbf]"
+                )}
+                onClick={handleGetQuote}
+              >
+                {amount === "" || parseFloat(amount) <= 0
+                  ? "Enter Amount"
+                  : isOverBalance
+                  ? "Insufficient Balance"
+                  : status === "estimating"
+                  ? "Estimating..."
+                  : "Get Quote"}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                disabled={isSwapDisabled || status === "swapping" || status === "waiting-wallet"}
+                variant="default"
+                className={cn(
+                  "w-full text-sm font-bold py-3.5 rounded-xl transition-all duration-300 active:scale-[0.98]",
+                  "bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf] hover:from-[#3b7cff] hover:via-[#8c3ed9] hover:to-[#6a1cb0]",
+                  "text-white shadow-[0_4px_14px_rgba(157,78,221,0.3)] hover:shadow-[0_4px_20px_rgba(157,78,221,0.5)]",
+                  (isSwapDisabled || status === "swapping" || status === "waiting-wallet") && "opacity-50 cursor-not-allowed hover:shadow-none hover:from-[#4f8cff] hover:via-[#9d4edd] hover:to-[#7b2cbf]"
+                )}
+                onClick={() => {
+                  if (!isConnected) {
+                    if (availableConnector) {
+                      connect({ connector: availableConnector });
+                    } else {
+                      alert("Please connect your wallet using the button in the top header.");
+                    }
                   } else {
-                    alert("Please connect your wallet using the button in the top header.");
+                    handleExecuteSwap();
                   }
-                } else {
-                  handleExecuteSwap();
-                }
-              }}
-            >
-              {!isConnected
-                ? "Connect Wallet"
-                : status === "waiting-wallet"
-                ? "Confirm in Wallet..."
-                : status === "swapping"
-                ? "Swapping..."
-                : `Swap ${tokenIn} to ${tokenOut}`}
-            </Button>
-          )}
+                }}
+              >
+                {!isConnected
+                  ? "Connect Wallet"
+                  : status === "waiting-wallet"
+                  ? "Confirm in Wallet..."
+                  : status === "swapping"
+                  ? "Swapping..."
+                  : `Swap ${tokenIn} to ${tokenOut}`}
+              </Button>
+            )}
 
-          {/* 6. Execution Status & Errors */}
-          {(status === "waiting-wallet" || status === "swapping" || status === "completed" || status === "failed") && (
-            <div className="border-t border-white/5 pt-4 mt-2 space-y-3">
-              <div className="text-xs font-semibold text-slate-400 mb-1 flex items-center justify-between">
-                <span>Swap Status</span>
-                {status === "failed" && (
-                  <Badge variant="secondary" className="text-[10px] py-0 px-2 bg-rose-500/10 border border-rose-500/20 text-rose-400">Failed</Badge>
+            {/* 6. Execution Status & Errors */}
+            {(status === "waiting-wallet" || status === "swapping" || status === "completed" || status === "failed") && (
+              <div className="border-t border-white/5 pt-3.5 mt-2 space-y-2.5">
+                <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
+                  <span>Swap Status</span>
+                  {status === "failed" && (
+                    <span className="text-[10px] font-medium text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20">Failed</span>
+                  )}
+                  {status === "completed" && (
+                    <span className="text-[10px] font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">Completed</span>
+                  )}
+                </div>
+
+                <div className="space-y-1.5 text-xs">
+                  <div className={cn("flex items-center gap-2",
+                    ["waiting-wallet", "swapping", "completed"].includes(status) ? "text-slate-300" : "text-slate-500 opacity-50"
+                  )}>
+                    <span className={cn("h-1.5 w-1.5 rounded-full",
+                      status === "waiting-wallet" ? "bg-purple-500 animate-pulse" :
+                      ["swapping", "completed"].includes(status) ? "bg-emerald-400" : "bg-slate-700"
+                    )} />
+                    <span>Waiting for wallet signature</span>
+                  </div>
+
+                  <div className={cn("flex items-center gap-2",
+                    ["swapping", "completed"].includes(status) ? "text-slate-300" : "text-slate-500 opacity-50"
+                  )}>
+                    <span className={cn("h-1.5 w-1.5 rounded-full",
+                      status === "swapping" ? "bg-purple-500 animate-pulse" :
+                      status === "completed" ? "bg-emerald-400" : "bg-slate-700"
+                    )} />
+                    <span>Executing swap on-chain</span>
+                  </div>
+
+                  <div className={cn("flex items-center gap-2",
+                    status === "completed" ? "text-slate-300" : "text-slate-500 opacity-50"
+                  )}>
+                    <span className={cn("h-1.5 w-1.5 rounded-full",
+                      status === "completed" ? "bg-emerald-400" : "bg-slate-700"
+                    )} />
+                    <span>Swap completed</span>
+                  </div>
+                </div>
+
+                {error && (
+                  <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 leading-normal font-sans">
+                    Error: {error}
+                  </div>
                 )}
-                {status === "completed" && (
-                  <Badge variant="success" className="text-[10px] py-0 px-2">Completed</Badge>
+
+                {txHash && (
+                  <div className="flex justify-between items-center text-[10px] text-slate-500 pt-2 border-t border-white/5">
+                    <span>Transaction Hash</span>
+                    <a
+                      href={`https://testnet.arcscan.app/tx/${txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-purple-400 hover:text-white flex items-center gap-1 transition-all font-mono"
+                    >
+                      {txHash.slice(0, 8)}...{txHash.slice(-6)}{" "}
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  </div>
                 )}
               </div>
-
-              <div className="space-y-2">
-                <div className={cn("flex items-center gap-2 text-xs",
-                  ["waiting-wallet", "swapping", "completed"].includes(status) ? "text-slate-300" : "text-slate-500 opacity-50"
-                )}>
-                  <div className={cn("h-2 w-2 rounded-full",
-                    status === "waiting-wallet" ? "bg-primary animate-pulse" :
-                    ["swapping", "completed"].includes(status) ? "bg-emerald-500" : "bg-slate-600"
-                  )} />
-                  <span>Waiting for wallet signature</span>
-                </div>
-
-                <div className={cn("flex items-center gap-2 text-xs",
-                  ["swapping", "completed"].includes(status) ? "text-slate-300" : "text-slate-500 opacity-50"
-                )}>
-                  <div className={cn("h-2 w-2 rounded-full",
-                    status === "swapping" ? "bg-primary animate-pulse" :
-                    status === "completed" ? "bg-emerald-500" : "bg-slate-600"
-                  )} />
-                  <span>Executing swap on-chain</span>
-                </div>
-
-                <div className={cn("flex items-center gap-2 text-xs",
-                  status === "completed" ? "text-slate-300" : "text-slate-500 opacity-50"
-                )}>
-                  <div className={cn("h-2 w-2 rounded-full",
-                    status === "completed" ? "bg-emerald-500" : "bg-slate-600"
-                  )} />
-                  <span>Swap completed</span>
-                </div>
-              </div>
-
-              {error && (
-                <div className="text-xs text-rose-400 mt-2 bg-rose-500/10 border border-rose-500/20 rounded-lg p-2.5 font-sans leading-normal">
-                  Error: {error}
-                </div>
-              )}
-
-              {txHash && (
-                <div className="border-t border-white/5 pt-3 flex justify-between items-center text-[11px] text-slate-400">
-                  <span>Transaction Hash:</span>
-                  <a
-                    href={`https://testnet.arcscan.app/tx/${txHash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:text-white flex items-center gap-1 transition-all font-mono"
-                  >
-                    {txHash.slice(0, 10)}...{txHash.slice(-8)}{" "}
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
-                </div>
-              )}
-            </div>
-          )}
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>

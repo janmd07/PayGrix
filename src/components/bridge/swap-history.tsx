@@ -14,7 +14,7 @@ export function SwapHistory({ swaps }: SwapHistoryProps) {
     <Card className="border border-white/10 bg-[#060f24]/50 backdrop-blur-md">
       <CardHeader className="flex flex-row items-center justify-between border-b border-white/5 pb-4">
         <div className="flex items-center gap-2">
-          <History className="h-4.5 w-4.5 text-primary" />
+          <History className="h-4.5 w-4.5 text-purple-400" />
           <CardTitle className="text-base font-semibold">Swap History</CardTitle>
         </div>
         {swaps.length > 0 && (
@@ -77,7 +77,7 @@ export function SwapHistory({ swaps }: SwapHistoryProps) {
                         href={`https://testnet.arcscan.app/tx/${tx.txHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-primary hover:text-white flex items-center gap-1 transition-all font-mono"
+                        className="text-purple-400 hover:text-white flex items-center gap-1 transition-all font-mono"
                       >
                         {tx.txHash.slice(0, 10)}...{tx.txHash.slice(-8)}{" "}
                         <ExternalLink className="h-3 w-3 shrink-0" />
