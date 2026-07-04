@@ -16,6 +16,43 @@ import { cn } from "@/lib/utils";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { useSwap } from "@/hooks/use-swap";
 
+interface TokenLogoProps {
+  symbol: "USDC" | "EURC";
+}
+
+function TokenLogo({ symbol }: TokenLogoProps) {
+  const [hasError, setHasError] = useState(false);
+  const src = symbol === "USDC" ? "/tokens/usdc.png" : "/tokens/eurc.png";
+
+  useEffect(() => {
+    setHasError(false);
+  }, [symbol]);
+
+  if (hasError) {
+    return (
+      <div
+        className={cn(
+          "h-6 w-6 rounded-full flex items-center justify-center text-white shrink-0 font-bold text-xs select-none",
+          symbol === "USDC" ? "bg-[#2775CA] shadow-[0_0_8px_rgba(39,117,202,0.4)]" : "bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.4)]"
+        )}
+      >
+        {symbol === "USDC" ? "$" : "€"}
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-6 w-6 rounded-full overflow-hidden flex items-center justify-center shrink-0">
+      <img
+        src={src}
+        alt={symbol}
+        onError={() => setHasError(true)}
+        className="w-full h-full object-contain"
+      />
+    </div>
+  );
+}
+
 interface SwapFormProps {
   balanceUSDC: string;
   balanceEURC: string;
@@ -116,28 +153,6 @@ export function SwapForm({
 
   const isSelectDisabled = isSwapDisabled || status === "swapping" || status === "waiting-wallet";
 
-  const UsdcLogo = () => (
-    <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0 select-none">
-      {/* Outer blue circle */}
-      <circle cx="12" cy="12" r="11" fill="#2775CA" />
-      {/* Inner ring */}
-      <circle cx="12" cy="12" r="9" fill="none" stroke="white" strokeWidth="1" strokeOpacity="0.4" />
-      {/* "$" sign */}
-      <text x="12" y="15.5" fill="white" fontSize="11" fontWeight="bold" textAnchor="middle" fontFamily="sans-serif">$</text>
-    </svg>
-  );
-
-  const EurcLogo = () => (
-    <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0 select-none">
-      {/* Outer purple/blue circle */}
-      <circle cx="12" cy="12" r="11" fill="#155A96" />
-      {/* Inner ring */}
-      <circle cx="12" cy="12" r="9" fill="none" stroke="white" strokeWidth="1" strokeOpacity="0.4" />
-      {/* "€" sign */}
-      <text x="12" y="15.5" fill="white" fontSize="11" fontWeight="bold" textAnchor="middle" fontFamily="sans-serif">€</text>
-    </svg>
-  );
-
   const renderTokenSelector = (
     value: "USDC" | "EURC",
     onChangeHandler: (val: "USDC" | "EURC") => void
@@ -148,7 +163,7 @@ export function SwapForm({
           "flex items-center bg-[#070f21] border border-white/8 hover:bg-white/[0.04] rounded-full pl-2.5 pr-4 py-2 text-white hover:border-purple-500/30 transition-all duration-200 cursor-pointer select-none",
           isSelectDisabled && "opacity-50 cursor-not-allowed pointer-events-none"
         )}>
-          {value === "USDC" ? <UsdcLogo /> : <EurcLogo />}
+          <TokenLogo symbol={value} />
           <span className="font-bold text-sm tracking-wider ml-2 mr-1">{value}</span>
           <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
         </div>
