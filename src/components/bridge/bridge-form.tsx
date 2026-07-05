@@ -303,7 +303,6 @@ export function BridgeForm({
               </div>
             </div>
 
-            {/* Action button */}
             <Button
               type="button"
               disabled={(isFormInvalid && isConnected) || status === "preparing" || status === "waiting-wallet" || status === "bridging"}
@@ -318,7 +317,8 @@ export function BridgeForm({
                   onBridge(amount);
                 }
               }}
-              className="w-full h-12 text-sm font-bold bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:via-indigo-500 hover:to-purple-500 text-white rounded-xl shadow-[0_4px_20px_rgba(79,70,229,0.3)] transition-all duration-300 cursor-pointer disabled:opacity-50 disabled:from-slate-800 disabled:via-slate-800 disabled:to-slate-800 disabled:text-slate-500 disabled:shadow-none disabled:cursor-not-allowed"
+              className="w-full h-12 text-sm font-bold bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:via-indigo-500 hover:to-purple-500 text-white rounded-xl shadow-[0_4px_20px_rgba(79,70,229,0.3)] transition-all duration-300 cursor-pointer disabled:opacity-50 disabled:from-slate-800 disabled:via-slate-800 disabled:to-slate-800 disabled:text-slate-200 disabled:shadow-none disabled:cursor-not-allowed"
+              style={{ textShadow: "0 1px 2px rgba(0,0,0,0.5)" }}
             >
               {getButtonText()}
             </Button>
