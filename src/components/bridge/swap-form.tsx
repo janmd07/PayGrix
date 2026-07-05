@@ -42,12 +42,13 @@ function TokenLogo({ symbol }: TokenLogoProps) {
   }
 
   return (
-    <div className="h-6 w-6 rounded-full overflow-hidden flex items-center justify-center shrink-0">
+    <div className="h-6 w-6 rounded-full overflow-hidden flex items-center justify-center shrink-0 bg-transparent">
       <img
         src={src}
         alt={symbol}
         onError={() => setHasError(true)}
-        className="w-full h-full object-contain"
+        className="w-full h-full object-contain bg-transparent"
+        style={{ aspectRatio: "1/1" }}
       />
     </div>
   );
