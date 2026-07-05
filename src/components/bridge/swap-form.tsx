@@ -74,6 +74,7 @@ export function SwapForm({
   const [isEnabled, setIsEnabled] = useState<boolean>(false);
   const [isLoadingStatus, setIsLoadingStatus] = useState<boolean>(true);
   const [lastUpdated, setLastUpdated] = useState<string>("");
+  const [openSelectorSlot, setOpenSelectorSlot] = useState<"in" | "out" | null>(null);
 
   useEffect(() => {
     const now = new Date();
@@ -156,30 +157,86 @@ export function SwapForm({
 
   const renderTokenSelector = (
     value: "USDC" | "EURC",
-    onChangeHandler: (val: "USDC" | "EURC") => void
+    onChangeHandler: (val: "USDC" | "EURC") => void,
+    slot: "in" | "out"
   ) => {
+    const isOpen = openSelectorSlot === slot;
+
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpenSelectorSlot(null);
+      }
+    };
+
     return (
-      <div className="relative">
-        <div className={cn(
-          "flex items-center bg-[#070f21] border border-white/8 hover:bg-white/[0.04] rounded-full pl-2.5 pr-4 py-2 text-white hover:border-purple-500/30 transition-all duration-200 cursor-pointer select-none",
-          isSelectDisabled && "opacity-50 cursor-not-allowed pointer-events-none"
-        )}>
-          <TokenLogo symbol={value} />
-          <span className="font-bold text-sm tracking-wider ml-2 mr-1">{value}</span>
-          <ChevronDown className="h-4 w-4 text-slate-400 shrink-0" />
-        </div>
-        <select
-          value={value}
-          onChange={(e) => {
-            const val = e.target.value as "USDC" | "EURC";
-            onChangeHandler(val);
+      <div className="relative" onKeyDown={handleKeyDown}>
+        <button
+          type="button"
+          onClick={() => {
+            if (!isSelectDisabled) {
+              setOpenSelectorSlot(isOpen ? null : slot);
+            }
           }}
           disabled={isSelectDisabled}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-20"
+          aria-haspopup="listbox"
+          aria-expanded={isOpen}
+          className={cn(
+            "flex items-center bg-[#070f21] border border-white/8 hover:bg-white/[0.04] rounded-full pl-2.5 pr-4 py-2 text-white hover:border-purple-500/30 transition-all duration-200 cursor-pointer select-none focus:outline-none focus:ring-1 focus:ring-purple-500/50",
+            isSelectDisabled && "opacity-50 cursor-not-allowed pointer-events-none"
+          )}
         >
-          <option value="USDC">USDC</option>
-          <option value="EURC">EURC</option>
-        </select>
+          <TokenLogo symbol={value} />
+          <span className="font-bold text-sm tracking-wider ml-2 mr-1">{value}</span>
+          <ChevronDown className={cn("h-4 w-4 text-slate-400 shrink-0 transition-transform duration-200", isOpen && "rotate-180")} />
+        </button>
+
+        {isOpen && (
+          <>
+            {/* Click outside overlay */}
+            <div 
+              className="fixed inset-0 z-30 cursor-default" 
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpenSelectorSlot(null);
+              }}
+            />
+            <div 
+              role="listbox"
+              className="absolute right-0 mt-2 w-36 rounded-2xl border border-purple-500/30 bg-[#070f21] p-1.5 shadow-[0_8px_24px_rgba(7,15,33,0.8)] z-40 animate-in fade-in slide-in-from-top-2 duration-150"
+            >
+              {(["USDC", "EURC"] as const).map((option) => {
+                const isSelected = value === option;
+                return (
+                  <button
+                    key={option}
+                    role="option"
+                    aria-selected={isSelected}
+                    onClick={() => {
+                      onChangeHandler(option);
+                      setOpenSelectorSlot(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onChangeHandler(option);
+                        setOpenSelectorSlot(null);
+                      } else if (e.key === "Escape") {
+                        setOpenSelectorSlot(null);
+                      }
+                    }}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-3 py-2 rounded-xl text-left text-xs font-semibold tracking-wider hover:bg-white/[0.04] transition-all duration-150 focus:outline-none focus:bg-white/[0.04]",
+                      isSelected ? "bg-purple-500/20 text-purple-400 border border-purple-500/20" : "text-slate-300 border border-transparent"
+                    )}
+                  >
+                    <TokenLogo symbol={option} />
+                    <span>{option}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        )}
       </div>
     );
   };
@@ -278,7 +335,7 @@ export function SwapForm({
                     {renderTokenSelector(tokenIn, (val) => {
                       setTokenIn(val);
                       setTokenOut(val === "USDC" ? "EURC" : "USDC");
-                    })}
+                    }, "in")}
                   </div>
                 </div>
               </div>
@@ -319,7 +376,7 @@ export function SwapForm({
                     {renderTokenSelector(tokenOut, (val) => {
                       setTokenOut(val);
                       setTokenIn(val === "USDC" ? "EURC" : "USDC");
-                    })}
+                    }, "out")}
                   </div>
                 </div>
               </div>
