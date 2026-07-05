@@ -201,6 +201,7 @@ export default function BridgePage() {
               error={bridgeError}
               onBridge={handleBridge}
               isConnected={isConnected}
+              onRefresh={refreshBalance}
             />
           ) : (
             <SwapForm
