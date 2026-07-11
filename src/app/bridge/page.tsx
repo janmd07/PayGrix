@@ -7,11 +7,18 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useBridgeBalance } from "@/hooks/use-bridge-balance";
 import { useBridge } from "@/hooks/use-bridge";
+import { useSolanaBridge } from "@/hooks/use-solana-bridge";
+import { useWallet } from "@solana/wallet-adapter-react";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { BalanceCard } from "@/components/bridge/balance-card";
-import { BridgeForm } from "@/components/bridge/bridge-form";
 import { TransferHistory, BridgeTransfer } from "@/components/bridge/transfer-history";
 import { cn } from "@/lib/utils";
+import dynamic from "next/dynamic";
+
+const BridgeForm = dynamic(
+  () => import("@/components/bridge/bridge-form").then((mod) => mod.BridgeForm),
+  { ssr: false }
+);
 
 // Swap integrations
 import { SwapForm } from "@/components/bridge/swap-form";
@@ -29,16 +36,43 @@ export default function BridgePage() {
   const [transfers, setTransfers] = useState<BridgeTransfer[]>([]);
 
   const { address, isConnected } = useArcWallet();
-  const { balance, symbol, isLoading, refreshBalance } = useBridgeBalance(sourceChain, address);
+  const { publicKey: solanaPublicKey } = useWallet();
 
+  // Route flags
+  const isSolanaRoute = sourceChain === "Solana Devnet" || destinationChain === "Solana Devnet";
+  const isHybridSolanaRoute =
+    (sourceChain === "Solana Devnet" && destinationChain === "Arc Testnet") ||
+    (sourceChain === "Arc Testnet" && destinationChain === "Solana Devnet");
+
+  // Determine active address for balance checks
+  const activeAddress = sourceChain === "Solana Devnet" ? (solanaPublicKey?.toBase58() as `0x${string}`) : address;
+  const { balance, symbol, isLoading, refreshBalance } = useBridgeBalance(sourceChain, activeAddress);
+
+  // Existing EVM bridge hook
   const {
-    status: bridgeStatus,
-    sourceTxHash,
-    destTxHash,
-    error: bridgeError,
-    bridgeUSDC,
-    resetStatus: resetBridgeStatus,
+    status: evmStatus,
+    sourceTxHash: evmSourceTxHash,
+    destTxHash: evmDestTxHash,
+    error: evmError,
+    bridgeUSDC: evmBridgeUSDC,
+    resetStatus: evmResetBridgeStatus,
   } = useBridge();
+
+  // New Solana bridge hook
+  const {
+    status: solanaStatus,
+    sourceTxHash: solanaSourceTxHash,
+    destTxHash: solanaDestTxHash,
+    error: solanaError,
+    bridgeUSDC: solanaBridgeUSDC,
+    resetStatus: solanaResetBridgeStatus,
+  } = useSolanaBridge();
+
+  // Select active state based on route
+  const bridgeStatus = isSolanaRoute ? solanaStatus : evmStatus;
+  const sourceTxHash = isSolanaRoute ? solanaSourceTxHash : evmSourceTxHash;
+  const destTxHash = isSolanaRoute ? solanaDestTxHash : evmDestTxHash;
+  const bridgeError = isSolanaRoute ? solanaError : evmError;
 
   // Swap-specific states and hooks
   const [swaps, setSwaps] = useState<SwapHistoryItem[]>([]);
@@ -81,7 +115,17 @@ export default function BridgePage() {
 
   const handleBridge = async (amount: string) => {
     try {
-      const result = await bridgeUSDC(amount, sourceChain, destinationChain);
+      let result;
+      if (isSolanaRoute) {
+        if (!isHybridSolanaRoute) {
+          alert("Phase 1 supports Solana Devnet only with Arc Testnet.");
+          return;
+        }
+        result = await solanaBridgeUSDC(amount, sourceChain, destinationChain);
+      } else {
+        result = await evmBridgeUSDC(amount, sourceChain, destinationChain);
+      }
+
       if (result) {
         interface BridgeStep {
           name: string;
@@ -141,12 +185,14 @@ export default function BridgePage() {
 
   const handleSourceChainChange = (chain: string) => {
     setSourceChain(chain);
-    resetBridgeStatus();
+    evmResetBridgeStatus();
+    solanaResetBridgeStatus();
   };
 
   const handleDestinationChainChange = (chain: string) => {
     setDestinationChain(chain);
-    resetBridgeStatus();
+    evmResetBridgeStatus();
+    solanaResetBridgeStatus();
   };
 
   return (

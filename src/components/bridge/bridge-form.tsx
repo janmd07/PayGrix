@@ -14,17 +14,27 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 
-const CHAINS = ["Arc Testnet", "Base Sepolia", "Arbitrum Sepolia"];
+const CHAINS = ["Arc Testnet", "Base Sepolia", "Arbitrum Sepolia", "Solana Devnet"];
 
 const EXPLORER_URLS: Record<string, string> = {
   "Arc Testnet": "https://testnet.arcscan.app",
   "Base Sepolia": "https://sepolia.basescan.org",
   "Arbitrum Sepolia": "https://sepolia.arbiscan.io",
+  "Solana Devnet": "https://explorer.solana.com",
 };
 
 export function getExplorerUrl(chain: string): string {
   return EXPLORER_URLS[chain] || "https://testnet.arcscan.app";
+}
+
+export function getExplorerTxUrl(chain: string, txHash: string): string {
+  if (chain === "Solana Devnet") {
+    return `https://explorer.solana.com/tx/${txHash}?cluster=devnet`;
+  }
+  return `${getExplorerUrl(chain)}/tx/${txHash}`;
 }
 
 interface BridgeFormProps {
@@ -62,11 +72,21 @@ export function BridgeForm({
 }: BridgeFormProps) {
   const [amount, setAmount] = useState<string>("");
   const { availableConnector, connect } = useArcWallet();
+  const { connected: isSolanaConnected, wallets } = useWallet();
+
+  const phantomWallet = wallets.find((w) => w.adapter.name === "Phantom");
+  const isPhantomNotDetected = phantomWallet?.readyState === "NotDetected";
+  const isPhantomInstalled = phantomWallet?.readyState === "Installed" || phantomWallet?.readyState === "Loadable";
+
+  const isSolanaRoute = sourceChain === "Solana Devnet" || destinationChain === "Solana Devnet";
+  const isHybridSolanaRoute =
+    (sourceChain === "Solana Devnet" && destinationChain === "Arc Testnet") ||
+    (sourceChain === "Arc Testnet" && destinationChain === "Solana Devnet");
 
   const isSameChain = sourceChain === destinationChain;
   const isOverBalance = parseFloat(amount) > parseFloat(balance);
   const isValidAmount = amount !== "" && parseFloat(amount) > 0;
-  const isFormInvalid = isSameChain || isOverBalance || !isValidAmount;
+  const isFormInvalid = isSameChain || isOverBalance || !isValidAmount || (isSolanaRoute && !isHybridSolanaRoute);
 
   const handleSwapChains = () => {
     const temp = sourceChain;
@@ -94,7 +114,8 @@ export function BridgeForm({
             "h-2 w-2 rounded-full mr-2 shrink-0",
             value === "Arc Testnet" ? "bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.5)]" :
             value === "Base Sepolia" ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]" :
-            "bg-purple-400 shadow-[0_0_8px_rgba(192,132,252,0.5)]"
+            value === "Arbitrum Sepolia" ? "bg-purple-400 shadow-[0_0_8px_rgba(192,132,252,0.5)]" :
+            "bg-indigo-400 shadow-[0_0_8px_rgba(129,140,248,0.5)]"
           )} />
           <span className="font-bold text-xs tracking-wider uppercase text-slate-200">{value}</span>
           <ChevronDown className="h-4 w-4 text-slate-400 shrink-0 ml-1.5" />
@@ -116,7 +137,9 @@ export function BridgeForm({
   };
 
   const getButtonText = () => {
-    if (!isConnected) return "Connect Wallet";
+    if (isSolanaRoute && !isHybridSolanaRoute) return "Unsupported Solana Route";
+    if (!isConnected) return "Connect EVM Wallet";
+    if (isSolanaRoute && !isSolanaConnected) return "Connect Solana Wallet";
     if (isSameChain) return "Invalid Route (Same Chain)";
     if (isOverBalance) return "Insufficient Balance";
     if (!isValidAmount) return "Enter Amount";
@@ -270,6 +293,44 @@ export function BridgeForm({
               </div>
             )}
 
+            {/* Solana route warnings and connection states */}
+            {isSolanaRoute && !isHybridSolanaRoute && (
+              <div className="flex items-start gap-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 p-3.5 text-xs text-amber-400 leading-normal">
+                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>Phase 1 supports Solana Devnet only with Arc Testnet.</span>
+              </div>
+            )}
+
+            {isSolanaRoute && isHybridSolanaRoute && (
+              <div className="space-y-2">
+                <div className="rounded-xl border border-purple-500/20 bg-purple-950/10 p-3.5 flex justify-between items-center text-xs shadow-[0_4px_20px_rgba(147,51,234,0.05)]">
+                  <div className="space-y-0.5 pr-2">
+                    <span className="text-slate-300 font-semibold block">Solana Wallet Required</span>
+                    <span className="text-[10px] text-slate-400">
+                      {sourceChain === "Solana Devnet"
+                        ? "Connect your Solana wallet to bridge USDC from Solana Devnet."
+                        : "Connect your Solana wallet to use its address as the destination."}
+                    </span>
+                  </div>
+                  <WalletMultiButton />
+                </div>
+                
+                {isPhantomNotDetected && (
+                  <div className="text-[10px] text-rose-400 bg-rose-500/5 border border-rose-500/20 rounded-xl p-3 flex items-start gap-2 leading-normal">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <span>Phantom wallet extension was not detected. Install or enable Phantom and refresh the page.</span>
+                  </div>
+                )}
+                
+                {isPhantomInstalled && !isSolanaConnected && (
+                  <div className="text-[10px] text-purple-400 bg-purple-500/5 border border-purple-500/20 rounded-xl p-3 flex items-start gap-2 leading-normal">
+                    <Coins className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                    <span>Unlock Phantom and try again.</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Route details panel */}
             <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4.5 space-y-3 text-xs">
               <div className="flex justify-between items-center border-b border-white/5 pb-2">
@@ -305,17 +366,21 @@ export function BridgeForm({
 
             <Button
               type="button"
-              disabled={(isFormInvalid && isConnected) || status === "preparing" || status === "waiting-wallet" || status === "bridging"}
+              disabled={(isFormInvalid && isConnected && (!isSolanaRoute || isSolanaConnected)) || (isSolanaRoute && !isSolanaConnected) || status === "preparing" || status === "waiting-wallet" || status === "bridging"}
               onClick={() => {
+                if (isSolanaRoute && !isHybridSolanaRoute) {
+                  alert("Phase 1 supports Solana Devnet only with Arc Testnet.");
+                  return;
+                }
                 if (!isConnected) {
                   if (availableConnector) {
                     connect({ connector: availableConnector });
                   } else {
-                    alert("Please connect your wallet using the button in the top header.");
+                    alert("Please connect your EVM wallet.");
                   }
-                } else {
-                  onBridge(amount);
+                  return;
                 }
+                onBridge(amount);
               }}
               className="w-full h-12 text-sm font-bold bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:via-indigo-500 hover:to-purple-500 text-white rounded-xl shadow-[0_4px_20px_rgba(79,70,229,0.3)] transition-all duration-300 cursor-pointer disabled:opacity-50 disabled:from-slate-800 disabled:via-slate-800 disabled:to-slate-800 disabled:text-slate-200 disabled:shadow-none disabled:cursor-not-allowed"
               style={{ textShadow: "0 1px 2px rgba(0,0,0,0.5)" }}
@@ -400,7 +465,7 @@ export function BridgeForm({
                   <div className="flex justify-between items-center bg-white/[0.01] border border-white/5 rounded-xl px-3.5 py-2">
                     <span className="text-slate-500">Source TX:</span>
                     <a
-                      href={`${getExplorerUrl(sourceChain)}/tx/${sourceTxHash}`}
+                      href={getExplorerTxUrl(sourceChain, sourceTxHash)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-primary hover:text-white flex items-center gap-1 transition-all font-mono font-medium"
@@ -414,7 +479,7 @@ export function BridgeForm({
                   <div className="flex justify-between items-center bg-white/[0.01] border border-white/5 rounded-xl px-3.5 py-2">
                     <span className="text-slate-500">Destination TX:</span>
                     <a
-                      href={`${getExplorerUrl(destinationChain)}/tx/${destTxHash}`}
+                      href={getExplorerTxUrl(destinationChain, destTxHash)}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-primary hover:text-white flex items-center gap-1 transition-all font-mono font-medium"
