@@ -8,6 +8,7 @@ import {
   Globe,
   RefreshCw,
   ChevronDown,
+  Wallet,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -72,7 +73,7 @@ export function BridgeForm({
 }: BridgeFormProps) {
   const [amount, setAmount] = useState<string>("");
   const { availableConnector, connect } = useArcWallet();
-  const { connected: isSolanaConnected, wallets } = useWallet();
+  const { connected: isSolanaConnected, wallets, publicKey, disconnect } = useWallet();
 
   const phantomWallet = wallets.find((w) => w.adapter.name === "Phantom");
   const isPhantomNotDetected = phantomWallet?.readyState === "NotDetected";
@@ -302,33 +303,61 @@ export function BridgeForm({
             )}
 
             {isSolanaRoute && isHybridSolanaRoute && (
-              <div className="space-y-2">
-                <div className="rounded-xl border border-purple-500/20 bg-purple-950/10 p-3.5 flex justify-between items-center text-xs shadow-[0_4px_20px_rgba(147,51,234,0.05)]">
-                  <div className="space-y-0.5 pr-2">
-                    <span className="text-slate-300 font-semibold block">Solana Wallet Required</span>
-                    <span className="text-[10px] text-slate-400">
-                      {sourceChain === "Solana Devnet"
-                        ? "Connect your Solana wallet to bridge USDC from Solana Devnet."
-                        : "Connect your Solana wallet to use its address as the destination."}
-                    </span>
+              <>
+                {isSolanaConnected && publicKey ? (
+                  <div className="h-[60px] rounded-xl border border-white/5 bg-[#070e1c]/40 px-4.5 flex justify-between items-center text-xs">
+                    <div className="flex items-center gap-3">
+                      <div className="h-7 w-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
+                        <Wallet className="h-3.5 w-3.5 text-emerald-400" />
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-300 font-semibold">Solana Wallet</span>
+                          <span className="text-[10px] text-emerald-400 font-medium bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded-full">Connected</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-mono block">
+                          {publicKey.toBase58().slice(0, 4)}...{publicKey.toBase58().slice(-4)}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => disconnect()}
+                      className="text-[10px] text-slate-400 hover:text-rose-400 transition-all font-semibold underline underline-offset-2"
+                    >
+                      Disconnect
+                    </button>
                   </div>
-                  <WalletMultiButton />
-                </div>
-                
-                {isPhantomNotDetected && (
-                  <div className="text-[10px] text-rose-400 bg-rose-500/5 border border-rose-500/20 rounded-xl p-3 flex items-start gap-2 leading-normal">
-                    <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                    <span>Phantom wallet extension was not detected. Install or enable Phantom and refresh the page.</span>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="h-[60px] rounded-xl border border-white/5 bg-[#070e1c]/40 px-4.5 flex justify-between items-center text-xs">
+                      <div className="space-y-0.5 pr-2">
+                        <span className="text-slate-300 font-semibold block">Solana Wallet Required</span>
+                        <span className="text-[9.5px] text-slate-400 block">
+                          {sourceChain === "Solana Devnet"
+                            ? "Connect to bridge from Solana Devnet."
+                            : "Connect to use as destination."}
+                        </span>
+                      </div>
+                      <WalletMultiButton className="!h-[30px] !px-3.5 !text-[11px] !rounded-lg !bg-purple-600 hover:!bg-purple-500 !font-sans !font-bold !transition-all !duration-300" />
+                    </div>
+                    
+                    {isPhantomNotDetected && (
+                      <div className="text-[10px] text-rose-400 bg-rose-500/5 border border-rose-500/20 rounded-xl p-3 flex items-start gap-2 leading-normal">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                        <span>Phantom wallet extension was not detected. Install or enable Phantom and refresh the page.</span>
+                      </div>
+                    )}
+                    
+                    {isPhantomInstalled && (
+                      <div className="text-[10px] text-purple-400 bg-purple-500/5 border border-purple-500/20 rounded-xl p-3 flex items-start gap-2 leading-normal">
+                        <Coins className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                        <span>Unlock Phantom and try again.</span>
+                      </div>
+                    )}
                   </div>
                 )}
-                
-                {isPhantomInstalled && !isSolanaConnected && (
-                  <div className="text-[10px] text-purple-400 bg-purple-500/5 border border-purple-500/20 rounded-xl p-3 flex items-start gap-2 leading-normal">
-                    <Coins className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                    <span>Unlock Phantom and try again.</span>
-                  </div>
-                )}
-              </div>
+              </>
             )}
 
             {/* Route details panel */}
