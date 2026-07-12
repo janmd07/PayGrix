@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Image from "next/image";
 import {
   AlertTriangle,
   Coins,
@@ -19,6 +20,38 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 
 const CHAINS = ["Arc Testnet", "Base Sepolia", "Arbitrum Sepolia", "Solana Devnet"];
+
+const CHAIN_DETAILS: Record<string, {
+  name: string;
+  logo: string;
+  dotColor: string;
+  dotShadow: string;
+}> = {
+  "Arc Testnet": {
+    name: "Arc Testnet",
+    logo: "/chains/arc.png",
+    dotColor: "bg-blue-400",
+    dotShadow: "shadow-[0_0_8px_rgba(96,165,250,0.5)]",
+  },
+  "Base Sepolia": {
+    name: "Base Sepolia",
+    logo: "/chains/base.png",
+    dotColor: "bg-emerald-400",
+    dotShadow: "shadow-[0_0_8px_rgba(52,211,153,0.5)]",
+  },
+  "Arbitrum Sepolia": {
+    name: "Arbitrum Sepolia",
+    logo: "/chains/arbitrum.png",
+    dotColor: "bg-purple-400",
+    dotShadow: "shadow-[0_0_8px_rgba(192,132,252,0.5)]",
+  },
+  "Solana Devnet": {
+    name: "Solana Devnet",
+    logo: "/chains/solana.png",
+    dotColor: "bg-indigo-400",
+    dotShadow: "shadow-[0_0_8px_rgba(129,140,248,0.5)]",
+  },
+};
 
 const EXPLORER_URLS: Record<string, string> = {
   "Arc Testnet": "https://testnet.arcscan.app",
@@ -75,6 +108,25 @@ export function BridgeForm({
   const { availableConnector, connect } = useArcWallet();
   const { connected: isSolanaConnected, wallets, publicKey, disconnect } = useWallet();
 
+  const [activeDropdown, setActiveDropdown] = useState<"source" | "destination" | null>(null);
+  const [failedLogos, setFailedLogos] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!activeDropdown) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest(".chain-selector-container")) {
+        setActiveDropdown(null);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [activeDropdown]);
+
   const phantomWallet = wallets.find((w) => w.adapter.name === "Phantom");
   const isPhantomNotDetected = phantomWallet?.readyState === "NotDetected";
   const isPhantomInstalled = phantomWallet?.readyState === "Installed" || phantomWallet?.readyState === "Loadable";
@@ -103,36 +155,114 @@ export function BridgeForm({
 
   const renderChainSelector = (
     value: string,
-    onChangeHandler: (val: string) => void
+    onChangeHandler: (val: string) => void,
+    type: "source" | "destination"
   ) => {
+    const isOpen = activeDropdown === type;
+    const hasFailed = failedLogos[value];
+    const logoUrl = CHAIN_DETAILS[value]?.logo;
+
     return (
-      <div className="relative shrink-0">
-        <div className={cn(
-          "flex items-center bg-[#070f21] border border-white/8 hover:bg-white/[0.04] rounded-full pl-3 pr-4 py-2 text-white hover:border-primary/30 transition-all duration-200 cursor-pointer select-none",
-          isSelectDisabled && "opacity-50 cursor-not-allowed pointer-events-none"
-        )}>
-          <div className={cn(
-            "h-2 w-2 rounded-full mr-2 shrink-0",
-            value === "Arc Testnet" ? "bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.5)]" :
-            value === "Base Sepolia" ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]" :
-            value === "Arbitrum Sepolia" ? "bg-purple-400 shadow-[0_0_8px_rgba(192,132,252,0.5)]" :
-            "bg-indigo-400 shadow-[0_0_8px_rgba(129,140,248,0.5)]"
-          )} />
-          <span className="font-bold text-xs tracking-wider uppercase text-slate-200">{value}</span>
-          <ChevronDown className="h-4 w-4 text-slate-400 shrink-0 ml-1.5" />
-        </div>
-        <select
-          value={value}
-          onChange={(e) => onChangeHandler(e.target.value)}
+      <div className="relative shrink-0 chain-selector-container">
+        <button
+          type="button"
           disabled={isSelectDisabled}
-          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed z-20"
+          aria-haspopup="listbox"
+          aria-expanded={isOpen}
+          onClick={() => {
+            if (isSelectDisabled) return;
+            setActiveDropdown(isOpen ? null : type);
+          }}
+          className={cn(
+            "flex items-center bg-[#070f21] border border-white/8 hover:bg-[#0c1938] rounded-full pl-2 pr-4 py-1.5 text-white hover:border-primary/30 transition-all duration-200 cursor-pointer select-none outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50",
+            isSelectDisabled && "opacity-50 cursor-not-allowed pointer-events-none"
+          )}
         >
-          {CHAINS.map((c) => (
-            <option key={c} value={c} className="bg-[#060f24] text-white">
-              {c}
-            </option>
-          ))}
-        </select>
+          {!hasFailed && logoUrl ? (
+            <div className="relative flex items-center justify-center h-6 w-6 rounded-full bg-[#030712] border border-white/10 overflow-hidden mr-2 shrink-0">
+              <Image
+                src={logoUrl}
+                alt={value}
+                width={24}
+                height={24}
+                className="h-full w-full object-contain"
+                onError={() => {
+                  setFailedLogos((prev) => ({ ...prev, [value]: true }));
+                }}
+              />
+            </div>
+          ) : (
+            <div className={cn(
+              "h-2 w-2 rounded-full mr-2 shrink-0 ml-1.5",
+              CHAIN_DETAILS[value]?.dotColor,
+              CHAIN_DETAILS[value]?.dotShadow
+            )} />
+          )}
+          <span className="font-bold text-xs tracking-wider uppercase text-slate-200">{value}</span>
+          <ChevronDown className={cn(
+            "h-4 w-4 text-slate-400 shrink-0 ml-1.5 transition-transform duration-200",
+            isOpen && "rotate-180 text-white"
+          )} />
+        </button>
+
+        {isOpen && (
+          <div
+            role="listbox"
+            className="absolute top-full mt-2 left-0 z-50 min-w-[200px] bg-[#070f21] border border-white/10 rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] p-1.5 animate-in fade-in slide-in-from-top-1 duration-100"
+          >
+            {CHAINS.map((c) => {
+              const isOptionSelected = c === value;
+              const optionHasFailed = failedLogos[c];
+              const optionLogoUrl = CHAIN_DETAILS[c]?.logo;
+
+              return (
+                <div
+                  key={c}
+                  role="option"
+                  aria-selected={isOptionSelected}
+                  tabIndex={0}
+                  onClick={() => {
+                    onChangeHandler(c);
+                    setActiveDropdown(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onChangeHandler(c);
+                      setActiveDropdown(null);
+                    }
+                  }}
+                  className={cn(
+                    "flex items-center w-full px-2 py-1.5 text-xs font-semibold rounded-lg text-slate-300 hover:bg-[#0d1b3a] hover:text-white transition-colors cursor-pointer select-none outline-none focus:bg-[#0d1b3a] focus:text-white mb-0.5 last:mb-0",
+                    isOptionSelected && "bg-[#11244e] text-white font-bold border border-white/5"
+                  )}
+                >
+                  {!optionHasFailed && optionLogoUrl ? (
+                    <div className="relative flex items-center justify-center h-6 w-6 rounded-full bg-[#030712] border border-white/10 overflow-hidden mr-2.5 shrink-0">
+                      <Image
+                        src={optionLogoUrl}
+                        alt={c}
+                        width={24}
+                        height={24}
+                        className="h-full w-full object-contain"
+                        onError={() => {
+                          setFailedLogos((prev) => ({ ...prev, [c]: true }));
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <div className={cn(
+                      "h-2 w-2 rounded-full mr-2.5 shrink-0 ml-2",
+                      CHAIN_DETAILS[c]?.dotColor,
+                      CHAIN_DETAILS[c]?.dotShadow
+                    )} />
+                  )}
+                  <span className="tracking-wide text-slate-200">{c}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   };
@@ -214,7 +344,7 @@ export function BridgeForm({
               </div>
 
               <div className="flex justify-between items-center gap-3">
-                {renderChainSelector(sourceChain, onSourceChainChange)}
+                {renderChainSelector(sourceChain, onSourceChainChange, "source")}
 
                 <div className="flex items-center gap-2.5 flex-1 justify-end">
                   <input
@@ -260,7 +390,7 @@ export function BridgeForm({
               </div>
 
               <div className="flex justify-between items-center gap-3">
-                {renderChainSelector(destinationChain, onDestinationChainChange)}
+                {renderChainSelector(destinationChain, onDestinationChainChange, "destination")}
 
                 <div className="flex items-center gap-2.5 flex-1 justify-end">
                   <span className="text-2xl font-bold font-mono text-slate-400 text-right w-full block truncate">
