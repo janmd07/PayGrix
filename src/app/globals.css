@@ -24,6 +24,26 @@
     --ring: 220 100% 66%;          /* #4f8cff glow blue           */
     --radius: 0.875rem;
   }
+
+  .light {
+    --background: 215 100% 98%;      /* soft blue-white, e.g. #f4f7fc */
+    --foreground: 224 71% 4%;        /* dark navy text */
+    --card: 0 0% 100%;               /* white cards */
+    --card-foreground: 224 71% 4%;
+    --primary: 248 90% 60%;          /* premium purple accent adjusted for contrast */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 95% 55%;        /* blue accent */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 215 40% 94%;            /* very light blue background */
+    --muted-foreground: 215 16% 47%; /* slate text color */
+    --accent: 248 90% 60%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 215 30% 90%;           /* soft blue-gray borders */
+    --input: 215 30% 90%;
+    --ring: 248 90% 60%;
+  }
 }
 
 @layer base {
@@ -35,7 +55,7 @@
     @apply bg-background text-foreground antialiased;
     font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
     font-feature-settings: "cv02","cv03","cv04","cv11";
-    background-color: #020817;
+    background-color: hsl(var(--background));
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
@@ -425,7 +445,7 @@
    MISC
 ══════════════════════════════════════════════════════════ */
 
-.surface-grid { background-color: #020817; }
+.surface-grid { background-color: hsl(var(--background)); }
 
 .transition-premium {
   transition: all 0.26s cubic-bezier(0.4, 0, 0.2, 1);

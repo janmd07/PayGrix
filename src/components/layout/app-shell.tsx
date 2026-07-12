@@ -8,13 +8,14 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { navItems, productNavItem } from "@/components/layout/nav-items";
 import { UnsupportedNetworkWarning, WalletPanel } from "@/components/wallet/wallet-panel";
+import { ThemeToggle } from "@/components/theme/theme-toggle";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const ProductIcon = productNavItem.icon;
 
   return (
-    <div className="min-h-screen" style={{ background: "#03142f" }}>
+    <div className="min-h-screen bg-background text-foreground">
       {/* Premium Sidebar Styling Definitions */}
       <style>{`
         @keyframes smoke-float {
@@ -148,8 +149,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       <aside
         className="fixed inset-y-0 left-0 z-30 hidden w-64 lg:block"
         style={{
-          background: "rgba(3, 20, 47, 0.96)",
-          borderRight: "1px solid rgba(79, 140, 255, 0.12)",
+          background: "hsl(var(--card) / 96%)",
+          borderRight: "1px solid hsl(var(--border))",
           backdropFilter: "blur(20px)",
         }}
       >
@@ -257,27 +258,30 @@ export function AppShell({ children }: { children: ReactNode }) {
         <header
           className="sticky top-0 z-20"
           style={{
-            background: "rgba(3, 20, 47, 0.90)",
-            borderBottom: "1px solid rgba(79, 140, 255, 0.10)",
+            background: "hsl(var(--background) / 90%)",
+            borderBottom: "1px solid hsl(var(--border))",
             backdropFilter: "blur(20px)",
           }}
         >
           <div className="flex min-h-16 flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
             {/* Mobile brand */}
-            <div className="flex items-center justify-between gap-3">
-              <Link href="/" className="flex items-center gap-2 lg:hidden">
-                <div
-                  className="flex h-8 w-8 items-center justify-center rounded-lg"
-                  style={{
-                    background: "linear-gradient(135deg, #4f8cff 0%, #6d5dfc 50%, #d65dfc 100%)",
-                    boxShadow: "0 0 12px rgba(109, 93, 252, 0.30)",
-                  }}
-                >
-                  <ProductIcon className="h-4 w-4 text-white" />
-                </div>
-                <span className="text-sm font-semibold text-white">Arc Payroll</span>
-              </Link>
-              <Badge variant="default" className="text-xs">Arc Testnet</Badge>
+            <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-start">
+              <div className="flex items-center gap-3">
+                <Link href="/" className="flex items-center gap-2 lg:hidden">
+                  <div
+                    className="flex h-8 w-8 items-center justify-center rounded-lg"
+                    style={{
+                      background: "linear-gradient(135deg, #4f8cff 0%, #6d5dfc 50%, #d65dfc 100%)",
+                      boxShadow: "0 0 12px rgba(109, 93, 252, 0.30)",
+                    }}
+                  >
+                    <ProductIcon className="h-4 w-4 text-white" />
+                  </div>
+                  <span className="text-sm font-semibold text-white">Arc Payroll</span>
+                </Link>
+                <Badge variant="default" className="text-xs">Arc Testnet</Badge>
+                <ThemeToggle />
+              </div>
             </div>
 
             <WalletPanel />
