@@ -17,6 +17,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { BackgroundEffects } from "@/components/landing/background/BackgroundEffects";
 
 /* ─────────────────────────────────────────────────────────
    DATA (PRESERVED UNCHANGED)
@@ -228,15 +229,16 @@ export default function LandingPage() {
     const y = (e.clientY - rect.top) / rect.height - 0.5;
     const maxTilt = 4;
 
-    panelRef.current.style.setProperty('--tilt-x', `${-y * maxTilt}deg`);
+    panelRef.current.style.setProperty('--tilt-x', `${6 - y * maxTilt}deg`);
     panelRef.current.style.setProperty('--tilt-y', `${x * maxTilt}deg`);
   };
 
   const handlePanelMouseLeave = () => {
     if (!panelRef.current) return;
-    panelRef.current.style.setProperty('--tilt-x', `0deg`);
+    panelRef.current.style.setProperty('--tilt-x', `6deg`);
     panelRef.current.style.setProperty('--tilt-y', `0deg`);
   };
+
 
   // Performant logo hover-tilt (completely state-less)
   const handleLogoMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -275,7 +277,6 @@ export default function LandingPage() {
         .coin-wrapper {
           position: absolute;
           pointer-events: none;
-          z-index: 5;
           will-change: transform;
           perspective: 1200px;
         }
@@ -494,16 +495,164 @@ export default function LandingPage() {
           animation: logo-breathe 3.5s ease-in-out infinite;
         }
 
+        .showcase-panel-wrapper {
+          perspective: 1200px;
+        }
+
         .showcase-panel {
-          transform: perspective(1000px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg));
+          transform: rotateX(var(--tilt-x, 6deg)) rotateY(var(--tilt-y, 0deg));
           transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+          transform-style: preserve-3d;
           will-change: transform;
+        }
+
+        .headline-cinematic {
+          background: linear-gradient(to bottom, #ffffff 35%, #94a3b8 70%, #475569 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+          color: transparent;
+          text-shadow: 0 0 80px rgba(99, 102, 241, 0.15);
+        }
+
+        .glow-border-shell {
+          position: relative;
+          padding: 1px;
+          border-radius: 18px;
+          background: linear-gradient(135deg, rgba(56, 189, 248, 0.16) 0%, rgba(240, 36, 255, 0.12) 100%);
+          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .premium-showcase-card {
+          background: rgba(8, 14, 30, 0.85) !important;
+          backdrop-filter: blur(24px);
+          -webkit-backdrop-filter: blur(24px);
+          border: 1px solid rgba(255, 255, 255, 0.04) !important;
+          border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
+          box-shadow: 
+            0 25px 60px -15px rgba(0, 0, 0, 0.75),
+            inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
+        }
+
+        .btn-premium-cta {
+          background: linear-gradient(135deg, #3b82f6 0%, #6366f1 50%, #d946ef 100%) !important;
+          color: #ffffff !important;
+          border: 1px solid rgba(255, 255, 255, 0.16) !important;
+          box-shadow: 
+            0 4px 20px rgba(99, 102, 241, 0.38),
+            0 12px 40px rgba(99, 102, 241, 0.18),
+            inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;
+          transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        }
+        .btn-premium-cta:hover {
+          transform: translateY(-2px) scale(1.02) !important;
+          box-shadow: 
+            0 8px 30px rgba(99, 102, 241, 0.55),
+            0 20px 50px rgba(99, 102, 241, 0.25),
+            inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
+        }
+        .btn-premium-cta:active {
+          transform: translateY(0px) scale(1) !important;
+        }
+
+        .btn-secondary-cta {
+          background: rgba(15, 23, 42, 0.55) !important;
+          color: #94a3b8 !important;
+          border: 1px solid rgba(255, 255, 255, 0.06) !important;
+          backdrop-filter: blur(12px) !important;
+          transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1) !important;
+        }
+        .btn-secondary-cta:hover {
+          background: rgba(15, 23, 42, 0.75) !important;
+          color: #f1f5f9 !important;
+          border-color: rgba(255, 255, 255, 0.15) !important;
+          transform: translateY(-2px) scale(1.02) !important;
+        }
+        .btn-secondary-cta:active {
+          transform: translateY(0px) scale(1) !important;
+        }
+
+        .showcase-metric-tile {
+          background: rgba(15, 23, 42, 0.4) !important;
+          border: 1px solid rgba(255, 255, 255, 0.03) !important;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.01) !important;
+          transition: all 0.25s ease !important;
+        }
+        .showcase-metric-tile:hover {
+          border-color: rgba(56, 189, 248, 0.22) !important;
+          background: rgba(15, 23, 42, 0.6) !important;
+        }
+
+        .showcase-progress-panel {
+          background: rgba(15, 23, 42, 0.4) !important;
+          border: 1px solid rgba(255, 255, 255, 0.03) !important;
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.01) !important;
+        }
+
+        .showcase-table {
+          background: rgba(15, 23, 42, 0.25) !important;
+          border: 1px solid rgba(255, 255, 255, 0.03) !important;
+        }
+        .showcase-table-header {
+          background: rgba(15, 23, 42, 0.5) !important;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.04) !important;
+        }
+        .showcase-table-row-even {
+          background: rgba(15, 23, 42, 0.18) !important;
+          transition: background 0.2s ease !important;
+        }
+        .showcase-table-row-odd {
+          background: rgba(15, 23, 42, 0.28) !important;
+          transition: background 0.2s ease !important;
+        }
+        .showcase-table-row-even:hover, .showcase-table-row-odd:hover {
+          background: rgba(15, 23, 42, 0.45) !important;
+        }
+        .showcase-footer {
+          background: rgba(15, 23, 42, 0.45) !important;
+          border-t: 1px solid rgba(255, 255, 255, 0.04) !important;
         }
 
         /* Parallax background lights */
         .parallax-light {
           transform: translate(calc(var(--mouse-x, 0px) * 0.65), calc(var(--mouse-y, 0px) * 0.65));
           transition: transform 0.6s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        .hero-grid-overlay {
+          position: absolute;
+          inset: 0;
+          overflow: hidden;
+          pointer-events: none;
+          z-index: 0;
+        }
+        .hero-grid-overlay::before {
+          content: "";
+          position: absolute;
+          width: 240%;
+          height: 240%;
+          top: -60%;
+          left: -70%;
+          background-image:
+            linear-gradient(rgba(79, 140, 255, 0.12) 1px, transparent 1px),
+            linear-gradient(to right, rgba(79, 140, 255, 0.12) 1px, transparent 1px);
+          background-size: 80px 80px;
+          transform: perspective(700px) rotateX(40deg);
+          transform-origin: center 65%;
+          mask-image: linear-gradient(
+            to bottom,
+            transparent 0%,
+            rgba(0,0,0,0.65) 25%,
+            rgba(0,0,0,0.25) 75%,
+            transparent 100%
+          );
+          -webkit-mask-image: linear-gradient(
+            to bottom,
+            transparent 0%,
+            rgba(0,0,0,0.65) 25%,
+            rgba(0,0,0,0.25) 75%,
+            transparent 100%
+          );
         }
 
         @media (prefers-reduced-motion: reduce) {
@@ -521,11 +670,15 @@ export default function LandingPage() {
         }
       ` }} />
 
+      <BackgroundEffects />
+
       {/* Grain overlay */}
       <div className="fixed inset-0 pointer-events-none opacity-[0.025] z-[9999]" style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n' x='0' y='0'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")` }} aria-hidden="true" />
 
       {/* Immersive background layer */}
       <div ref={bgRef} className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+        {/* Receding Perspective Grid (Coordinated Vanishing Point) */}
+        <div className="hero-grid-overlay opacity-60 pointer-events-none" style={{ mixBlendMode: 'screen' }} aria-hidden="true" />
         {/* Volumetric left blue glow */}
         <div className="absolute top-[-10%] left-[-10%] w-[60vw] h-[60vw] max-w-[900px] rounded-full filter blur-[120px] bg-blue-600/[0.08] pointer-events-none z-0 parallax-light" />
         {/* Volumetric right violet glow */}
@@ -601,47 +754,47 @@ export default function LandingPage() {
 
       {/* ─────────────────────────────────────────────────────────
          USDC FLOATING COINS (EXACTLY 6 COINS)
-         Positioned at the page edges, hidden on mobile/tablet as configured
+         Symmetrically positioned to frame the hero layout.
          ───────────────────────────────────────────────────────── */}
-      {/* Coin 1: large upper-left: 150px (hidden on mobile, visible on tablet/desktop) */}
-      <div className="coin-wrapper coin-parallax-1 hidden md:block" style={{ left: '4%', top: '12%' }}>
-        <div className="coin-3d animate-float-1">
-          <USDCCoin size={150} className="animate-rotate-1" />
-        </div>
-      </div>
-
-      {/* Coin 2: medium lower-left: 110px (hidden on mobile/tablet, visible on desktop) */}
-      <div className="coin-wrapper coin-parallax-2 hidden xl:block" style={{ left: '6%', top: '60%' }}>
-        <div className="coin-3d animate-float-2">
-          <USDCCoin size={110} className="animate-rotate-2" />
-        </div>
-      </div>
-
-      {/* Coin 3: small upper-left-middle: 64px (hidden on mobile, visible on tablet/desktop) */}
-      <div className="coin-wrapper coin-parallax-3 hidden md:block" style={{ left: '20%', top: '8%' }}>
+      {/* Coin 1: Upper-Left (Background/Midground framing) */}
+      <div className="coin-wrapper coin-parallax-3 hidden md:block z-10 drop-shadow-[0_0_20px_rgba(56,189,248,0.30)]" style={{ left: '19%', top: '18%', transform: 'rotate(15deg)', filter: 'blur(1.5px)', opacity: 0.65 }}>
         <div className="coin-3d animate-float-3">
-          <USDCCoin size={64} className="animate-rotate-3" />
+          <USDCCoin size={75} className="animate-rotate-3" />
         </div>
       </div>
 
-      {/* Coin 4: very large upper-right: 200px (hidden on mobile, visible on tablet/desktop) */}
-      <div className="coin-wrapper coin-parallax-4 hidden md:block" style={{ right: '5%', top: '16%' }}>
-        <div className="coin-3d animate-float-4">
-          <USDCCoin size={200} className="animate-rotate-4" />
+      {/* Coin 2: Mid-Left (Flanking Headline/CTAs) */}
+      <div className="coin-wrapper coin-parallax-1 hidden md:block z-30 drop-shadow-[0_0_35px_rgba(0,240,255,0.35)]" style={{ left: '10%', top: '45%', transform: 'rotate(-22deg)' }}>
+        <div className="coin-3d animate-float-1">
+          <USDCCoin size={115} className="animate-rotate-1" />
         </div>
       </div>
 
-      {/* Coin 5: medium upper-right-middle: 115px (hidden on mobile/tablet, visible on desktop) */}
-      <div className="coin-wrapper coin-parallax-5 hidden xl:block" style={{ right: '22%', top: '10%' }}>
+      {/* Coin 3: Lower-Left (Flanking Dashboard Top/Middle) */}
+      <div className="coin-wrapper coin-parallax-2 hidden md:block z-50 drop-shadow-[0_0_25px_rgba(0,240,255,0.25)]" style={{ left: '12%', top: '68%', transform: 'rotate(8deg)', filter: 'blur(3.5px)', opacity: 0.95 }}>
+        <div className="coin-3d animate-float-2">
+          <USDCCoin size={160} className="animate-rotate-2" />
+        </div>
+      </div>
+
+      {/* Coin 4: Upper-Right (Background/Midground framing) */}
+      <div className="coin-wrapper coin-parallax-5 hidden md:block z-10 drop-shadow-[0_0_20px_rgba(232,121,249,0.30)]" style={{ right: '21%', top: '15%', transform: 'rotate(-18deg)', filter: 'blur(1.5px)', opacity: 0.65 }}>
         <div className="coin-3d animate-float-5">
-          <USDCCoin size={115} className="animate-rotate-5" />
+          <USDCCoin size={85} className="animate-rotate-5" />
         </div>
       </div>
 
-      {/* Coin 6: small lower-right: 68px (hidden on mobile, visible on tablet/desktop) */}
-      <div className="coin-wrapper coin-parallax-6 hidden md:block" style={{ right: '8%', top: '66%' }}>
+      {/* Coin 5: Mid-Right (Flanking Headline/CTAs) */}
+      <div className="coin-wrapper coin-parallax-4 hidden md:block z-30 drop-shadow-[0_0_40px_rgba(240,36,255,0.35)]" style={{ right: '9%', top: '41%', transform: 'rotate(25deg)' }}>
+        <div className="coin-3d animate-float-4">
+          <USDCCoin size={125} className="animate-rotate-4" />
+        </div>
+      </div>
+
+      {/* Coin 6: Lower-Right (Flanking Dashboard Top/Middle) */}
+      <div className="coin-wrapper coin-parallax-6 hidden md:block z-50 drop-shadow-[0_0_20px_rgba(217,70,239,0.25)]" style={{ right: '10%', top: '69%', transform: 'rotate(-12deg)', filter: 'blur(3.5px)', opacity: 0.95 }}>
         <div className="coin-3d animate-float-6">
-          <USDCCoin size={68} className="animate-rotate-6" />
+          <USDCCoin size={170} className="animate-rotate-6" />
         </div>
       </div>
 
@@ -673,7 +826,7 @@ export default function LandingPage() {
       </div>
 
       {/* ── Page Content Container (Width: min(94vw, 1500px) Centered) ── */}
-      <div className="relative z-10 mx-auto w-[94vw] max-w-[1500px] px-4 sm:px-6 lg:px-8">
+      <div className="relative z-30 mx-auto w-[94vw] max-w-[1500px] px-4 sm:px-6 lg:px-8">
         <section className="relative min-h-[100svh] overflow-hidden bg-transparent">
           {/* Floating particles */}
           <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
@@ -697,24 +850,24 @@ export default function LandingPage() {
             ))}
           </div>
 
-          {/* Hero copy - occupying upper 38% of viewport */}
-          <div className="relative z-10 mx-auto max-w-[1200px] text-center pt-24 pb-2">
-            {/* Status chips */}
-            <div className="mb-8 flex flex-wrap items-center justify-center gap-3 animate-fade-up">
-              <span className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold badge-live tracking-wide">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                Arc Testnet · Live
-              </span>
-              <span className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold badge-arc tracking-wide">
-                <Activity className="h-3 w-3" />
-                Stablecoin payroll
-              </span>
-            </div>
+          {/* Hero copy - occupying upper 42-48% of viewport */}
+          <div className="relative z-10 mx-auto max-w-[1250px] text-center pt-14 md:pt-16 pb-2">
+            {/* Stacked Logo centerpiece at the top of composition */}
+            <div className="flex flex-col items-center justify-center text-center animate-fade-up max-w-[1250px] mx-auto mb-4">
+              {/* Status chips nested tightly above the logo */}
+              <div className="mb-4 flex flex-wrap items-center justify-center gap-3 animate-fade-up">
+                <span className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold badge-live tracking-wide">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Arc Testnet · Live
+                </span>
+                <span className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold badge-arc tracking-wide">
+                  <Activity className="h-3 w-3" />
+                  Stablecoin payroll
+                </span>
+              </div>
 
-            {/* Logo & Headline side-by-side flex container */}
-            <div className="flex flex-col md:flex-row items-center justify-center gap-6 md:gap-10 mb-6 text-center md:text-left animate-fade-up max-w-[1100px] mx-auto">
-              {/* Logo centerpiece (150-170px tall on desktop, 128px on mobile) */}
-              <div className="relative inline-flex items-center justify-center group cursor-pointer shrink-0">
+              {/* Logo centerpiece (180px tall on desktop, 128px on mobile) */}
+              <div className="relative inline-flex items-center justify-center group cursor-pointer shrink-0 mb-8">
                 <div 
                   className="absolute -inset-10 pointer-events-none transition-all duration-700 opacity-60 group-hover:opacity-95 group-hover:scale-110" 
                   aria-hidden="true" 
@@ -725,7 +878,7 @@ export default function LandingPage() {
                   ref={logoRef}
                   onMouseMove={handleLogoMouseMove}
                   onMouseLeave={handleLogoMouseLeave}
-                  className="relative z-10 w-32 h-32 md:w-[160px] md:h-[160px]"
+                  className="relative z-10 w-32 h-32 md:w-[180px] md:h-[180px] drop-shadow-[0_0_35px_rgba(0,240,255,0.40)] drop-shadow-[0_0_60px_rgba(240,36,255,0.35)]"
                   style={{ 
                     perspective: 800,
                     transform: `rotateX(var(--logo-tilt-x, 0deg)) rotateY(var(--logo-tilt-y, 0deg))`,
@@ -745,12 +898,12 @@ export default function LandingPage() {
                 </div>
               </div>
 
-              {/* Display heading (clamp 72px to 96px on desktop, stacked on mobile) */}
+              {/* Display heading centered with premium width constraint and drop-shadow removed to prevent browser bounding box glitch */}
               <h1
-                className="font-extrabold gradient-text tracking-tight animate-text-reveal text-center md:text-left leading-[0.96] shrink-0"
+                className="font-extrabold headline-cinematic tracking-tight animate-text-reveal text-center leading-[0.95] max-w-[950px] mx-auto drop-shadow-none mb-6"
                 style={{
-                  fontSize: "clamp(36px, 5.5vw, 96px)",
-                  letterSpacing: "-0.04em",
+                  fontSize: "clamp(54px, 6.2vw, 108px)",
+                  letterSpacing: "-0.03em",
                 }}
               >
                 Payroll for the
@@ -759,9 +912,9 @@ export default function LandingPage() {
               </h1>
             </div>
 
-            {/* Subtitle */}
+            {/* Subtitle centered with tightened column constraint */}
             <p
-              className="mx-auto mb-8 max-w-xl text-[16px] md:text-[18px] leading-relaxed text-slate-400 animate-fade-up"
+              className="mx-auto mb-10 max-w-[620px] text-[16px] md:text-[18px] leading-relaxed text-slate-400 animate-fade-up text-center"
               style={{ animationDelay: '0.2s' }}
             >
               Stablecoin payroll infrastructure for crypto-native teams.
@@ -769,20 +922,20 @@ export default function LandingPage() {
               readiness — running on Arc Testnet.
             </p>
 
-            {/* CTA actions */}
-            <div className="mb-6 flex flex-col items-center gap-4 sm:flex-row sm:justify-center animate-fade-up" style={{ animationDelay: '0.35s' }}>
-              <Button asChild size="lg" className="gap-2 text-[15px] px-8 h-12 btn-premium-cta">
+            {/* CTA actions with scaled up primary buttons */}
+            <div className="mb-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center animate-fade-up" style={{ animationDelay: '0.35s' }}>
+              <Button asChild size="lg" className="gap-2 text-[16px] px-10 h-[54px] btn-premium-cta">
                 <Link href="/dashboard">
                   Open workspace
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </Button>
-              <Button asChild variant="outline" size="lg" className="text-[15px] px-8 h-12 btn-secondary-cta">
+              <Button asChild variant="outline" size="lg" className="text-[16px] px-10 h-[54px] btn-secondary-cta">
                 <Link href="/settings">Review settings</Link>
               </Button>
             </div>
 
-            {/* Trust elements */}
+            {/* Trust elements with larger margin to establish negative space boundary */}
             <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 animate-fade-up mb-8" style={{ animationDelay: '0.5s' }}>
               {trustItems.map((item) => (
                 <div key={item} className="flex items-center gap-2">
@@ -793,8 +946,8 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Dashboard reveal showcase card - centered, 48px below hero, max-w-[980px] */}
-          <div className="relative z-10 mx-auto max-w-[980px] w-full dashboard-reveal animate-fade-up mt-12" style={{ animationDelay: '0.6s' }}>
+          {/* Dashboard reveal showcase card - centered, mt-2 below trust elements, max-w-[1360px] to act as a wide foundation */}
+          <div className="relative z-30 mx-auto max-w-[1360px] w-full dashboard-reveal animate-fade-up mt-2 shadow-[0_-15px_60px_-15px_rgba(0,240,255,0.18),0_-15px_60px_-15px_rgba(240,36,255,0.18)]" style={{ animationDelay: '0.6s' }}>
             <div className="dashboard-outer showcase-panel-wrapper">
               <div 
                 ref={panelRef}
