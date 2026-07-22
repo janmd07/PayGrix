@@ -43,12 +43,32 @@ export function useBridgeBalance(chain: string, address?: `0x${string}`) {
         transport: http(config.rpc),
       });
 
-      const balanceWei = await client.readContract({
-        address: config.usdc,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [address],
-      });
+      // Implement retry to gracefully handle strict RPC rate limits
+      let balanceWei = BigInt(0);
+      const retries = 5;
+      let delay = 600;
+
+      for (let i = 0; i < retries; i++) {
+        try {
+          balanceWei = await client.readContract({
+            address: config.usdc,
+            abi: erc20Abi,
+            functionName: "balanceOf",
+            args: [address],
+          });
+          break;
+        } catch (err) {
+          const errMsg = (err as { message?: string }).message || "";
+          const errCode = (err as { code?: number }).code;
+          const isRateLimit = errMsg.includes("request limit reached") || errCode === -32011 || errMsg.includes("429");
+          if (isRateLimit && i < retries - 1) {
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            delay += 400; // incremental delay to backoff
+          } else {
+            throw err;
+          }
+        }
+      }
 
       // USDC has 6 decimals on these chains
       const balanceStr = formatUnits(balanceWei, 6);

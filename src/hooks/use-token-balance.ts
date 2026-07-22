@@ -26,12 +26,32 @@ export function useTokenBalance(tokenSymbol: "USDC" | "EURC", address?: `0x${str
         transport: http("https://rpc.testnet.arc.network"),
       });
 
-      const balanceWei = await client.readContract({
-        address: tokenAddress,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [address],
-      });
+      // Implement retry to gracefully handle strict RPC rate limits
+      let balanceWei = BigInt(0);
+      const retries = 5;
+      let delay = 600;
+
+      for (let i = 0; i < retries; i++) {
+        try {
+          balanceWei = await client.readContract({
+            address: tokenAddress,
+            abi: erc20Abi,
+            functionName: "balanceOf",
+            args: [address],
+          });
+          break;
+        } catch (err) {
+          const errMsg = (err as { message?: string }).message || "";
+          const errCode = (err as { code?: number }).code;
+          const isRateLimit = errMsg.includes("request limit reached") || errCode === -32011 || errMsg.includes("429");
+          if (isRateLimit && i < retries - 1) {
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            delay += 400; // incremental delay to backoff
+          } else {
+            throw err;
+          }
+        }
+      }
 
       const balanceStr = formatUnits(balanceWei, 6);
       setBalance(balanceStr);
