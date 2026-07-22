@@ -2,7 +2,7 @@ import React from "react";
 
 export function VolumetricLightLayer() {
   return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none -z-[8]" aria-hidden="true">
+    <div className="absolute inset-0 overflow-hidden pointer-events-none z-[1]" aria-hidden="true">
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes ray-sweep-left {
           0%, 100% { transform: rotate(16deg) translate(0px, 0px); opacity: 0.45; }

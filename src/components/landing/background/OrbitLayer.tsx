@@ -2,7 +2,7 @@ import React from "react";
 
 export function OrbitLayer() {
   return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none -z-[7]" aria-hidden="true">
+    <div className="absolute inset-0 overflow-hidden pointer-events-none z-[2]" aria-hidden="true">
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes orbit-slow-cw {
           from { transform: rotate(0deg); }

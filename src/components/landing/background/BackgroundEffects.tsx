@@ -6,7 +6,7 @@ import { ParticleLayer } from "./ParticleLayer";
 export function BackgroundEffects() {
   return (
     <div
-      className="absolute inset-0 overflow-hidden pointer-events-none"
+      className="absolute inset-0 overflow-hidden pointer-events-none z-[5]"
       aria-hidden="true"
     >
       <AuroraLayer />

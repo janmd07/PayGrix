@@ -132,10 +132,51 @@ const backgroundStars = [
 /* ─────────────────────────────────────────────────────────
    REUSABLE USDC COIN HELPER (FIXED DIMENSIONS ON DESKTOP)
    ───────────────────────────────────────────────────────── */
-function USDCCoin({ size, className = "", style = {} }: { size: number, className?: string, style?: React.CSSProperties }) {
+function USDCCoin({ 
+  size, 
+  side = "left",
+  className = "", 
+  style = {} 
+}: { 
+  size: number;
+  side?: "left" | "right";
+  className?: string;
+  style?: React.CSSProperties;
+}) {
   // Edge thickness is 6% of the coin size
   const edgeWidth = Math.max(Math.round(size * 0.06), 2);
   const logoSize = size - (edgeWidth * 2);
+
+  // Dynamic rim lighting colors based on side (cyan left, magenta right)
+  const borderStyles = side === "left" 
+    ? {
+        borderLeftColor: "rgba(0, 240, 255, 0.65)",
+        borderTopColor: "rgba(0, 240, 255, 0.45)",
+        borderRightColor: "rgba(0, 30, 80, 0.5)",
+        borderBottomColor: "rgba(0, 120, 255, 0.3)",
+      }
+    : {
+        borderRightColor: "rgba(240, 36, 255, 0.65)",
+        borderTopColor: "rgba(240, 36, 255, 0.45)",
+        borderLeftColor: "rgba(0, 30, 80, 0.5)",
+        borderBottomColor: "rgba(180, 30, 255, 0.3)",
+      };
+
+  const shadowStyle = side === "left"
+    ? `
+      0 0 10px rgba(0, 240, 255, 0.15),
+      -2px 0 6px rgba(0, 240, 255, 0.35),
+      0 12px 30px rgba(0, 0, 0, 0.4),
+      inset 2px 0 3px rgba(0, 240, 255, 0.45),
+      inset -2px 0 3px rgba(0, 0, 0, 0.4)
+    `
+    : `
+      0 0 10px rgba(240, 36, 255, 0.15),
+      2px 0 6px rgba(240, 36, 255, 0.35),
+      0 12px 30px rgba(0, 0, 0, 0.4),
+      inset -2px 0 3px rgba(240, 36, 255, 0.45),
+      inset 2px 0 3px rgba(0, 0, 0, 0.4)
+    `;
 
   return (
     <div 
@@ -143,14 +184,10 @@ function USDCCoin({ size, className = "", style = {} }: { size: number, classNam
       style={{ 
         width: size, 
         height: size,
-        background: "linear-gradient(135deg, rgba(120, 190, 255, 0.3) 0%, rgba(39, 137, 255, 0.15) 50%, rgba(0, 30, 80, 0.4) 100%)",
-        border: `${edgeWidth}px solid rgba(120, 190, 255, 0.35)`,
-        boxShadow: `
-          0 0 18px rgba(39, 137, 255, 0.35), 
-          0 12px 30px rgba(0, 0, 0, 0.35), 
-          inset 0 1px 2px rgba(255, 255, 255, 0.3), 
-          inset 0 -2px 4px rgba(0, 0, 0, 0.5)
-        `,
+        background: "linear-gradient(135deg, rgba(120, 190, 255, 0.25) 0%, rgba(39, 137, 255, 0.12) 50%, rgba(0, 30, 80, 0.4) 100%)",
+        border: `${edgeWidth}px solid transparent`,
+        ...borderStyles,
+        boxShadow: shadowStyle,
         ...style 
       }}
     >
@@ -507,20 +544,20 @@ export default function LandingPage() {
         }
 
         .headline-cinematic {
-          background: linear-gradient(to bottom, #ffffff 35%, #94a3b8 70%, #475569 100%);
+          background: linear-gradient(to bottom, #ffffff 15%, #cbd5e1 45%, #94a3b8 70%, #4f46e5 92%, #312e81 100%);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
           color: transparent;
-          text-shadow: 0 0 80px rgba(99, 102, 241, 0.15);
+          text-shadow: 0 0 80px rgba(99, 102, 241, 0.12);
         }
 
         .glow-border-shell {
           position: relative;
           padding: 1px;
           border-radius: 18px;
-          background: linear-gradient(135deg, rgba(56, 189, 248, 0.16) 0%, rgba(240, 36, 255, 0.12) 100%);
-          box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+          background: linear-gradient(to bottom, rgba(56, 189, 248, 0.22) 0%, rgba(240, 36, 255, 0.04) 100%);
+          box-shadow: 0 35px 80px rgba(0, 0, 0, 0.7);
         }
 
         .premium-showcase-card {
@@ -528,9 +565,10 @@ export default function LandingPage() {
           backdrop-filter: blur(24px);
           -webkit-backdrop-filter: blur(24px);
           border: 1px solid rgba(255, 255, 255, 0.04) !important;
-          border-top: 1px solid rgba(255, 255, 255, 0.12) !important;
+          border-top: 1px solid rgba(255, 255, 255, 0.18) !important;
           box-shadow: 
-            0 25px 60px -15px rgba(0, 0, 0, 0.75),
+            0 40px 100px -20px rgba(0, 0, 0, 0.95),
+            0 -8px 40px -10px rgba(0, 240, 255, 0.08),
             inset 0 1px 0 rgba(255, 255, 255, 0.04) !important;
         }
 
@@ -759,42 +797,42 @@ export default function LandingPage() {
       {/* Coin 1: Upper-Left (Background/Midground framing) */}
       <div className="coin-wrapper coin-parallax-3 hidden md:block z-10 drop-shadow-[0_0_20px_rgba(56,189,248,0.30)]" style={{ left: '19%', top: '18%', transform: 'rotate(15deg)', filter: 'blur(1.5px)', opacity: 0.65 }}>
         <div className="coin-3d animate-float-3">
-          <USDCCoin size={75} className="animate-rotate-3" />
+          <USDCCoin size={75} side="left" className="animate-rotate-3" />
         </div>
       </div>
 
       {/* Coin 2: Mid-Left (Flanking Headline/CTAs) */}
       <div className="coin-wrapper coin-parallax-1 hidden md:block z-30 drop-shadow-[0_0_35px_rgba(0,240,255,0.35)]" style={{ left: '10%', top: '45%', transform: 'rotate(-22deg)' }}>
         <div className="coin-3d animate-float-1">
-          <USDCCoin size={115} className="animate-rotate-1" />
+          <USDCCoin size={115} side="left" className="animate-rotate-1" />
         </div>
       </div>
 
       {/* Coin 3: Lower-Left (Flanking Dashboard Top/Middle) */}
       <div className="coin-wrapper coin-parallax-2 hidden md:block z-50 drop-shadow-[0_0_25px_rgba(0,240,255,0.25)]" style={{ left: '12%', top: '68%', transform: 'rotate(8deg)', filter: 'blur(3.5px)', opacity: 0.95 }}>
         <div className="coin-3d animate-float-2">
-          <USDCCoin size={160} className="animate-rotate-2" />
+          <USDCCoin size={160} side="left" className="animate-rotate-2" />
         </div>
       </div>
 
       {/* Coin 4: Upper-Right (Background/Midground framing) */}
       <div className="coin-wrapper coin-parallax-5 hidden md:block z-10 drop-shadow-[0_0_20px_rgba(232,121,249,0.30)]" style={{ right: '21%', top: '15%', transform: 'rotate(-18deg)', filter: 'blur(1.5px)', opacity: 0.65 }}>
         <div className="coin-3d animate-float-5">
-          <USDCCoin size={85} className="animate-rotate-5" />
+          <USDCCoin size={85} side="right" className="animate-rotate-5" />
         </div>
       </div>
 
       {/* Coin 5: Mid-Right (Flanking Headline/CTAs) */}
       <div className="coin-wrapper coin-parallax-4 hidden md:block z-30 drop-shadow-[0_0_40px_rgba(240,36,255,0.35)]" style={{ right: '9%', top: '41%', transform: 'rotate(25deg)' }}>
         <div className="coin-3d animate-float-4">
-          <USDCCoin size={125} className="animate-rotate-4" />
+          <USDCCoin size={125} side="right" className="animate-rotate-4" />
         </div>
       </div>
 
       {/* Coin 6: Lower-Right (Flanking Dashboard Top/Middle) */}
       <div className="coin-wrapper coin-parallax-6 hidden md:block z-50 drop-shadow-[0_0_20px_rgba(217,70,239,0.25)]" style={{ right: '10%', top: '69%', transform: 'rotate(-12deg)', filter: 'blur(3.5px)', opacity: 0.95 }}>
         <div className="coin-3d animate-float-6">
-          <USDCCoin size={170} className="animate-rotate-6" />
+          <USDCCoin size={170} side="right" className="animate-rotate-6" />
         </div>
       </div>
 

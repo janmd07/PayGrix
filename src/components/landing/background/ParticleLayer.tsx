@@ -55,7 +55,7 @@ const PARTICLES: ParticleData[] = [
 
 export function ParticleLayer() {
   return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none -z-5" aria-hidden="true">
+    <div className="absolute inset-0 overflow-hidden pointer-events-none z-[3]" aria-hidden="true">
       <style dangerouslySetInnerHTML={{ __html: `
         ${PARTICLES.map(
           (p) => `

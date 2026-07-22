@@ -1,6 +1,6 @@
 export function AuroraLayer() {
   return (
-    <div className="absolute inset-0 overflow-hidden pointer-events-none -z-10" aria-hidden="true">
+    <div className="absolute inset-0 overflow-hidden pointer-events-none z-0" aria-hidden="true">
       <style dangerouslySetInnerHTML={{ __html: `
         @keyframes cosmic-pulse-left {
           0%, 100% { transform: translate(0px, 0px) scale(1); opacity: 0.90; }
@@ -46,7 +46,7 @@ export function AuroraLayer() {
       <div
         className="absolute top-[-5%] left-[-15%] w-[68vw] h-[68vw] max-w-[1100px] max-h-[1100px] rounded-full anim-cosmic-left pointer-events-none"
         style={{
-          background: "radial-gradient(circle at center, rgba(0, 240, 255, 0.48) 0%, rgba(6, 182, 212, 0.38) 35%, rgba(37, 99, 235, 0.20) 65%, transparent 80%)",
+          background: "radial-gradient(circle at center, rgba(0, 240, 255, 0.35) 0%, rgba(6, 182, 212, 0.22) 40%, rgba(37, 99, 235, 0.08) 65%, transparent 75%)",
           filter: "blur(110px)",
         }}
       />
@@ -55,7 +55,7 @@ export function AuroraLayer() {
       <div
         className="absolute top-[2%] right-[-15%] w-[66vw] h-[66vw] max-w-[1050px] max-h-[1050px] rounded-full anim-cosmic-right pointer-events-none"
         style={{
-          background: "radial-gradient(circle at center, rgba(240, 36, 255, 0.48) 0%, rgba(217, 70, 239, 0.38) 35%, rgba(147, 51, 234, 0.20) 65%, transparent 80%)",
+          background: "radial-gradient(circle at center, rgba(240, 36, 255, 0.35) 0%, rgba(217, 70, 239, 0.22) 40%, rgba(147, 51, 234, 0.08) 65%, transparent 75%)",
           filter: "blur(115px)",
         }}
       />
@@ -64,7 +64,7 @@ export function AuroraLayer() {
       <div
         className="absolute top-[8%] left-[45%] -translate-x-1/2 w-[58vw] h-[44vw] max-w-[950px] max-h-[650px] rounded-full anim-cosmic-core pointer-events-none"
         style={{
-          background: "radial-gradient(ellipse at center, rgba(56, 189, 248, 0.42) 0%, rgba(139, 92, 246, 0.35) 40%, rgba(79, 70, 229, 0.18) 70%, transparent 85%)",
+          background: "radial-gradient(ellipse at center, rgba(56, 189, 248, 0.32) 0%, rgba(139, 92, 246, 0.22) 45%, rgba(79, 70, 229, 0.08) 70%, transparent 80%)",
           filter: "blur(115px)",
         }}
       />
@@ -73,7 +73,7 @@ export function AuroraLayer() {
       <div
         className="absolute top-[52%] left-1/2 -translate-x-1/2 w-[110vw] h-[28vw] max-w-[1800px] rounded-[50%] anim-horizon-glow pointer-events-none"
         style={{
-          background: "radial-gradient(ellipse at center, rgba(0, 240, 255, 0.35) 0%, rgba(224, 36, 255, 0.30) 45%, transparent 80%)",
+          background: "radial-gradient(ellipse at center, rgba(0, 240, 255, 0.25) 0%, rgba(224, 36, 255, 0.18) 45%, transparent 75%)",
           filter: "blur(90px)",
         }}
       />
