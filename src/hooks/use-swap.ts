@@ -17,8 +17,8 @@ export type SwapStatus =
 
 export interface SwapHistoryItem {
   id: string;
-  tokenIn: "USDC" | "EURC";
-  tokenOut: "USDC" | "EURC";
+  tokenIn: "USDC" | "EURC" | "cirBTC";
+  tokenOut: "USDC" | "EURC" | "cirBTC";
   amountIn: string;
   amountOut: string;
   txHash: string;
@@ -28,6 +28,7 @@ export interface SwapHistoryItem {
 const TOKEN_ADDRESSES = {
   USDC: "0x3600000000000000000000000000000000000000" as const,
   EURC: "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a" as const,
+  cirBTC: "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF" as const,
 };
 
 export function useSwap() {
@@ -46,7 +47,7 @@ export function useSwap() {
 
   const { address, connector, isConnected } = useAccount();
 
-  const getSwapEstimate = useCallback(async (amountIn: string, tokenIn: "USDC" | "EURC", tokenOut: "USDC" | "EURC") => {
+  const getSwapEstimate = useCallback(async (amountIn: string, tokenIn: "USDC" | "EURC" | "cirBTC", tokenOut: "USDC" | "EURC" | "cirBTC") => {
     if (!amountIn || parseFloat(amountIn) <= 0) return null;
     setError(null);
     setEstimate(null);
@@ -61,7 +62,9 @@ export function useSwap() {
     try {
       const tokenInAddress = TOKEN_ADDRESSES[tokenIn];
       const tokenOutAddress = TOKEN_ADDRESSES[tokenOut];
-      const rawAmount = parseUnits(amountIn, 6).toString();
+      const decimalsIn = tokenIn === "cirBTC" ? 8 : 6;
+      const decimalsOut = tokenOut === "cirBTC" ? 8 : 6;
+      const rawAmount = parseUnits(amountIn, decimalsIn).toString();
 
       // Query server-side proxy endpoint
       const queryParams = new URLSearchParams({
@@ -83,8 +86,8 @@ export function useSwap() {
       }
 
       // Convert raw output units (stringified bigints) to human-readable strings
-      const estOutputStr = (parseFloat(data.quote.estimatedAmount) / 1000000).toString();
-      const minOutputStr = (parseFloat(data.quote.minAmount) / 1000000).toString();
+      const estOutputStr = (parseFloat(data.quote.estimatedAmount) / Math.pow(10, decimalsOut)).toString();
+      const minOutputStr = (parseFloat(data.quote.minAmount) / Math.pow(10, decimalsOut)).toString();
 
       // Transform raw service fees response
       interface FeeItem {
@@ -117,7 +120,7 @@ export function useSwap() {
     }
   }, [address, connector, isConnected]);
 
-  const executeSwap = useCallback(async (amountIn: string, tokenIn: "USDC" | "EURC", tokenOut: "USDC" | "EURC") => {
+  const executeSwap = useCallback(async (amountIn: string, tokenIn: "USDC" | "EURC" | "cirBTC", tokenOut: "USDC" | "EURC" | "cirBTC") => {
     if (!amountIn || parseFloat(amountIn) <= 0) return null;
     setError(null);
     setTxHash("");
@@ -140,7 +143,9 @@ export function useSwap() {
     try {
       const tokenInAddress = TOKEN_ADDRESSES[tokenIn];
       const tokenOutAddress = TOKEN_ADDRESSES[tokenOut];
-      const rawAmount = parseUnits(amountIn, 6);
+      const decimalsIn = tokenIn === "cirBTC" ? 8 : 6;
+      const decimalsOut = tokenOut === "cirBTC" ? 8 : 6;
+      const rawAmount = parseUnits(amountIn, decimalsIn);
 
       const provider = (await connector.getProvider()) as EIP1193Provider;
       const adapter = await createViemAdapterFromProvider({ provider });
@@ -271,7 +276,7 @@ export function useSwap() {
             setStatus("completed");
             return {
               txHash: swapTx,
-              amountOut: (parseFloat(buildData.estimatedAmount) / 1000000).toString(),
+              amountOut: (parseFloat(buildData.estimatedAmount) / Math.pow(10, decimalsOut)).toString(),
             };
           } else if (statusRes.ok && statusData.status === "FAILED") {
             throw new Error("On-chain swap execution failed.");
@@ -284,7 +289,7 @@ export function useSwap() {
       setStatus("completed");
       return {
         txHash: swapTx,
-        amountOut: (parseFloat(buildData.estimatedAmount) / 1000000).toString(),
+        amountOut: (parseFloat(buildData.estimatedAmount) / Math.pow(10, decimalsOut)).toString(),
       };
     } catch (err) {
       console.error("Execute swap error:", err);

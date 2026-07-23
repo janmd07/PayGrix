@@ -17,12 +17,17 @@ import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { useSwap } from "@/hooks/use-swap";
 
 interface TokenLogoProps {
-  symbol: "USDC" | "EURC";
+  symbol: "USDC" | "EURC" | "cirBTC";
 }
 
 function TokenLogo({ symbol }: TokenLogoProps) {
   const [hasError, setHasError] = useState(false);
-  const src = symbol === "USDC" ? "/tokens/usdc.png" : "/tokens/eurc.png";
+  const src =
+    symbol === "USDC"
+      ? "/tokens/usdc.png"
+      : symbol === "EURC"
+      ? "/tokens/eurc.png"
+      : "/tokens/cirbtc.png";
 
   useEffect(() => {
     setHasError(false);
@@ -33,10 +38,14 @@ function TokenLogo({ symbol }: TokenLogoProps) {
       <div
         className={cn(
           "h-6 w-6 rounded-full flex items-center justify-center text-white shrink-0 font-bold text-xs select-none",
-          symbol === "USDC" ? "bg-[#2775CA] shadow-[0_0_8px_rgba(39,117,202,0.4)]" : "bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.4)]"
+          symbol === "USDC"
+            ? "bg-[#2775CA] shadow-[0_0_8px_rgba(39,117,202,0.4)]"
+            : symbol === "EURC"
+            ? "bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.4)]"
+            : "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]"
         )}
       >
-        {symbol === "USDC" ? "$" : "€"}
+        {symbol === "USDC" ? "$" : symbol === "EURC" ? "€" : "B"}
       </div>
     );
   }
@@ -57,18 +66,20 @@ function TokenLogo({ symbol }: TokenLogoProps) {
 interface SwapFormProps {
   balanceUSDC: string;
   balanceEURC: string;
+  balanceCirBTC: string;
   isLoadingBalance: boolean;
-  onSwapSuccess: (amountIn: string, amountOut: string, tokenIn: "USDC" | "EURC", tokenOut: "USDC" | "EURC", hash: string) => void;
+  onSwapSuccess: (amountIn: string, amountOut: string, tokenIn: "USDC" | "EURC" | "cirBTC", tokenOut: "USDC" | "EURC" | "cirBTC", hash: string) => void;
 }
 
 export function SwapForm({
   balanceUSDC,
   balanceEURC,
+  balanceCirBTC,
   isLoadingBalance,
   onSwapSuccess,
 }: SwapFormProps) {
-  const [tokenIn, setTokenIn] = useState<"USDC" | "EURC">("USDC");
-  const [tokenOut, setTokenOut] = useState<"USDC" | "EURC">("EURC");
+  const [tokenIn, setTokenIn] = useState<"USDC" | "EURC" | "cirBTC">("USDC");
+  const [tokenOut, setTokenOut] = useState<"USDC" | "EURC" | "cirBTC">("EURC");
   const [amount, setAmount] = useState<string>("");
   const [hasQuote, setHasQuote] = useState<boolean>(false);
   const [isEnabled, setIsEnabled] = useState<boolean>(false);
@@ -110,7 +121,12 @@ export function SwapForm({
     resetSwapState,
   } = useSwap();
 
-  const currentBalance = tokenIn === "USDC" ? balanceUSDC : balanceEURC;
+  const currentBalance =
+    tokenIn === "USDC"
+      ? balanceUSDC
+      : tokenIn === "EURC"
+      ? balanceEURC
+      : balanceCirBTC;
   const isOverBalance = parseFloat(amount) > parseFloat(currentBalance);
   const isValidAmount = amount !== "" && parseFloat(amount) > 0;
   const isFormInvalid = isOverBalance || !isValidAmount;
@@ -156,8 +172,8 @@ export function SwapForm({
   const isSelectDisabled = isSwapDisabled || status === "swapping" || status === "waiting-wallet";
 
   const renderTokenSelector = (
-    value: "USDC" | "EURC",
-    onChangeHandler: (val: "USDC" | "EURC") => void,
+    value: "USDC" | "EURC" | "cirBTC",
+    onChangeHandler: (val: "USDC" | "EURC" | "cirBTC") => void,
     slot: "in" | "out"
   ) => {
     const isOpen = openSelectorSlot === slot;
@@ -204,7 +220,7 @@ export function SwapForm({
               role="listbox"
               className="absolute right-0 mt-2 w-36 rounded-2xl border border-purple-500/30 bg-[#070f21] p-1.5 shadow-[0_8px_24px_rgba(7,15,33,0.8)] z-40 animate-in fade-in slide-in-from-top-2 duration-150"
             >
-              {(["USDC", "EURC"] as const).map((option) => {
+              {(["USDC", "EURC", "cirBTC"] as const).map((option) => {
                 const isSelected = value === option;
                 return (
                   <button
@@ -257,7 +273,7 @@ export function SwapForm({
             Swap on Arc
           </CardTitle>
           <CardDescription className="text-xs text-slate-400">
-            Swap USDC and EURC same-chain on Arc Testnet instantly.
+            Swap stablecoins and cirBTC same-chain on Arc Testnet instantly.
           </CardDescription>
         </CardHeader>
 
@@ -334,7 +350,9 @@ export function SwapForm({
                   <div className="shrink-0">
                     {renderTokenSelector(tokenIn, (val) => {
                       setTokenIn(val);
-                      setTokenOut(val === "USDC" ? "EURC" : "USDC");
+                      if (tokenOut === val) {
+                        setTokenOut(val === "USDC" ? "EURC" : "USDC");
+                      }
                     }, "in")}
                   </div>
                 </div>
@@ -375,7 +393,9 @@ export function SwapForm({
                   <div className="shrink-0">
                     {renderTokenSelector(tokenOut, (val) => {
                       setTokenOut(val);
-                      setTokenIn(val === "USDC" ? "EURC" : "USDC");
+                      if (tokenIn === val) {
+                        setTokenIn(val === "USDC" ? "EURC" : "USDC");
+                      }
                     }, "out")}
                   </div>
                 </div>

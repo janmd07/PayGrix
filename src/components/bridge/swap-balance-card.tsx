@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 interface SwapBalanceCardProps {
   usdcBalance: string;
   eurcBalance: string;
+  cirbtcBalance: string;
   isLoading: boolean;
   onRefresh: () => void;
 }
@@ -14,6 +15,7 @@ interface SwapBalanceCardProps {
 export function SwapBalanceCard({
   usdcBalance,
   eurcBalance,
+  cirbtcBalance,
   isLoading,
   onRefresh,
 }: SwapBalanceCardProps) {
@@ -44,7 +46,7 @@ export function SwapBalanceCard({
           </button>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="space-y-1">
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">USDC Balance</span>
             <div className="flex items-baseline gap-1.5">
@@ -62,7 +64,7 @@ export function SwapBalanceCard({
             </div>
           </div>
 
-          <div className="space-y-1 border-l border-white/5 pl-4">
+          <div className="space-y-1 border-t sm:border-t-0 sm:border-l border-white/5 pt-3 sm:pt-0 sm:pl-4">
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">EURC Balance</span>
             <div className="flex items-baseline gap-1.5">
               {isLoading ? (
@@ -76,6 +78,23 @@ export function SwapBalanceCard({
                 </span>
               )}
               <span className="text-[10px] font-semibold text-purple-400">EURC</span>
+            </div>
+          </div>
+
+          <div className="space-y-1 border-t sm:border-t-0 sm:border-l border-white/5 pt-3 sm:pt-0 sm:pl-4">
+            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">cirBTC Balance</span>
+            <div className="flex items-baseline gap-1.5">
+              {isLoading ? (
+                <div className="h-7 w-20 animate-pulse rounded bg-white/10" />
+              ) : (
+                <span className="text-xl font-bold tracking-tight text-white font-mono">
+                  {parseFloat(cirbtcBalance).toLocaleString(undefined, {
+                    minimumFractionDigits: 4,
+                    maximumFractionDigits: 6,
+                  })}
+                </span>
+              )}
+              <span className="text-[10px] font-semibold text-amber-500">cirBTC</span>
             </div>
           </div>
         </div>

@@ -56,7 +56,11 @@ export function SwapHistory({ swaps }: SwapHistoryProps) {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 6,
                     })}{" "}
-                    <span className={tx.tokenIn === "USDC" ? "text-[#4f8cff]" : "text-purple-400"}>
+                    <span className={
+                      tx.tokenIn === "USDC" ? "text-[#4f8cff]" :
+                      tx.tokenIn === "EURC" ? "text-purple-400" :
+                      "text-amber-500"
+                    }>
                       {tx.tokenIn}
                     </span>
                   </div>
@@ -66,7 +70,11 @@ export function SwapHistory({ swaps }: SwapHistoryProps) {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 6,
                     })}{" "}
-                    <span className={tx.tokenOut === "USDC" ? "text-[#4f8cff]" : "text-purple-400"}>
+                    <span className={
+                      tx.tokenOut === "USDC" ? "text-[#4f8cff]" :
+                      tx.tokenOut === "EURC" ? "text-purple-400" :
+                      "text-amber-500"
+                    }>
                       {tx.tokenOut}
                     </span>
                   </div>

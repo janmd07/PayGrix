@@ -14,7 +14,7 @@ if (args.length === 0) {
 }
 
 const filename = args[0];
-const targetPath = path.resolve('C:\\Users\\JAAN MD\\.gemini\\antigravity\\brain\\8287add8-f9c9-4b44-b253-e492c842d740', filename);
+const targetPath = path.resolve('C:\\Users\\JAAN MD\\.gemini\\antigravity\\brain\\98dfdc3d-4a41-49fb-be5d-4be781a1c2b7', filename);
 
 console.log('Connecting to browser WS:', wsUrl);
 const ws = new WebSocket(wsUrl);
@@ -78,23 +78,41 @@ ws.onopen = async () => {
       mobile: false
     }, sessionId);
 
-    // Navigate to localhost:3000
-    console.log('Navigating to http://localhost:3000...');
+    // Navigate to localhost:3000/bridge
+    console.log('Navigating to http://localhost:3000/bridge...');
     await sendCommand('Page.navigate', {
-      url: 'http://localhost:3000'
+      url: 'http://localhost:3000/bridge'
     }, sessionId);
 
     // Wait for the Page.loadEventFired or a timeout of 10s
     console.log('Waiting for page load event...');
     await Promise.race([
       pageLoadedPromise,
-      new Promise(resolve => setTimeout(resolve, 10000))
+      new Promise(resolve => setTimeout(resolve, 15000))
     ]);
     console.log('Page loaded or timed out waiting for load event');
 
     // Wait an additional 5 seconds for animations/layouts to settle
     console.log('Waiting 5 seconds for animations and layouts to settle...');
     await new Promise(resolve => setTimeout(resolve, 5000));
+
+    // Get body text and location for diagnostics
+    try {
+      await sendCommand('Runtime.enable', {}, sessionId);
+      const urlResult = await sendCommand('Runtime.evaluate', {
+        expression: 'window.location.href'
+      }, sessionId);
+      console.log('Current URL in browser:', urlResult.result?.value);
+      
+      const evalResult = await sendCommand('Runtime.evaluate', {
+        expression: 'document.body.innerHTML'
+      }, sessionId);
+      console.log('--- Page HTML content diagnostic ---');
+      console.log(evalResult.result?.value || '(empty/null)');
+      console.log('------------------------------------');
+    } catch (e) {
+      console.error('Failed to run diagnostics:', e);
+    }
 
     // Capture screenshot
     console.log('Capturing page screenshot...');

@@ -86,9 +86,14 @@ export default function BridgePage() {
     isLoading: isLoadingEurc,
     refreshBalance: refreshEurc,
   } = useTokenBalance("EURC", address);
+  const {
+    balance: swapCirBtcBalance,
+    isLoading: isLoadingCirBtc,
+    refreshBalance: refreshCirBtc,
+  } = useTokenBalance("cirBTC", address);
 
   const handleRefreshSwapBalances = async () => {
-    await Promise.all([refreshUsdc(), refreshEurc()]);
+    await Promise.all([refreshUsdc(), refreshEurc(), refreshCirBtc()]);
   };
 
   useEffect(() => {
@@ -160,8 +165,8 @@ export default function BridgePage() {
   const handleSwapSuccess = (
     amountIn: string,
     amountOut: string,
-    tokenIn: "USDC" | "EURC",
-    tokenOut: "USDC" | "EURC",
+    tokenIn: "USDC" | "EURC" | "cirBTC",
+    tokenOut: "USDC" | "EURC" | "cirBTC",
     hash: string
   ) => {
     const newSwap: SwapHistoryItem = {
@@ -253,7 +258,8 @@ export default function BridgePage() {
             <SwapForm
               balanceUSDC={swapUsdcBalance}
               balanceEURC={swapEurcBalance}
-              isLoadingBalance={isLoadingUsdc || isLoadingEurc}
+              balanceCirBTC={swapCirBtcBalance}
+              isLoadingBalance={isLoadingUsdc || isLoadingEurc || isLoadingCirBtc}
               onSwapSuccess={handleSwapSuccess}
             />
           )}
@@ -305,7 +311,8 @@ export default function BridgePage() {
               <SwapBalanceCard
                 usdcBalance={swapUsdcBalance}
                 eurcBalance={swapEurcBalance}
-                isLoading={isLoadingUsdc || isLoadingEurc}
+                cirbtcBalance={swapCirBtcBalance}
+                isLoading={isLoadingUsdc || isLoadingEurc || isLoadingCirBtc}
                 onRefresh={handleRefreshSwapBalances}
               />
 

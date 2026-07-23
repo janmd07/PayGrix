@@ -6,9 +6,10 @@ import { createPublicClient, http, erc20Abi, formatUnits } from "viem";
 const TOKEN_ADDRESSES = {
   USDC: "0x3600000000000000000000000000000000000000" as const,
   EURC: "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a" as const,
+  cirBTC: "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF" as const,
 };
 
-export function useTokenBalance(tokenSymbol: "USDC" | "EURC", address?: `0x${string}`) {
+export function useTokenBalance(tokenSymbol: "USDC" | "EURC" | "cirBTC", address?: `0x${string}`) {
   const [balance, setBalance] = useState<string>("0.00");
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
@@ -53,7 +54,8 @@ export function useTokenBalance(tokenSymbol: "USDC" | "EURC", address?: `0x${str
         }
       }
 
-      const balanceStr = formatUnits(balanceWei, 6);
+      const decimals = tokenSymbol === "cirBTC" ? 8 : 6;
+      const balanceStr = formatUnits(balanceWei, decimals);
       setBalance(balanceStr);
     } catch (err) {
       console.error(`Error reading ${tokenSymbol} balance:`, err);

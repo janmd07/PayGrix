@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 const EURC_ADDRESS = "0x89b50855aa3be2f677cd6303cec089b5f319d72a";
+const CIRBTC_ADDRESS = "0xf0c4a4ce82a5746abaad9425360ab04fbba432bf";
 const ARC_TESTNET_CHAIN = "Arc_Testnet";
 
 function isValidEvmAddress(address: string): boolean {
@@ -40,13 +41,15 @@ export async function POST(request: Request) {
   const tokenInLower = tokenInAddress.toLowerCase();
   const tokenOutLower = tokenOutAddress.toLowerCase();
 
-  const isUsdcEurc =
-    (tokenInLower === USDC_ADDRESS && tokenOutLower === EURC_ADDRESS) ||
-    (tokenInLower === EURC_ADDRESS && tokenOutLower === USDC_ADDRESS);
+  const SUPPORTED_TOKENS = [USDC_ADDRESS, EURC_ADDRESS, CIRBTC_ADDRESS];
+  const isSupportedPair =
+    SUPPORTED_TOKENS.includes(tokenInLower) &&
+    SUPPORTED_TOKENS.includes(tokenOutLower) &&
+    tokenInLower !== tokenOutLower;
 
-  if (!isUsdcEurc) {
+  if (!isSupportedPair) {
     return NextResponse.json(
-      { error: "Unsupported token pair. Only USDC <=> EURC swaps are supported." },
+      { error: "Unsupported token pair. Only USDC, EURC, and cirBTC swaps are supported." },
       { status: 400 }
     );
   }
