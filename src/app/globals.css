@@ -519,14 +519,14 @@ a[target="_blank"]:hover button {
 /* ── Breathing Glow Animation for Logo Centerpiece ── */
 @keyframes logo-breathe {
   0%, 100% {
-    opacity: 0.55;
-    transform: scale(0.96);
-    filter: blur(24px);
+    opacity: 0.65;
+    transform: scale(0.95);
+    filter: blur(32px);
   }
   50% {
-    opacity: 0.75;
-    transform: scale(1.04);
-    filter: blur(32px);
+    opacity: 0.95;
+    transform: scale(1.12);
+    filter: blur(52px);
   }
 }
 
@@ -536,30 +536,40 @@ a[target="_blank"]:hover button {
 
 .logo-glow-aura {
   background: radial-gradient(circle,
-    rgba(79, 140, 255, 0.42) 0%,
-    rgba(79, 140, 255, 0.18) 45%,
-    rgba(109, 93, 252, 0.06) 70%,
+    rgba(0, 240, 255, 0.65) 0%,
+    rgba(79, 140, 255, 0.45) 30%,
+    rgba(109, 93, 252, 0.25) 60%,
+    rgba(240, 36, 255, 0.15) 80%,
     transparent 100%);
+}
+
+.premium-logo-bloom {
+  filter: 
+    drop-shadow(0 0 10px rgba(0, 240, 255, 0.85))
+    drop-shadow(0 0 25px rgba(79, 140, 255, 0.70))
+    drop-shadow(0 0 50px rgba(240, 36, 255, 0.55))
+    drop-shadow(0 0 80px rgba(109, 93, 252, 0.40));
+  transform-style: preserve-3d;
 }
 
 /* ── 3D Floating / Rotate Animation for Hero Logo ── */
 @keyframes logo-float-3d {
   0%, 100% {
-    transform: translateY(0) rotateX(0deg) rotateY(0deg) rotateZ(0deg);
+    transform: translate(0px, 0px) rotate(0deg);
   }
   25% {
-    transform: translateY(-8px) rotateX(4deg) rotateY(-4deg) rotateZ(1deg);
+    transform: translate(12px, -8px) rotate(1.5deg);
   }
   50% {
-    transform: translateY(0) rotateX(0deg) rotateY(0deg) rotateZ(0deg);
+    transform: translate(-6px, 6px) rotate(-1deg);
   }
   75% {
-    transform: translateY(8px) rotateX(-4deg) rotateY(4deg) rotateZ(-1deg);
+    transform: translate(-12px, -4px) rotate(1deg);
   }
 }
 
 .animate-logo-float {
-  animation: logo-float-3d 10s ease-in-out infinite;
+  animation: logo-float-3d 5s ease-in-out infinite;
   transform-style: preserve-3d;
   will-change: transform;
 }

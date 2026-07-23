@@ -517,19 +517,38 @@ export default function LandingPage() {
 
         /* Floating logo center */
         @keyframes logo-float {
-          0%, 100% { transform: translateY(0px) rotateX(0deg) rotateY(0deg); }
-          50% { transform: translateY(-8px) rotateX(3deg) rotateY(-3deg); }
+          0%, 100% {
+            transform: translate(0px, 0px) rotate(0deg);
+          }
+          25% {
+            transform: translate(12px, -8px) rotate(1.5deg);
+          }
+          50% {
+            transform: translate(-6px, 6px) rotate(-1deg);
+          }
+          75% {
+            transform: translate(-12px, -4px) rotate(1deg);
+          }
         }
         .animate-logo-float {
-          animation: logo-float 10s ease-in-out infinite;
+          animation: logo-float 5s ease-in-out infinite;
         }
 
         @keyframes logo-breathe {
-          0%, 100% { opacity: 0.55; transform: scale(0.96); filter: blur(24px); }
-          50% { opacity: 0.75; transform: scale(1.04); filter: blur(32px); }
+          0%, 100% { opacity: 0.65; transform: scale(0.95); filter: blur(32px); }
+          50% { opacity: 0.95; transform: scale(1.12); filter: blur(52px); }
         }
         .animate-logo-glow {
           animation: logo-breathe 3.5s ease-in-out infinite;
+        }
+
+        .premium-logo-bloom {
+          filter: 
+            drop-shadow(0 0 10px rgba(0, 240, 255, 0.85))
+            drop-shadow(0 0 25px rgba(79, 140, 255, 0.70))
+            drop-shadow(0 0 50px rgba(240, 36, 255, 0.55))
+            drop-shadow(0 0 80px rgba(109, 93, 252, 0.40));
+          transform-style: preserve-3d;
         }
 
         .showcase-panel-wrapper {
@@ -906,17 +925,25 @@ export default function LandingPage() {
 
               {/* Logo centerpiece (180px tall on desktop, 128px on mobile) */}
               <div className="relative inline-flex items-center justify-center group cursor-pointer shrink-0 mb-8">
+                {/* Large Volumetric Atmospheric Glow behind the logo */}
                 <div 
-                  className="absolute -inset-10 pointer-events-none transition-all duration-700 opacity-60 group-hover:opacity-95 group-hover:scale-110" 
+                  className="absolute w-[280px] h-[280px] md:w-[440px] md:h-[440px] rounded-full pointer-events-none opacity-60 mix-blend-screen blur-[100px] bg-gradient-to-tr from-[#6d5dfc]/25 via-[#4f8cff]/20 to-[#d65dfc]/25" 
+                  style={{ transform: 'translate3d(0, 0, 0)' }}
+                  aria-hidden="true" 
+                />
+
+                {/* Medium breathing glow aura */}
+                <div 
+                  className="absolute -inset-14 pointer-events-none transition-all duration-700 opacity-80 group-hover:opacity-100 group-hover:scale-105" 
                   aria-hidden="true" 
                 >
-                  <div className="w-28 h-28 md:w-44 md:h-44 rounded-full logo-glow-aura animate-logo-glow" />
+                  <div className="w-36 h-36 md:w-56 md:h-56 rounded-full logo-glow-aura animate-logo-glow" />
                 </div>
                 <div 
                   ref={logoRef}
                   onMouseMove={handleLogoMouseMove}
                   onMouseLeave={handleLogoMouseLeave}
-                  className="relative z-10 w-32 h-32 md:w-[180px] md:h-[180px] drop-shadow-[0_0_35px_rgba(0,240,255,0.40)] drop-shadow-[0_0_60px_rgba(240,36,255,0.35)]"
+                  className="relative z-10 w-32 h-32 md:w-[180px] md:h-[180px] premium-logo-bloom"
                   style={{ 
                     perspective: 800,
                     transform: `rotateX(var(--logo-tilt-x, 0deg)) rotateY(var(--logo-tilt-y, 0deg))`,
