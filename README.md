@@ -1,6 +1,6 @@
-# Arc Payroll
+# PayGrid
 
-Arc Payroll is a stablecoin payroll interface for crypto-native teams.
+PayGrid is a stablecoin payroll interface for crypto-native teams.
 
 This project is intentionally configured for **Arc Testnet only**.
 

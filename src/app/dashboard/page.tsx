@@ -302,7 +302,7 @@ export default function DashboardPage() {
 
           <div>
             <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl mb-4">
-              Welcome to Arc Payroll
+              Welcome to PayGrid
             </h1>
             <p className="text-slate-400 text-sm sm:text-base leading-relaxed max-w-xl">
               Manage contributors, schedule weekly and monthly stablecoin payouts, and monitor treasury operations from a single workspace.

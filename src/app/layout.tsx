@@ -5,7 +5,7 @@ import { AppProviders } from "@/components/providers/app-providers";
 import { Analytics } from "@vercel/analytics/react";
 
 export const metadata: Metadata = {
-  title: "Arc Payroll",
+  title: "PayGrid",
   description: "Stablecoin payroll for crypto-native teams on Arc Testnet.",
 };
 

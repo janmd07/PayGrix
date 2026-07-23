@@ -201,7 +201,7 @@ export default function TreasuryPage() {
             </div>
             <h2 className="text-2xl font-bold tracking-tight text-white mb-2">Connect Founder Wallet</h2>
             <p className="text-sm text-[#b7c4d6] mb-8 max-w-sm mx-auto leading-relaxed">
-              Arc Payroll uses your connected founder wallet as the active treasury. Connect your wallet to view balances, network status, and recent payroll runs.
+              PayGrid uses your connected founder wallet as the active treasury. Connect your wallet to view balances, network status, and recent payroll runs.
             </p>
             <div className="flex flex-col gap-3">
               {availableConnector ? (

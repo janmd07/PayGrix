@@ -944,7 +944,7 @@ export default function LandingPage() {
                   letterSpacing: "-0.03em",
                 }}
               >
-                Payroll for the
+                PayGrid for the
                 <br />
                 open internet
               </h1>
@@ -1306,7 +1306,7 @@ export default function LandingPage() {
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
               <p className="text-xs text-slate-400">
-                Arc Payroll · Arc Testnet · Chain ID 5042002
+                PayGrid · Arc Testnet · Chain ID 5042002
               </p>
               <div className="flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />

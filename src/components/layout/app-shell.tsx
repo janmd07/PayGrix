@@ -167,7 +167,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               <ProductIcon className="h-5 w-5 text-white" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-white">Arc Payroll</p>
+              <p className="text-sm font-semibold text-white">PayGrid</p>
               <p className="text-xs text-[#b7c4d6]">Stablecoin operations</p>
             </div>
           </Link>
@@ -277,7 +277,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   >
                     <ProductIcon className="h-4 w-4 text-white" />
                   </div>
-                  <span className="text-sm font-semibold text-white">Arc Payroll</span>
+                  <span className="text-sm font-semibold text-white">PayGrid</span>
                 </Link>
                 <Badge variant="default" className="text-xs">Arc Testnet</Badge>
                 <ThemeToggle />

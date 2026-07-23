@@ -48,7 +48,7 @@ export const navItems = [
 ];
 
 export const productNavItem = {
-  title: "Arc Payroll",
+  title: "PayGrid",
   href: "/",
   icon: Building2,
 };
