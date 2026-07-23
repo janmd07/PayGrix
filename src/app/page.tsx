@@ -926,8 +926,8 @@ export default function LandingPage() {
                 >
                   <div className="w-full h-full animate-logo-float">
                     <Image
-                      src="/arc-logo.png"
-                      alt="Arc logo"
+                      src="/paygrid-logo.png"
+                      alt="PayGrid logo"
                       fill
                       className="object-contain"
                       priority
