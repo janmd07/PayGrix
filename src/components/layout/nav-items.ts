@@ -7,6 +7,7 @@ import {
   UsersRound,
   ArrowLeftRight,
   LineChart,
+  QrCode,
 } from "lucide-react";
 
 export const navItems = [
@@ -14,6 +15,11 @@ export const navItems = [
     title: "Dashboard",
     href: "/dashboard",
     icon: BarChart3,
+  },
+  {
+    title: "Pay",
+    href: "/pay",
+    icon: QrCode,
   },
   {
     title: "Analytics",
