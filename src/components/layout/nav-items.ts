@@ -8,6 +8,7 @@ import {
   ArrowLeftRight,
   LineChart,
   QrCode,
+  User,
 } from "lucide-react";
 
 export const navItems = [
@@ -25,6 +26,11 @@ export const navItems = [
     title: "Analytics",
     href: "/analytics",
     icon: LineChart,
+  },
+  {
+    title: "Profile",
+    href: "/profile",
+    icon: User,
   },
   {
     title: "Contributors",
