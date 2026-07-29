@@ -11,7 +11,6 @@ import { ReputationCard } from "@/components/profile/reputation-card";
 import { PortfolioCard } from "@/components/profile/portfolio-card";
 import { StatisticsSection } from "@/components/profile/statistics-section";
 import { WalletStatsCard } from "@/components/profile/wallet-stats-card";
-import { AchievementCard } from "@/components/profile/achievement-card";
 import { Timeline } from "@/components/profile/timeline";
 import { HealthCard } from "@/components/profile/health-card";
 import { NetworkActivityCard } from "@/components/profile/network-activity-card";
@@ -119,7 +118,6 @@ export default function ProfilePage() {
             <PortfolioCard />
             <StatisticsSection />
             <WalletStatsCard />
-            <AchievementCard />
             <Timeline />
             <ShareProfileCard />
           </div>
