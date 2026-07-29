@@ -1801,7 +1801,7 @@ export default function PayrollPage() {
                 ) : !isArcTestnet ? (
                   <div className="flex flex-col gap-3 w-full">
                     <div className="text-xs text-amber-400 bg-amber-500/5 border border-amber-500/10 rounded-lg p-2.5 text-center">
-                      Unsupported network connected. PayGrid only supports Arc Testnet. Please switch networks to execute payouts.
+                      Unsupported network connected. PayGrix only supports Arc Testnet. Please switch networks to execute payouts.
                     </div>
                     <div className="flex justify-end gap-3">
                       <Button

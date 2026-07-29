@@ -243,7 +243,7 @@ function PayPageContent() {
           throw new Error("This payment request is for a different blockchain network.");
         }
         if (tokenParam && tokenParam !== "USDC") {
-          throw new Error("Only USDC payments are supported in PayGrid QR.");
+          throw new Error("Only USDC payments are supported in PayGrix QR.");
         }
         if (expiresParam) {
           const expDate = new Date(expiresParam);
@@ -339,7 +339,7 @@ function PayPageContent() {
     const jsonPayload = {
       type: "paygrid-payment",
       version: 1,
-      app: "PayGrid",
+      app: "PayGrix",
       appVersion: "1.0.0",
       requestId: reqId,
       network: {
@@ -382,7 +382,7 @@ function PayPageContent() {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: "PayGrid USDC Payment Request",
+          title: "PayGrix USDC Payment Request",
           text: `Pay ${recvAmount ? `${recvAmount} USDC` : "USDC"} to ${recvName || address}`,
           url: generatedLink
         });
@@ -522,7 +522,7 @@ function PayPageContent() {
 
         const tokenVal = url.searchParams.get("token");
         if (tokenVal && tokenVal !== "USDC") {
-          throw new Error("Only USDC payments are supported in PayGrid.");
+          throw new Error("Only USDC payments are supported in PayGrix.");
         }
 
         parsed = {
@@ -535,7 +535,7 @@ function PayPageContent() {
           sourceType: "payment_link"
         };
       } else {
-        throw new Error("Unrecognized PayGrid QR request format.");
+        throw new Error("Unrecognized PayGrix QR request format.");
       }
 
       // Payload validations
@@ -610,7 +610,7 @@ function PayPageContent() {
       } catch {}
     } catch (err) {
       console.error("File decode error:", err);
-      setScannerError("No valid PayGrid QR code found in this image. Try another image.");
+      setScannerError("No valid PayGrix QR code found in this image. Try another image.");
     }
   };
 
@@ -897,7 +897,7 @@ function PayPageContent() {
                 <div>
                   <p className="font-semibold text-amber-300">Unsupported Network</p>
                   <p className="text-xs text-amber-400/80 mt-0.5">
-                    PayGrid QR module runs exclusively on **Arc Testnet (Chain ID: 5042002)**. Switch your wallet to proceed.
+                    PayGrix QR module runs exclusively on **Arc Testnet (Chain ID: 5042002)**. Switch your wallet to proceed.
                   </p>
                 </div>
               </div>
@@ -1694,7 +1694,7 @@ function PayPageContent() {
 
 export default function PayPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-slate-950 text-foreground flex items-center justify-center text-sm font-semibold">Loading PayGrid module...</div>}>
+    <Suspense fallback={<div className="min-h-screen bg-slate-950 text-foreground flex items-center justify-center text-sm font-semibold">Loading PayGrix module...</div>}>
       <PayPageContent />
     </Suspense>
   );

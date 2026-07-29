@@ -60,7 +60,7 @@ export const navItems = [
 ];
 
 export const productNavItem = {
-  title: "PayGrid",
+  title: "PayGrix",
   href: "/",
   icon: Building2,
 };

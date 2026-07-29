@@ -207,7 +207,7 @@ export function AchievementCard() {
       <div>
         <h2 className="text-xl font-bold text-white tracking-wide">Developer Achievements</h2>
         <p className="text-xs text-slate-400 font-medium mt-0.5">
-          Credentials unlocked based on your PayGrid stablecoin actions.
+          Credentials unlocked based on your PayGrix stablecoin actions.
         </p>
       </div>
 

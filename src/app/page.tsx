@@ -954,7 +954,7 @@ export default function LandingPage() {
                   <div className="w-full h-full animate-logo-float">
                     <Image
                       src="/paygrid-logo.png"
-                      alt="PayGrid logo"
+                      alt="PayGrix logo"
                       fill
                       className="object-contain"
                       priority
@@ -971,7 +971,7 @@ export default function LandingPage() {
                   letterSpacing: "-0.03em",
                 }}
               >
-                PayGrid for the
+                PayGrix for the
                 <br />
                 open internet
               </h1>
@@ -1333,7 +1333,7 @@ export default function LandingPage() {
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
               <p className="text-xs text-slate-400">
-                PayGrid · Arc Testnet · Chain ID 5042002
+                 PayGrix · Arc Testnet · Chain ID 5042002
               </p>
               <div className="flex items-center gap-1.5">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />

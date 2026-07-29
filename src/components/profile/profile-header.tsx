@@ -5,7 +5,7 @@ export function ProfileHeader() {
     <PageHeader
       eyebrow="Onchain Identity"
       title="Profile"
-      description="Your onchain identity and PayGrid activity."
+      description="Your onchain identity and PayGrix activity."
     />
   );
 }

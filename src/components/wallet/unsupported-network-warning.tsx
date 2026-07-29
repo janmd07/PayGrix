@@ -38,7 +38,7 @@ export function UnsupportedNetworkWarning() {
               Current network: {currentNetwork?.name ?? "Unknown network"}.{" "}
               {isBridgePage
                 ? "The bridge supports Arc Testnet, Base Sepolia, and Arbitrum Sepolia. Please switch to one of these networks to bridge."
-                : `PayGrid only supports ${arcTestnet.name}. Payroll features are disabled until you switch.`}
+                : `PayGrix only supports ${arcTestnet.name}. Payroll features are disabled until you switch.`}
             </p>
           </div>
         </div>
