@@ -1,0 +1,21 @@
+# Hardhat / Node
+node_modules/
+artifacts/
+cache/
+typechain-types/
+coverage/
+coverage.json
+
+# Environment variables & secrets
+.env
+.env.local
+.env.*.local
+
+# IDEs & System
+.DS_Store
+.idea/
+.vscode/
+
+# Deployments & Secret logs
+deployments/secrets/
+*.log

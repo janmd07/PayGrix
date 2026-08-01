@@ -1,0 +1,32 @@
+{
+  "name": "paygrix-contracts",
+  "version": "1.0.0",
+  "description": "PayGrix Smart Contracts Repository",
+  "main": "index.js",
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "clean": "hardhat clean",
+    "deploy:factory:arc": "hardhat run scripts/deploy-factory.ts --network arcTestnet",
+    "deploy:router:arc": "hardhat run scripts/deploy-router.ts --network arcTestnet"
+  },
+  "keywords": [
+    "paygrix",
+    "smart-contracts",
+    "hardhat",
+    "ethereum",
+    "arc-testnet"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@types/chai": "^4.2.0",
+    "@types/mocha": "^10.0.0",
+    "@types/node": "^20.0.0",
+    "dotenv": "^16.4.5",
+    "hardhat": "^2.22.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.0"
+  }
+}

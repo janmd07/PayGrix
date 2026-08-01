@@ -1,0 +1,26 @@
+{
+  "network": "Arc Testnet",
+  "chainId": 5042002,
+  "contracts": {
+    "UniswapV2Factory": {
+      "address": "0x05c69956564c556fc303Cb74C5505D0E1e8EDF2D",
+      "deploymentTxHash": "0x9edb6a7b0ef1c367c4e4be801bb0224a53186eb81e8fe8c02c4d41ec4a50bd12",
+      "feeToSetter": "0xf85085b73a4Ec4efE895B532Fe1560a06ff0d179",
+      "blockNumber": 54720303
+    },
+    "PayGrixArcRouter": {
+      "address": "0xB2A97BAABaB64B389948bebB58D639a654ABac89",
+      "deploymentTxHash": "0x0a70668d343f81c77f6f6b45e0ed00982326850fe34b67bdf4220ec64bc792b9",
+      "factory": "0x05c69956564c556fc303Cb74C5505D0E1e8EDF2D",
+      "blockNumber": 54722672
+    },
+    "USDC_EURC_Pair": {
+      "address": "0xf9d04BDdA9C857C9440ac9eD6EbB9118686Ef7b2",
+      "deploymentTxHash": "0x850b8ddba149e22c31ad2cbc9fa0420cb20d650dd852d66e99198e21521628ee",
+      "blockNumber": 54759328,
+      "token0": "0x3600000000000000000000000000000000000000",
+      "token1": "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
+      "factory": "0x05c69956564c556fc303Cb74C5505D0E1e8EDF2D"
+    }
+  }
+}
