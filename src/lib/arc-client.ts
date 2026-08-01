@@ -4,7 +4,9 @@ import { arcTestnet } from "../config/arc-testnet";
 // 1. Single shared Arc Testnet public client at module scope
 export const arcPublicClient = createPublicClient({
   chain: arcTestnet,
-  transport: http("/api/arc-rpc"),
+  transport: http("/api/arc-rpc", {
+    batch: true,
+  }),
 });
 
 // 2. Request deduplication & balance caching

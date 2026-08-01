@@ -6,12 +6,24 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
 
-    // Validate JSON-RPC request structure
-    if (!body || typeof body !== "object" || !body.jsonrpc) {
+    // Validate JSON-RPC request structure (support both single and batch requests)
+    const isArray = Array.isArray(body);
+    const requests = isArray ? body : [body];
+
+    if (requests.length === 0) {
       return NextResponse.json(
-        { jsonrpc: "2.0", id: body?.id ?? null, error: { code: -32600, message: "Invalid JSON-RPC request" } },
+        { jsonrpc: "2.0", id: null, error: { code: -32600, message: "Empty batch request" } },
         { status: 400 }
       );
+    }
+
+    for (const req of requests) {
+      if (!req || typeof req !== "object" || !req.jsonrpc) {
+        return NextResponse.json(
+          { jsonrpc: "2.0", id: req?.id ?? null, error: { code: -32600, message: "Invalid JSON-RPC request" } },
+          { status: 400 }
+        );
+      }
     }
 
     const controller = new AbortController();

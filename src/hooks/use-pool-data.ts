@@ -60,16 +60,18 @@ export interface PoolData {
   token1Address: string;
 }
 
-export function usePoolData(userAddress?: `0x${string}`, isArcTestnet?: boolean) {
-  const [poolData, setPoolData] = useState<PoolData | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string | null>(null);
+// Module-scoped cache and in-flight request tracking
+const poolDataCache = new Map<string, { value: PoolData; timestamp: number }>();
+const inFlightPoolDataRequest = new Map<string, Promise<PoolData>>();
+const CACHE_TTL_MS = 15000; // 15 seconds
 
-  const refreshPoolData = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+async function executePoolFetch(userAddress?: `0x${string}`, isArcTestnet?: boolean): Promise<PoolData> {
+  let lastError: unknown;
+  const maxRetries = 1;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      // 1. Get token0 and token1 addresses
+      // Fetch token addresses
       const token0 = await arcPublicClient.readContract({
         address: PAIR_ADDRESS,
         abi: PAIR_ABI,
@@ -81,21 +83,21 @@ export function usePoolData(userAddress?: `0x${string}`, isArcTestnet?: boolean)
         functionName: "token1"
       });
 
-      // 2. Get reserves
+      // Fetch reserves
       const [res0, res1] = await arcPublicClient.readContract({
         address: PAIR_ADDRESS,
         abi: PAIR_ABI,
         functionName: "getReserves"
       });
 
-      // 3. Get total supply of LP tokens
+      // Fetch total supply
       const supply = await arcPublicClient.readContract({
         address: PAIR_ADDRESS,
         abi: PAIR_ABI,
         functionName: "totalSupply"
       });
 
-      // 4. Get user's LP balance if connected and on correct network
+      // Fetch LP balance
       let lpBalance = BigInt(0);
       if (userAddress && isArcTestnet) {
         lpBalance = await arcPublicClient.readContract({
@@ -106,7 +108,7 @@ export function usePoolData(userAddress?: `0x${string}`, isArcTestnet?: boolean)
         });
       }
 
-      // Format values (6 decimals for USDC/EURC, 18 decimals for LP tokens)
+      // Format decimals
       const reserve0Str = formatUnits(res0, 6);
       const reserve1Str = formatUnits(res1, 6);
       const totalSupplyStr = formatUnits(supply, 18);
@@ -119,7 +121,7 @@ export function usePoolData(userAddress?: `0x${string}`, isArcTestnet?: boolean)
       const underlyingUSDCStr = (parseFloat(reserve0Str) * share).toFixed(6);
       const underlyingEURCStr = (parseFloat(reserve1Str) * share).toFixed(6);
 
-      setPoolData({
+      return {
         reserve0: reserve0Str,
         reserve1: reserve1Str,
         totalSupply: totalSupplyStr,
@@ -129,19 +131,124 @@ export function usePoolData(userAddress?: `0x${string}`, isArcTestnet?: boolean)
         underlyingEURC: underlyingEURCStr,
         token0Address: token0,
         token1Address: token1
-      });
+      };
     } catch (err: unknown) {
-      console.error("Error fetching pool data:", err);
+      lastError = err;
       const errMsg = err instanceof Error ? err.message : String(err);
-      setError(errMsg || "Failed to load pool data from blockchain");
+      const is429 = errMsg.includes("request limit reached") || errMsg.includes("429") || errMsg.includes("rate limit");
+
+      if (is429 && attempt < maxRetries) {
+        // Delay 2 seconds before retrying
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      } else {
+        break;
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+export async function fetchPoolDataDeduped(
+  userAddress?: `0x${string}`,
+  isArcTestnet?: boolean,
+  forceRefresh?: boolean
+): Promise<PoolData> {
+  const now = Date.now();
+  const cacheKey = `${userAddress?.toLowerCase() || "none"}:${isArcTestnet ? "arc" : "other"}`;
+
+  if (!forceRefresh) {
+    const cached = poolDataCache.get(cacheKey);
+    if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+      return cached.value;
+    }
+  }
+
+  let promise = inFlightPoolDataRequest.get(cacheKey);
+  if (!promise) {
+    promise = (async () => {
+      try {
+        const data = await executePoolFetch(userAddress, isArcTestnet);
+        poolDataCache.set(cacheKey, { value: data, timestamp: Date.now() });
+        return data;
+      } catch (err) {
+        poolDataCache.delete(cacheKey);
+        throw err;
+      }
+    })().finally(() => {
+      inFlightPoolDataRequest.delete(cacheKey);
+    });
+    inFlightPoolDataRequest.set(cacheKey, promise);
+  }
+
+  return promise;
+}
+
+export function usePoolData(userAddress?: `0x${string}`, isArcTestnet?: boolean) {
+  const [poolData, setPoolData] = useState<PoolData | null>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshPoolData = useCallback(async () => {
+    if (isLoading) return;
+
+    const cacheKey = `${userAddress?.toLowerCase() || "none"}:${isArcTestnet ? "arc" : "other"}`;
+    poolDataCache.delete(cacheKey);
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await fetchPoolDataDeduped(userAddress, isArcTestnet, true);
+      setPoolData(data);
+    } catch (err: unknown) {
+      console.error("Error refreshing pool data:", err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const is429 = errMsg.includes("request limit reached") || errMsg.includes("429") || errMsg.includes("rate limit");
+      if (is429) {
+        setError("Arc Testnet RPC is temporarily busy. Please try again shortly.");
+      } else {
+        setError("Failed to load pool data from blockchain. Please try again shortly.");
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [userAddress, isArcTestnet]);
+  }, [userAddress, isArcTestnet, isLoading]);
 
   useEffect(() => {
-    refreshPoolData();
-  }, [refreshPoolData]);
+    let isMounted = true;
+
+    const load = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const data = await fetchPoolDataDeduped(userAddress, isArcTestnet, false);
+        if (isMounted) {
+          setPoolData(data);
+        }
+      } catch (err: unknown) {
+        if (isMounted) {
+          console.error("Error fetching pool data:", err);
+          const errMsg = err instanceof Error ? err.message : String(err);
+          const is429 = errMsg.includes("request limit reached") || errMsg.includes("429") || errMsg.includes("rate limit");
+          if (is429) {
+            setError("Arc Testnet RPC is temporarily busy. Please try again shortly.");
+          } else {
+            setError("Failed to load pool data from blockchain. Please try again shortly.");
+          }
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    load();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [userAddress, isArcTestnet]);
 
   return {
     poolData,
