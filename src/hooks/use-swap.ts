@@ -5,6 +5,7 @@ import { useAccount } from "wagmi";
 import { createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2";
 import { ArcTestnet } from "@circle-fin/app-kit/chains";
 import { EIP1193Provider, createPublicClient, http, erc20Abi, parseUnits } from "viem";
+import { arcTestnet } from "@/config/arc-testnet";
 
 export type SwapStatus =
   | "idle"
@@ -148,11 +149,66 @@ export function useSwap() {
       const rawAmount = parseUnits(amountIn, decimalsIn);
 
       const provider = (await connector.getProvider()) as EIP1193Provider;
+
+      // Safe diagnostic logging & pre-execution network verification
+      let providerChainId: number | null = null;
+      try {
+        const hexChainId = (await provider.request({ method: "eth_chainId" })) as string;
+        providerChainId = parseInt(hexChainId, 16);
+      } catch (err) {
+        console.warn("[SWAP DIAGNOSTIC] Failed to fetch eth_chainId from provider:", err);
+      }
+
+      console.log("[SWAP DIAGNOSTIC] Pre-execution info:", {
+        walletAddress: address,
+        connectorName: connector.name,
+        providerChainId,
+        arcAdapterAddress: adapterAddress,
+        stage: "verifying-network",
+      });
+
+      // Ensure connected wallet provider is on Arc Testnet (5042002)
+      if (providerChainId !== 5042002) {
+        console.log("[SWAP DIAGNOSTIC] Provider network mismatch. Requesting switch to Arc Testnet (5042002)...");
+        try {
+          await provider.request({
+            method: "wallet_switchEthereumChain",
+            params: [{ chainId: "0x4cef52" }],
+          });
+        } catch (switchErr: unknown) {
+          const errObj = switchErr as { code?: number; message?: string };
+          if (errObj.code === 4902 || errObj.message?.includes("Unrecognized chain")) {
+            console.log("[SWAP DIAGNOSTIC] Arc Testnet network not present in wallet. Requesting wallet_addEthereumChain...");
+            await provider.request({
+              method: "wallet_addEthereumChain",
+              params: [
+                {
+                  chainId: "0x4cef52",
+                  chainName: "Arc Testnet",
+                  nativeCurrency: {
+                    name: "Arc Testnet Ether",
+                    symbol: "ETH",
+                    decimals: 18,
+                  },
+                  rpcUrls: ["https://rpc.testnet.arc.network"],
+                  blockExplorerUrls: ["https://testnet.arcscan.app"],
+                },
+              ],
+            });
+          } else {
+            throw switchErr;
+          }
+        }
+      }
+
+      console.log("[SWAP DIAGNOSTIC] Creating Viem adapter from provider...");
       const adapter = await createViemAdapterFromProvider({ provider });
 
       // Step 1: Check Allowance & Approve if necessary
       setStatus("approving");
+      console.log("[SWAP DIAGNOSTIC] Stage: checking allowance");
       const client = createPublicClient({
+        chain: arcTestnet,
         transport: http("https://rpc.testnet.arc.network"),
       });
 
@@ -164,6 +220,7 @@ export function useSwap() {
       });
 
       if (currentAllowance < rawAmount) {
+        console.log("[SWAP DIAGNOSTIC] Stage: preparing token approval");
         const preparedApprove = await adapter.prepareAction(
           "token.approve",
           {
@@ -173,15 +230,17 @@ export function useSwap() {
           },
           { chain: ArcTestnet }
         );
+        console.log("[SWAP DIAGNOSTIC] Stage: executing token approval");
         const approveTx = await preparedApprove.execute();
-        console.log("Token approval submitted:", approveTx);
+        console.log("[SWAP DIAGNOSTIC] Token approval submitted:", approveTx);
 
-        // Wait for approval confirmation
+        // Wait for approval confirmation with Arc Testnet public client
         await client.waitForTransactionReceipt({ hash: approveTx as `0x${string}` });
       }
 
       // Step 2: Build transaction details from server proxy
       setStatus("waiting-wallet");
+      console.log("[SWAP DIAGNOSTIC] Stage: building swap transaction parameters");
       const buildRes = await fetch("/api/swap/build", {
         method: "POST",
         headers: {
@@ -204,8 +263,13 @@ export function useSwap() {
         throw new Error(buildData.error || "Failed to build transaction parameters from server.");
       }
 
+      if (!buildData?.transaction?.executionParams || !buildData?.transaction?.signature) {
+        throw new Error("Invalid build response structure received from server proxy.");
+      }
+
       // Step 3: Parse and execute swap action via client adapter
       setStatus("swapping");
+      console.log("[SWAP DIAGNOSTIC] Stage: preparing swap action");
       interface InstructionItem {
         target: string;
         data: string;
@@ -256,11 +320,13 @@ export function useSwap() {
         { chain: ArcTestnet }
       );
 
+      console.log("[SWAP DIAGNOSTIC] Stage: submitting swap transaction");
       const swapTx = await preparedSwap.execute();
-      console.log("Swap transaction submitted:", swapTx);
+      console.log("[SWAP DIAGNOSTIC] Swap transaction submitted:", swapTx);
       setTxHash(swapTx);
 
       // Step 4: Poll status proxy route until completed
+      console.log("[SWAP DIAGNOSTIC] Stage: polling swap status");
       let isDone = false;
       const startTime = Date.now();
       const timeout = 60000; // 60s
@@ -282,7 +348,7 @@ export function useSwap() {
             throw new Error("On-chain swap execution failed.");
           }
         } catch (err) {
-          console.warn("Error polling swap status:", err);
+          console.warn("[SWAP DIAGNOSTIC] Error polling swap status:", err);
         }
       }
 
@@ -292,7 +358,19 @@ export function useSwap() {
         amountOut: (parseFloat(buildData.estimatedAmount) / Math.pow(10, decimalsOut)).toString(),
       };
     } catch (err) {
-      console.error("Execute swap error:", err);
+      const sanitizedError = {
+        name: err instanceof Error ? err.name : "UnknownError",
+        message: err instanceof Error ? err.message : String(err),
+        cause: err instanceof Error && err.cause ? (typeof err.cause === "object" ? JSON.stringify(err.cause) : String(err.cause)) : undefined,
+      };
+
+      console.error("[SWAP DIAGNOSTIC] Execute swap error details:", {
+        walletAddress: address,
+        connectorName: connector?.name,
+        arcAdapterAddress: ArcTestnet.kitContracts?.adapter,
+        error: sanitizedError,
+      });
+
       const errMsg = err instanceof Error ? err.message : "An unexpected error occurred during the swap.";
       if (errMsg.includes("rejected") || errMsg.includes("User rejected")) {
         setError("User rejected the transaction");
