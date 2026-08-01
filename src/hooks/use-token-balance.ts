@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { createPublicClient, http, erc20Abi, formatUnits } from "viem";
+import { formatUnits } from "viem";
+import { fetchTokenBalanceDeduped } from "@/lib/arc-client";
 
 const TOKEN_ADDRESSES = {
   USDC: "0x3600000000000000000000000000000000000000" as const,
@@ -23,37 +24,7 @@ export function useTokenBalance(tokenSymbol: "USDC" | "EURC" | "cirBTC", address
     const tokenAddress = TOKEN_ADDRESSES[tokenSymbol];
     setIsLoading(true);
     try {
-      const client = createPublicClient({
-        transport: http("https://rpc.testnet.arc.network"),
-      });
-
-      // Implement retry to gracefully handle strict RPC rate limits
-      let balanceWei = BigInt(0);
-      const retries = 5;
-      let delay = 600;
-
-      for (let i = 0; i < retries; i++) {
-        try {
-          balanceWei = await client.readContract({
-            address: tokenAddress,
-            abi: erc20Abi,
-            functionName: "balanceOf",
-            args: [address],
-          });
-          break;
-        } catch (err) {
-          const errMsg = (err as { message?: string }).message || "";
-          const errCode = (err as { code?: number }).code;
-          const isRateLimit = errMsg.includes("request limit reached") || errCode === -32011 || errMsg.includes("429");
-          if (isRateLimit && i < retries - 1) {
-            await new Promise((resolve) => setTimeout(resolve, delay));
-            delay += 400; // incremental delay to backoff
-          } else {
-            throw err;
-          }
-        }
-      }
-
+      const balanceWei = await fetchTokenBalanceDeduped(tokenAddress, address);
       const decimals = tokenSymbol === "cirBTC" ? 8 : 6;
       const balanceStr = formatUnits(balanceWei, decimals);
       setBalance(balanceStr);

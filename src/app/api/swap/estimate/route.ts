@@ -11,12 +11,6 @@ function isValidEvmAddress(address: string): boolean {
 
 export async function GET(request: Request) {
   const apiKey = process.env.STABLECOIN_KIT_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "Circle Swap configuration is not complete on the server (missing STABLECOIN_KIT_API_KEY)." },
-      { status: 500 }
-    );
-  }
 
   const { searchParams } = new URL(request.url);
   const tokenInAddress = searchParams.get("tokenInAddress") || "";
@@ -79,12 +73,16 @@ export async function GET(request: Request) {
   }
 
   try {
+    const reqHeaders: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (apiKey) {
+      reqHeaders["Authorization"] = `Bearer ${apiKey}`;
+    }
+
     const res = await fetch(targetUrl.toString(), {
       method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
+      headers: reqHeaders,
     });
 
     if (!res.ok) {

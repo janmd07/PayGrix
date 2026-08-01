@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createPublicClient, http, erc20Abi, formatUnits } from "viem";
+import { fetchTokenBalanceDeduped } from "@/lib/arc-client";
 
 const CHAIN_CONFIGS: Record<string, { rpc: string; usdc: `0x${string}` }> = {
   "Arc Testnet": {
@@ -39,35 +40,20 @@ export function useBridgeBalance(chain: string, address?: `0x${string}`) {
 
     setIsLoading(true);
     try {
-      const client = createPublicClient({
-        transport: http(config.rpc),
-      });
-
-      // Implement retry to gracefully handle strict RPC rate limits
       let balanceWei = BigInt(0);
-      const retries = 5;
-      let delay = 600;
 
-      for (let i = 0; i < retries; i++) {
-        try {
-          balanceWei = await client.readContract({
-            address: config.usdc,
-            abi: erc20Abi,
-            functionName: "balanceOf",
-            args: [address],
-          });
-          break;
-        } catch (err) {
-          const errMsg = (err as { message?: string }).message || "";
-          const errCode = (err as { code?: number }).code;
-          const isRateLimit = errMsg.includes("request limit reached") || errCode === -32011 || errMsg.includes("429");
-          if (isRateLimit && i < retries - 1) {
-            await new Promise((resolve) => setTimeout(resolve, delay));
-            delay += 400; // incremental delay to backoff
-          } else {
-            throw err;
-          }
-        }
+      if (chain === "Arc Testnet") {
+        balanceWei = await fetchTokenBalanceDeduped(config.usdc, address);
+      } else {
+        const client = createPublicClient({
+          transport: http(config.rpc),
+        });
+        balanceWei = await client.readContract({
+          address: config.usdc,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [address],
+        });
       }
 
       // USDC has 6 decimals on these chains
