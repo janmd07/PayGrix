@@ -39,6 +39,8 @@ export interface PoolData {
   reserve1: string;
   totalSupply: string;
   userLPBalance: string;
+  totalSupplyRaw: string;
+  userLPBalanceRaw: string;
   userPoolShare: number;
   underlyingUSDC: string;
   underlyingEURC: string;
@@ -113,6 +115,8 @@ async function executePoolFetch(userAddress?: `0x${string}`, isArcTestnet?: bool
         reserve1: reserve1Str,
         totalSupply: totalSupplyStr,
         userLPBalance: userLPBalanceStr,
+        totalSupplyRaw: supply.toString(),
+        userLPBalanceRaw: lpBalance.toString(),
         userPoolShare: share,
         underlyingUSDC: underlyingUSDCStr,
         underlyingEURC: underlyingEURCStr,
