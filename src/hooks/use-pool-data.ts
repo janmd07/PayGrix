@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { formatUnits } from "viem";
-import { arcPublicClient } from "@/lib/arc-client";
+import { formatUnits, createPublicClient, http } from "viem";
+import { arcTestnet } from "../config/arc-testnet";
 
 const PAIR_ADDRESS = "0xf9d04BDdA9C857C9440ac9eD6EbB9118686Ef7b2";
 
@@ -31,20 +31,6 @@ const PAIR_ABI = [
     outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
     stateMutability: "view",
     type: "function"
-  },
-  {
-    inputs: [],
-    name: "token0",
-    outputs: [{ internalType: "address", name: "", type: "address" }],
-    stateMutability: "view",
-    type: "function"
-  },
-  {
-    inputs: [],
-    name: "token1",
-    outputs: [{ internalType: "address", name: "", type: "address" }],
-    stateMutability: "view",
-    type: "function"
   }
 ] as const;
 
@@ -60,47 +46,48 @@ export interface PoolData {
   token1Address: string;
 }
 
+// Instantiate a client dedicated to the Pool page with batching disabled
+const poolPublicClient = createPublicClient({
+  chain: arcTestnet,
+  transport: http("/api/arc-rpc", {
+    batch: false,
+  }),
+});
+
 // Module-scoped cache and in-flight request tracking
 const poolDataCache = new Map<string, { value: PoolData; timestamp: number }>();
 const inFlightPoolDataRequest = new Map<string, Promise<PoolData>>();
 const CACHE_TTL_MS = 15000; // 15 seconds
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function executePoolFetch(userAddress?: `0x${string}`, isArcTestnet?: boolean): Promise<PoolData> {
-  let lastError: unknown;
   const maxRetries = 1;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      // Fetch token addresses
-      const token0 = await arcPublicClient.readContract({
-        address: PAIR_ADDRESS,
-        abi: PAIR_ABI,
-        functionName: "token0"
-      });
-      const token1 = await arcPublicClient.readContract({
-        address: PAIR_ADDRESS,
-        abi: PAIR_ABI,
-        functionName: "token1"
-      });
-
-      // Fetch reserves
-      const [res0, res1] = await arcPublicClient.readContract({
+      // 1. Fetch reserves
+      const [res0, res1] = await poolPublicClient.readContract({
         address: PAIR_ADDRESS,
         abi: PAIR_ABI,
         functionName: "getReserves"
       });
 
-      // Fetch total supply
-      const supply = await arcPublicClient.readContract({
+      // Sequential spacing
+      await sleep(50);
+
+      // 2. Fetch total supply
+      const supply = await poolPublicClient.readContract({
         address: PAIR_ADDRESS,
         abi: PAIR_ABI,
         functionName: "totalSupply"
       });
 
-      // Fetch LP balance
+      // 3. Fetch LP balance only if wallet is connected
       let lpBalance = BigInt(0);
       if (userAddress && isArcTestnet) {
-        lpBalance = await arcPublicClient.readContract({
+        await sleep(50);
+        lpBalance = await poolPublicClient.readContract({
           address: PAIR_ADDRESS,
           abi: PAIR_ABI,
           functionName: "balanceOf",
@@ -129,24 +116,26 @@ async function executePoolFetch(userAddress?: `0x${string}`, isArcTestnet?: bool
         userPoolShare: share,
         underlyingUSDC: underlyingUSDCStr,
         underlyingEURC: underlyingEURCStr,
-        token0Address: token0,
-        token1Address: token1
+        token0Address: "0x3600000000000000000000000000000000000000",
+        token1Address: "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a"
       };
     } catch (err: unknown) {
-      lastError = err;
       const errMsg = err instanceof Error ? err.message : String(err);
-      const is429 = errMsg.includes("request limit reached") || errMsg.includes("429") || errMsg.includes("rate limit");
+      const is429 = errMsg.includes("429") || 
+                    errMsg.toLowerCase().includes("request limit reached") || 
+                    errMsg.toLowerCase().includes("rate limit") ||
+                    errMsg.toLowerCase().includes("busy");
 
       if (is429 && attempt < maxRetries) {
-        // Delay 2 seconds before retrying
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        // Wait 3 seconds before retrying exactly once
+        await sleep(3000);
       } else {
         break;
       }
     }
   }
 
-  throw lastError;
+  throw new Error("Arc Testnet RPC is temporarily busy. Please try again shortly.");
 }
 
 export async function fetchPoolDataDeduped(
@@ -157,7 +146,18 @@ export async function fetchPoolDataDeduped(
   const now = Date.now();
   const cacheKey = `${userAddress?.toLowerCase() || "none"}:${isArcTestnet ? "arc" : "other"}`;
 
-  if (!forceRefresh) {
+  if (forceRefresh) {
+    // Clear client cache and trigger clear cache on the server route
+    poolDataCache.delete(cacheKey);
+    await fetch("/api/arc-rpc", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-bypass-cache": "true",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", method: "clear_cache", id: 999 }),
+    }).catch(() => {});
+  } else {
     const cached = poolDataCache.get(cacheKey);
     if (cached && now - cached.timestamp < CACHE_TTL_MS) {
       return cached.value;
@@ -202,13 +202,7 @@ export function usePoolData(userAddress?: `0x${string}`, isArcTestnet?: boolean)
       setPoolData(data);
     } catch (err: unknown) {
       console.error("Error refreshing pool data:", err);
-      const errMsg = err instanceof Error ? err.message : String(err);
-      const is429 = errMsg.includes("request limit reached") || errMsg.includes("429") || errMsg.includes("rate limit");
-      if (is429) {
-        setError("Arc Testnet RPC is temporarily busy. Please try again shortly.");
-      } else {
-        setError("Failed to load pool data from blockchain. Please try again shortly.");
-      }
+      setError(err instanceof Error ? err.message : "Failed to load pool data from blockchain. Please try again shortly.");
     } finally {
       setIsLoading(false);
     }
@@ -228,13 +222,7 @@ export function usePoolData(userAddress?: `0x${string}`, isArcTestnet?: boolean)
       } catch (err: unknown) {
         if (isMounted) {
           console.error("Error fetching pool data:", err);
-          const errMsg = err instanceof Error ? err.message : String(err);
-          const is429 = errMsg.includes("request limit reached") || errMsg.includes("429") || errMsg.includes("rate limit");
-          if (is429) {
-            setError("Arc Testnet RPC is temporarily busy. Please try again shortly.");
-          } else {
-            setError("Failed to load pool data from blockchain. Please try again shortly.");
-          }
+          setError(err instanceof Error ? err.message : "Failed to load pool data from blockchain. Please try again shortly.");
         }
       } finally {
         if (isMounted) {
@@ -257,3 +245,4 @@ export function usePoolData(userAddress?: `0x${string}`, isArcTestnet?: boolean)
     refreshPoolData
   };
 }
+
