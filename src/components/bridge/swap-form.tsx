@@ -16,11 +16,12 @@ import { cn } from "@/lib/utils";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { useSwap } from "@/hooks/use-swap";
 
-interface TokenLogoProps {
+export interface TokenLogoProps {
   symbol: "USDC" | "EURC" | "cirBTC";
+  className?: string;
 }
 
-function TokenLogo({ symbol }: TokenLogoProps) {
+export function TokenLogo({ symbol, className }: TokenLogoProps) {
   const [hasError, setHasError] = useState(false);
   const src =
     symbol === "USDC"
@@ -42,7 +43,8 @@ function TokenLogo({ symbol }: TokenLogoProps) {
             ? "bg-[#2775CA] shadow-[0_0_8px_rgba(39,117,202,0.4)]"
             : symbol === "EURC"
             ? "bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.4)]"
-            : "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]"
+            : "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]",
+          className
         )}
       >
         {symbol === "USDC" ? "$" : symbol === "EURC" ? "€" : "B"}
@@ -51,7 +53,7 @@ function TokenLogo({ symbol }: TokenLogoProps) {
   }
 
   return (
-    <div className="h-6 w-6 rounded-full overflow-hidden flex items-center justify-center shrink-0 bg-transparent">
+    <div className={cn("h-6 w-6 rounded-full overflow-hidden flex items-center justify-center shrink-0 bg-transparent", className)}>
       <img
         src={src}
         alt={symbol}

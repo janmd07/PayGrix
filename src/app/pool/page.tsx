@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { usePoolData } from "@/hooks/use-pool-data";
+import { TokenLogo } from "@/components/bridge/swap-form";
 
 const FACTORY_ADDRESS = "0x05c69956564c556fc303Cb74C5505D0E1e8EDF2D";
 const ROUTER_ADDRESS = "0xB2A97BAABaB64B389948bebB58D639a654ABac89";
@@ -72,13 +73,9 @@ export default function PoolPage() {
                 {/* Smoky background glow */}
                 <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-purple-600/5 to-transparent pointer-events-none" />
                 <div className="flex items-center gap-4 relative z-10">
-                  <div className="flex -space-x-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 border border-slate-700 shadow-lg text-xs font-bold text-white">
-                      USD
-                    </div>
-                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-purple-900 border border-purple-800 shadow-lg text-xs font-bold text-white">
-                      EUR
-                    </div>
+                  <div className="flex -space-x-1.5">
+                    <TokenLogo symbol="USDC" className="border border-[#060f24] bg-[#070f21] shadow-lg relative z-20" />
+                    <TokenLogo symbol="EURC" className="border border-[#060f24] bg-[#070f21] shadow-lg relative z-10" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
