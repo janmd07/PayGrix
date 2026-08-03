@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { usePoolData } from "@/hooks/use-pool-data";
 import { TokenLogo } from "@/components/bridge/swap-form";
-import { useWriteContract, usePublicClient } from "wagmi";
+import { useWriteContract } from "wagmi";
+import { arcPublicClient } from "@/lib/arc-client";
 import { parseUnits, formatUnits, erc20Abi } from "viem";
 import { cn } from "@/lib/utils";
 
@@ -65,8 +66,53 @@ export default function PoolPage() {
   const { address, isConnected, isArcTestnet, switchToArcTestnetAsync } = useArcWallet();
   const { poolData, isLoading, error, refreshPoolData } = usePoolData(address, isArcTestnet);
 
-  const publicClient = usePublicClient({ chainId: 5042002 });
+  const publicClient = arcPublicClient;
   const { writeContractAsync } = useWriteContract();
+
+  // Helper to read contracts with automatic retry on rate limiting
+  const safeReadContract = useCallback(async <T,>(
+    args: Parameters<typeof publicClient.readContract>[0]
+  ): Promise<T> => {
+    const maxRetries = 1;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (attempt > 0) {
+          // Add spacing between retries
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+        }
+        return await publicClient.readContract(args) as T;
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        const is429 = errMsg.includes("429") || 
+                      errMsg.toLowerCase().includes("request limit reached") || 
+                      errMsg.toLowerCase().includes("rate limit") ||
+                      errMsg.toLowerCase().includes("busy");
+        
+        if (is429 && attempt < maxRetries) {
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw new Error("Arc Testnet RPC is temporarily busy. Please try again shortly.");
+  }, [publicClient]);
+
+  // Clean error message to hide raw RPC endpoints or stack traces from users
+  const sanitizeErrorMessage = useCallback((err: unknown): string => {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (errMsg.includes("User rejected") || errMsg.toLowerCase().includes("user rejected")) {
+      return "Transaction rejected by wallet signature.";
+    }
+    if (errMsg.toLowerCase().includes("request limit reached") || errMsg.toLowerCase().includes("429") || errMsg.toLowerCase().includes("busy") || errMsg.toLowerCase().includes("rate limit")) {
+      return "Arc Testnet RPC is temporarily busy. Please try again shortly.";
+    }
+    // Truncate nested stack trace/RPC details commonly returned by viem
+    if (errMsg.includes("ContractFunctionExecutionError") || errMsg.includes("CallExecutionError") || errMsg.includes("RPC Request failed")) {
+      const firstLine = errMsg.split("\n")[0];
+      return firstLine.replace(/ContractCallExecutionError: /, "").replace(/ContractFunctionExecutionError: /, "").trim();
+    }
+    return errMsg;
+  }, []);
 
   // Connected token balances derived from unified poolData hook
   const walletUsdcBalance = poolData?.walletUSDCBalance ?? "0.00";
@@ -275,7 +321,7 @@ export default function PoolPage() {
 
     try {
       // Pre-flight: verify Factory returns the known pair address
-      const factoryPair = await publicClient.readContract({
+      const factoryPair = await safeReadContract<`0x${string}`>({
         address: FACTORY_ADDRESS,
         abi: [
           {
@@ -300,7 +346,7 @@ export default function PoolPage() {
       // Step 1: Check and Approve USDC
       setTxStatus("approving");
       setConfirmStage("Checking USDC allowance...");
-      const usdcAllowance = await publicClient.readContract({
+      const usdcAllowance = await safeReadContract<bigint>({
         address: USDC_ADDRESS,
         abi: erc20Abi,
         functionName: "allowance",
@@ -322,7 +368,7 @@ export default function PoolPage() {
 
       // Step 2: Check and Approve EURC
       setConfirmStage("Checking EURC allowance...");
-      const eurcAllowance = await publicClient.readContract({
+      const eurcAllowance = await safeReadContract<bigint>({
         address: EURC_ADDRESS,
         abi: erc20Abi,
         functionName: "allowance",
@@ -382,8 +428,7 @@ export default function PoolPage() {
       }
     } catch (err: unknown) {
       console.error("Add Liquidity error:", err);
-      const errMsg = err instanceof Error ? err.message : String(err);
-      setTxError(errMsg.includes("User rejected") ? "Transaction rejected by wallet signature." : errMsg);
+      setTxError(sanitizeErrorMessage(err));
       setTxStatus("failed");
     }
   };
@@ -416,7 +461,7 @@ export default function PoolPage() {
     try {
       // Step 1: Check and Approve LP token
       setTxStatus("approving");
-      const lpAllowance = await publicClient.readContract({
+      const lpAllowance = await safeReadContract<bigint>({
         address: PAIR_ADDRESS,
         abi: erc20Abi,
         functionName: "allowance",
@@ -475,8 +520,7 @@ export default function PoolPage() {
       }
     } catch (err: unknown) {
       console.error("Remove Liquidity error:", err);
-      const errMsg = err instanceof Error ? err.message : String(err);
-      setTxError(errMsg.includes("User rejected") ? "Transaction rejected by wallet signature." : errMsg);
+      setTxError(sanitizeErrorMessage(err));
       setTxStatus("failed");
     }
   };
