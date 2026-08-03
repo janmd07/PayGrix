@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { AlertTriangle, ExternalLink, Loader2, RefreshCw, Layers } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { usePoolData } from "@/hooks/use-pool-data";
 import { TokenLogo } from "@/components/bridge/swap-form";
-import { useTokenBalance } from "@/hooks/use-token-balance";
 import { useWriteContract, usePublicClient } from "wagmi";
 import { parseUnits, formatUnits, erc20Abi } from "viem";
 import { cn } from "@/lib/utils";
@@ -69,9 +68,16 @@ export default function PoolPage() {
   const publicClient = usePublicClient({ chainId: 5042002 });
   const { writeContractAsync } = useWriteContract();
 
-  // Connected token balances
-  const { balance: walletUsdcBalance, refreshBalance: refreshUsdc } = useTokenBalance("USDC", address);
-  const { balance: walletEurcBalance, refreshBalance: refreshEurc } = useTokenBalance("EURC", address);
+  // Connected token balances derived from unified poolData hook
+  const walletUsdcBalance = poolData?.walletUSDCBalance ?? "0.00";
+  const walletEurcBalance = poolData?.walletEURCBalance ?? "0.00";
+
+  const refreshUsdc = useCallback(async () => {
+    await refreshPoolData();
+  }, [refreshPoolData]);
+  const refreshEurc = useCallback(async () => {
+    await refreshPoolData();
+  }, [refreshPoolData]);
 
   // Tab State
   const [activeTab, setActiveTab] = useState<"add" | "remove">("add");
@@ -713,7 +719,7 @@ export default function PoolPage() {
                           <div className="flex justify-between items-center text-xs">
                             <span className="text-slate-400 font-semibold">USDC Amount</span>
                             <span className="text-slate-500">
-                              Balance: {parseFloat(walletUsdcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} USDC
+                              Balance: {isLoading || !poolData ? "Loading..." : parseFloat(walletUsdcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }) + " USDC"}
                             </span>
                           </div>
                           <div className="flex gap-2">
@@ -740,7 +746,7 @@ export default function PoolPage() {
                           <div className="flex justify-between items-center text-xs">
                             <span className="text-slate-400 font-semibold">EURC Amount</span>
                             <span className="text-slate-500">
-                              Balance: {parseFloat(walletEurcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} EURC
+                              Balance: {isLoading || !poolData ? "Loading..." : parseFloat(walletEurcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }) + " EURC"}
                             </span>
                           </div>
                           <div className="flex gap-2">

@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { formatUnits, createPublicClient, http } from "viem";
+import { formatUnits, createPublicClient, http, erc20Abi } from "viem";
 import { arcTestnet } from "../config/arc-testnet";
 
 const PAIR_ADDRESS = "0xf9d04BDdA9C857C9440ac9eD6EbB9118686Ef7b2";
+const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
+const EURC_ADDRESS = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
 
 const PAIR_ABI = [
   {
@@ -46,6 +48,8 @@ export interface PoolData {
   underlyingEURC: string;
   token0Address: string;
   token1Address: string;
+  walletUSDCBalance: string;
+  walletEURCBalance: string;
 }
 
 // Instantiate a client dedicated to the Pool page with batching disabled
@@ -76,7 +80,7 @@ async function executePoolFetch(userAddress?: `0x${string}`, isArcTestnet?: bool
       });
 
       // Sequential spacing
-      await sleep(50);
+      await sleep(100);
 
       // 2. Fetch total supply
       const supply = await poolPublicClient.readContract({
@@ -88,10 +92,34 @@ async function executePoolFetch(userAddress?: `0x${string}`, isArcTestnet?: bool
       // 3. Fetch LP balance only if wallet is connected
       let lpBalance = BigInt(0);
       if (userAddress && isArcTestnet) {
-        await sleep(50);
+        await sleep(100);
         lpBalance = await poolPublicClient.readContract({
           address: PAIR_ADDRESS,
           abi: PAIR_ABI,
+          functionName: "balanceOf",
+          args: [userAddress]
+        });
+      }
+
+      // 4. Fetch USDC balance if wallet is connected
+      let usdcBalance = BigInt(0);
+      if (userAddress && isArcTestnet) {
+        await sleep(100);
+        usdcBalance = await poolPublicClient.readContract({
+          address: USDC_ADDRESS,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [userAddress]
+        });
+      }
+
+      // 5. Fetch EURC balance if wallet is connected
+      let eurcBalance = BigInt(0);
+      if (userAddress && isArcTestnet) {
+        await sleep(100);
+        eurcBalance = await poolPublicClient.readContract({
+          address: EURC_ADDRESS,
+          abi: erc20Abi,
           functionName: "balanceOf",
           args: [userAddress]
         });
@@ -102,6 +130,8 @@ async function executePoolFetch(userAddress?: `0x${string}`, isArcTestnet?: bool
       const reserve1Str = formatUnits(res1, 6);
       const totalSupplyStr = formatUnits(supply, 18);
       const userLPBalanceStr = formatUnits(lpBalance, 18);
+      const usdcBalanceStr = formatUnits(usdcBalance, 6);
+      const eurcBalanceStr = formatUnits(eurcBalance, 6);
 
       const supplyNum = parseFloat(totalSupplyStr);
       const userLPNum = parseFloat(userLPBalanceStr);
@@ -121,7 +151,9 @@ async function executePoolFetch(userAddress?: `0x${string}`, isArcTestnet?: bool
         underlyingUSDC: underlyingUSDCStr,
         underlyingEURC: underlyingEURCStr,
         token0Address: "0x3600000000000000000000000000000000000000",
-        token1Address: "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a"
+        token1Address: "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
+        walletUSDCBalance: usdcBalanceStr,
+        walletEURCBalance: eurcBalanceStr
       };
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
