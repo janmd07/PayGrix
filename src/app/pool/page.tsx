@@ -12,6 +12,7 @@ import { usePoolData } from "@/hooks/use-pool-data";
 import { TokenLogo } from "@/components/bridge/swap-form";
 import { useWriteContract } from "wagmi";
 import { arcPublicClient } from "@/lib/arc-client";
+import { safeArcReadContract, sanitizeArcError, clearArcReadCache } from "@/lib/arc-read-infra";
 import { parseUnits, formatUnits, erc20Abi } from "viem";
 import { cn } from "@/lib/utils";
 
@@ -71,47 +72,19 @@ export default function PoolPage() {
 
   // Helper to read contracts with automatic retry on rate limiting
   const safeReadContract = useCallback(async <T,>(
-    args: Parameters<typeof publicClient.readContract>[0]
+    args: Parameters<typeof safeArcReadContract>[0]
   ): Promise<T> => {
-    const maxRetries = 1;
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        if (attempt > 0) {
-          // Add spacing between retries
-          await new Promise((resolve) => setTimeout(resolve, 3000));
-        }
-        return await publicClient.readContract(args) as T;
-      } catch (err: unknown) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        const is429 = errMsg.includes("429") || 
-                      errMsg.toLowerCase().includes("request limit reached") || 
-                      errMsg.toLowerCase().includes("rate limit") ||
-                      errMsg.toLowerCase().includes("busy");
-        
-        if (is429 && attempt < maxRetries) {
-          continue;
-        }
-        throw err;
-      }
-    }
-    throw new Error("Arc Testnet RPC is temporarily busy. Please try again shortly.");
-  }, [publicClient]);
-
+    return safeArcReadContract<T>(args, { cachePolicy: "none", forceRefresh: true }) as Promise<T>;
+  }, []);
+ 
   // Clean error message to hide raw RPC endpoints or stack traces from users
   const sanitizeErrorMessage = useCallback((err: unknown): string => {
+    // Check for wallet rejection explicitly for user-friendly UI mapping
     const errMsg = err instanceof Error ? err.message : String(err);
     if (errMsg.includes("User rejected") || errMsg.toLowerCase().includes("user rejected")) {
       return "Transaction rejected by wallet signature.";
     }
-    if (errMsg.toLowerCase().includes("request limit reached") || errMsg.toLowerCase().includes("429") || errMsg.toLowerCase().includes("busy") || errMsg.toLowerCase().includes("rate limit")) {
-      return "Arc Testnet RPC is temporarily busy. Please try again shortly.";
-    }
-    // Truncate nested stack trace/RPC details commonly returned by viem
-    if (errMsg.includes("ContractFunctionExecutionError") || errMsg.includes("CallExecutionError") || errMsg.includes("RPC Request failed")) {
-      const firstLine = errMsg.split("\n")[0];
-      return firstLine.replace(/ContractCallExecutionError: /, "").replace(/ContractFunctionExecutionError: /, "").trim();
-    }
-    return errMsg;
+    return sanitizeArcError(err);
   }, []);
 
   // Connected token balances derived from unified poolData hook
@@ -364,8 +337,9 @@ export default function PoolPage() {
         });
         setConfirmStage("Confirming USDC approval on-chain...");
         await publicClient.waitForTransactionReceipt({ hash: approveHash });
+        clearArcReadCache(`arc:${USDC_ADDRESS}`);
       }
-
+ 
       // Step 2: Check and Approve EURC
       setConfirmStage("Checking EURC allowance...");
       const eurcAllowance = await safeReadContract<bigint>({
@@ -374,7 +348,7 @@ export default function PoolPage() {
         functionName: "allowance",
         args: [address, ROUTER_ADDRESS]
       });
-
+ 
       if (eurcAllowance < addEstimates.eurcAmountRaw) {
         setConfirmStage("Approving EURC (exact amount)...");
         const approveHash = await writeContractAsync({
@@ -386,13 +360,14 @@ export default function PoolPage() {
         });
         setConfirmStage("Confirming EURC approval on-chain...");
         await publicClient.waitForTransactionReceipt({ hash: approveHash });
+        clearArcReadCache(`arc:${EURC_ADDRESS}`);
       }
-
+ 
       // Step 3: Add Liquidity Call
       setTxStatus("signing");
       setConfirmStage("Requesting signature to Add Liquidity...");
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
-
+ 
       const hash = await writeContractAsync({
         address: ROUTER_ADDRESS,
         abi: ROUTER_ABI,
@@ -409,15 +384,18 @@ export default function PoolPage() {
         ],
         chainId: 5042002
       });
-
+ 
       setTxHash(hash);
       setTxStatus("confirming");
       setConfirmStage("Confirming transaction on-chain...");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
-
+ 
       if (receipt.status === "success") {
         setTxStatus("success");
         // Clear caches and refresh
+        clearArcReadCache(`arc:${USDC_ADDRESS}`);
+        clearArcReadCache(`arc:${EURC_ADDRESS}`);
+        clearArcReadCache(`arc:${PAIR_ADDRESS}`);
         await refreshPoolData();
         await refreshUsdc();
         await refreshEurc();
@@ -479,13 +457,14 @@ export default function PoolPage() {
         });
         setConfirmStage("Confirming LP token approval on-chain...");
         await publicClient.waitForTransactionReceipt({ hash: approveHash });
+        clearArcReadCache(`arc:${PAIR_ADDRESS}`);
       }
-
+ 
       // Step 2: Remove Liquidity Call
       setTxStatus("signing");
       setConfirmStage("Requesting signature to Remove Liquidity...");
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
-
+ 
       const hash = await writeContractAsync({
         address: ROUTER_ADDRESS,
         abi: ROUTER_ABI,
@@ -501,15 +480,18 @@ export default function PoolPage() {
         ],
         chainId: 5042002
       });
-
+ 
       setTxHash(hash);
       setTxStatus("confirming");
       setConfirmStage("Confirming transaction on-chain...");
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
-
+ 
       if (receipt.status === "success") {
         setTxStatus("success");
         // Clear caches and refresh
+        clearArcReadCache(`arc:${USDC_ADDRESS}`);
+        clearArcReadCache(`arc:${EURC_ADDRESS}`);
+        clearArcReadCache(`arc:${PAIR_ADDRESS}`);
         await refreshPoolData();
         await refreshUsdc();
         await refreshEurc();
