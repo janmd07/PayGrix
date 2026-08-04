@@ -15,6 +15,7 @@ export type BridgeStatus =
   | "failed";
 
 import { EIP1193Provider } from "viem";
+import { clearArcReadCache } from "@/lib/arc-read-infra";
 
 const APP_KIT_CHAINS: Record<
   string,
@@ -106,25 +107,27 @@ export function useBridge() {
       if (payload?.values?.txHash) {
         setSourceTxHash(payload.values.txHash);
       }
+      clearArcReadCache("arc:0x3600000000000000000000000000000000000000");
+      clearArcReadCache("arc:native");
     };
-
+ 
     const fetchAttestationHandler = (payload: BridgeEventPayload) => {
       console.log("App Kit: bridge.fetchAttestation event", payload);
       setStatus("bridging");
     };
-
+ 
     const mintHandler = (payload: BridgeEventPayload) => {
       console.log("App Kit: bridge.mint event", payload);
       if (payload?.values?.txHash) {
         setDestTxHash(payload.values.txHash);
       }
     };
-
+ 
     kit.on("bridge.approve", approveHandler);
     kit.on("bridge.burn", burnHandler);
     kit.on("bridge.fetchAttestation", fetchAttestationHandler);
     kit.on("bridge.mint", mintHandler);
-
+ 
     try {
       // Prompt user for initial step
       setStatus("waiting-wallet");
@@ -133,13 +136,15 @@ export function useBridge() {
         to: { adapter, chain: toChainObj },
         amount,
       });
-
+ 
       console.log("App Kit: bridge result", rawResult);
-
+ 
       const result = rawResult as AppKitBridgeResult;
-
+ 
       if (result.state === "success" || result.state === "completed") {
         setStatus("completed");
+        clearArcReadCache("arc:0x3600000000000000000000000000000000000000");
+        clearArcReadCache("arc:native");
         
         // Extract hashes as fallback if event handlers missed them
         const burnStep = result.steps?.find((s) => s.name === "burn" || s.name === "execute");
@@ -151,7 +156,7 @@ export function useBridge() {
         if (mintStep?.txHash) {
           setDestTxHash(mintStep.txHash);
         }
-
+ 
         return result;
       } else {
         throw new Error(result.error || "Bridge execution failed without success status");

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createPublicClient, http, erc20Abi, formatUnits } from "viem";
-import { fetchTokenBalanceDeduped } from "@/lib/arc-client";
+import { safeArcReadContract } from "@/lib/arc-read-infra";
 
 const CHAIN_CONFIGS: Record<string, { rpc: string; usdc: `0x${string}` }> = {
   "Arc Testnet": {
@@ -24,7 +24,7 @@ export function useBridgeBalance(chain: string, address?: `0x${string}`) {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const symbol = "USDC";
 
-  const refreshBalance = useCallback(async () => {
+  const refreshBalance = useCallback(async (forceRefresh = false) => {
     if (!address) {
       setBalance("0.00");
       setIsLoading(false);
@@ -43,7 +43,12 @@ export function useBridgeBalance(chain: string, address?: `0x${string}`) {
       let balanceWei = BigInt(0);
 
       if (chain === "Arc Testnet") {
-        balanceWei = await fetchTokenBalanceDeduped(config.usdc, address);
+        balanceWei = await safeArcReadContract<bigint>({
+          address: config.usdc,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [address],
+        }, { cachePolicy: "wallet", forceRefresh });
       } else {
         const client = createPublicClient({
           transport: http(config.rpc),
