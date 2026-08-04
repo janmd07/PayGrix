@@ -1,10 +1,10 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { AlertTriangle, ExternalLink, Loader2, RefreshCw, Layers } from "lucide-react";
+import { AlertTriangle, ExternalLink, Loader2, RefreshCw, Layers, Plus, HelpCircle, Clock } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
@@ -582,385 +582,497 @@ export default function PoolPage() {
         )}
 
         {poolData && (
-          <>
-            {/* Pool Status Header Card */}
-            <Card className="border border-white/10 bg-[#060f24]/50 backdrop-blur-md overflow-hidden">
-              <div className="p-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between relative">
-                {/* Smoky background glow */}
-                <div className="absolute inset-0 bg-gradient-to-r from-primary/5 via-purple-600/5 to-transparent pointer-events-none" />
-                <div className="flex items-center gap-4 relative z-10">
-                  <div className="flex -space-x-1.5">
-                    <TokenLogo symbol="USDC" className="border border-[#060f24] bg-[#070f21] shadow-lg relative z-20" />
-                    <TokenLogo symbol="EURC" className="border border-[#060f24] bg-[#070f21] shadow-lg relative z-10" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h2 className="text-lg font-bold text-white">USDC / EURC Pool</h2>
-                      <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">Active</Badge>
-                    </div>
-                    <p className="text-xs text-slate-400">Uniswap V2 Pair • 0.30% Fee Tier</p>
-                  </div>
-                </div>
-                <div className="text-sm text-slate-400 relative z-10">
-                  Chain: <span className="font-semibold text-white">Arc Testnet (5042002)</span>
-                </div>
-              </div>
-            </Card>
+          <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+            {/* Left: Main Interaction Card */}
+            <div className="space-y-6">
+              <Card className="border border-white/10 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_8px_32px_rgba(6,15,36,0.5)]">
+                {/* Elegant top gradient accent line */}
+                <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf]" />
 
-            <div className="flex justify-end -mt-2">
-              <a
-                href="/settings#protocol-contracts"
-                className="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
-              >
-                View protocol contracts
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            </div>
-
-            {/* Overview Stats Grid */}
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-              <Card className="border border-white/5 bg-[#060f24]/30 backdrop-blur-sm">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-xs font-semibold text-slate-400 uppercase tracking-wider">USDC Reserves</CardTitle>
+                <CardHeader className="pb-4">
+                  <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
+                    <Layers className="h-5 w-5 text-purple-400 animate-pulse" />
+                    Manage Liquidity
+                  </CardTitle>
+                  <CardDescription className="text-xs text-slate-400">
+                    Add or remove USDC/EURC liquidity on Arc Testnet.
+                  </CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-white">{parseFloat(poolData.reserve0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</div>
-                  <p className="text-xs text-slate-500 mt-1">USD Coin pegged reserve</p>
-                </CardContent>
-              </Card>
 
-              <Card className="border border-white/5 bg-[#060f24]/30 backdrop-blur-sm">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-xs font-semibold text-slate-400 uppercase tracking-wider">EURC Reserves</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-white">{parseFloat(poolData.reserve1).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</div>
-                  <p className="text-xs text-slate-500 mt-1">Euro Coin pegged reserve</p>
-                </CardContent>
-              </Card>
-
-              <Card className="border border-white/5 bg-[#060f24]/30 backdrop-blur-sm">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Pool Units</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-white">
-                    {(Number(poolData.totalSupplyRaw) / 1000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
+                <CardContent className="space-y-4">
+                  {/* Tab Switcher */}
+                  <div className="flex rounded-xl bg-[#070e1c]/80 p-1 border border-white/5 mb-6">
+                    <button
+                      onClick={() => setActiveTab("add")}
+                      className={cn(
+                        "flex-1 py-2 text-xs font-bold rounded-lg transition-all duration-200",
+                        activeTab === "add"
+                          ? "bg-purple-600 text-white shadow-lg shadow-purple-600/20"
+                          : "text-slate-400 hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      Add Liquidity
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("remove")}
+                      className={cn(
+                        "flex-1 py-2 text-xs font-bold rounded-lg transition-all duration-200",
+                        activeTab === "remove"
+                          ? "bg-purple-600 text-white shadow-lg shadow-purple-600/20"
+                          : "text-slate-400 hover:text-white hover:bg-white/5"
+                      )}
+                    >
+                      Remove Liquidity
+                    </button>
                   </div>
-                  <p className="text-xs text-slate-500 mt-1">
-                    Official ERC-20: {Number(poolData.totalSupply) === 0 ? "0.00" : parseFloat(poolData.totalSupply).toFixed(12)} UNI-V2
-                  </p>
-                </CardContent>
-              </Card>
 
-              <Card className="border border-white/5 bg-[#060f24]/30 backdrop-blur-sm">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Current Ratio</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold text-white">1 USDC = {getRatioString()} EURC</div>
-                  <p className="text-xs text-slate-500 mt-1">On-chain pool conversion rate</p>
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* User LP Position */}
-            <Card className="border border-white/10 bg-[#060f24]/50 backdrop-blur-md">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-white font-bold">
-                  <Layers className="h-5 w-5 text-primary" />
-                  My LP Position
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-6">
-                {!isConnected ? (
-                  <div className="rounded-xl border border-dashed border-white/10 p-6 text-center">
-                    <p className="text-sm text-slate-400">Wallet disconnected.</p>
-                    <p className="text-xs text-slate-500 mt-1">Please connect your wallet in the navigation header to load your pool share.</p>
-                  </div>
-                ) : !isArcTestnet ? (
-                  <div className="rounded-xl border border-dashed border-red-500/20 bg-red-500/5 p-6 text-center">
-                    <p className="text-sm text-red-400 font-semibold">Wrong Network Connected</p>
-                    <p className="text-xs text-slate-400 mt-1">Switch to Arc Testnet (Chain ID 5042002) in your wallet to view your position.</p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-4">
-                    {/* LP Token Details */}
-                    <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-slate-400">Official LP Balance (ERC-20):</span>
-                        <span className="text-sm font-semibold text-white">
-                          {Number(poolData.userLPBalance) === 0 ? "0.00" : parseFloat(poolData.userLPBalance).toFixed(12)} UNI-V2
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center text-xs border-t border-white/5 pt-2 mt-1">
-                        <span className="text-slate-500">Normalized Pool Units (6 decimals):</span>
-                        <span className="font-semibold text-slate-300">
-                          {(Number(poolData.userLPBalanceRaw) / 1000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} Units
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="flex justify-between items-center p-3 rounded-lg bg-white/5 border border-white/5">
-                      <span className="text-sm text-slate-400">My Pool Share:</span>
-                      <span className="text-sm font-semibold text-white">{(poolData.userPoolShare * 100).toFixed(6)}%</span>
-                    </div>
-
-                    {/* Underlying tokens */}
-                    <div className="mt-2 space-y-3">
-                      <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Underlying Tokens</h4>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <div className="p-3 rounded-lg bg-slate-900/50 border border-white/5 flex flex-col gap-1">
-                          <span className="text-[10px] text-slate-500 font-semibold uppercase">USDC Amount</span>
-                          <span className="text-base font-bold text-white">
-                            {parseFloat(poolData.underlyingUSDC).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
-                          </span>
-                        </div>
-                        <div className="p-3 rounded-lg bg-slate-900/50 border border-white/5 flex flex-col gap-1">
-                          <span className="text-[10px] text-slate-500 font-semibold uppercase">EURC Amount</span>
-                          <span className="text-base font-bold text-white">
-                            {parseFloat(poolData.underlyingEURC).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Interactive Liquidity Tabs */}
-                {isConnected && isArcTestnet && (
-                  <div className="mt-6 pt-6 border-t border-white/5 space-y-4">
-                    <div className="flex border-b border-white/5 pb-2">
-                      <button
-                        onClick={() => setActiveTab("add")}
-                        className={cn(
-                          "px-4 py-2 text-sm font-semibold border-b-2 transition-all",
-                          activeTab === "add"
-                            ? "border-primary text-white"
-                            : "border-transparent text-slate-400 hover:text-white"
-                        )}
-                      >
-                        Add Liquidity
-                      </button>
-                      <button
-                        onClick={() => setActiveTab("remove")}
-                        className={cn(
-                          "px-4 py-2 text-sm font-semibold border-b-2 transition-all",
-                          activeTab === "remove"
-                            ? "border-primary text-white"
-                            : "border-transparent text-slate-400 hover:text-white"
-                        )}
-                      >
-                        Remove Liquidity
-                      </button>
-                    </div>
-
-                    {/* Form Section */}
-                    {activeTab === "add" ? (
-                      <div className="space-y-4">
-                        {/* USDC Input */}
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-slate-400 font-semibold">USDC Amount</span>
-                            <span className="text-slate-500">
-                              Balance: {isLoading || !poolData ? "Loading..." : parseFloat(walletUsdcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }) + " USDC"}
-                            </span>
+                  {activeTab === "add" ? (
+                    <div className="space-y-4">
+                      {/* USDC Input Panel */}
+                      <div className="bg-[#070e1c] border border-white/5 rounded-2xl p-5 space-y-3.5 transition-all duration-200 focus-within:border-purple-500/30">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">DEPOSIT</span>
+                          <div className="flex items-center gap-2 text-slate-500 font-mono">
+                            <span>Balance: {parseFloat(walletUsdcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</span>
+                            <button
+                              onClick={handleUsdcMax}
+                              className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all disabled:opacity-40"
+                            >
+                              MAX
+                            </button>
                           </div>
-                          <div className="flex gap-2">
+                        </div>
+
+                        <div className="flex justify-between items-center gap-4 pt-1">
+                          <div className="flex-1 min-w-0">
                             <input
                               type="text"
                               value={usdcInput}
                               onChange={(e) => handleUsdcInputChange(e.target.value)}
                               placeholder="0.00"
-                              className="flex-1 bg-[#070f21] border border-white/8 rounded-xl px-4 py-2.5 text-white font-mono placeholder-slate-600 focus:outline-none focus:border-primary/50 text-sm"
+                              className="w-full bg-transparent text-4xl font-bold text-white placeholder-slate-700 focus:outline-none transition-all font-mono"
                             />
-                            <Button
-                              onClick={handleUsdcMax}
-                              variant="outline"
-                              size="sm"
-                              className="h-10 rounded-xl px-3 text-xs border-white/10 hover:bg-white/5 text-slate-300"
+                          </div>
+
+                          <div className="shrink-0">
+                            <div className="flex items-center bg-[#070f21] border border-white/8 rounded-full pl-2.5 pr-4 py-2 text-white select-none">
+                              <TokenLogo symbol="USDC" />
+                              <span className="font-bold text-sm tracking-wider ml-2">USDC</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Middle Icon */}
+                      <div className="flex justify-center -my-4.5 relative z-10">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#070e1c] border border-white/10 text-slate-400 hover:text-white hover:border-purple-500/50 hover:shadow-[0_0_10px_rgba(157,78,221,0.4)] transition-all duration-200">
+                          <Plus className="h-3.5 w-3.5 text-purple-400" />
+                        </div>
+                      </div>
+
+                      {/* EURC Input Panel */}
+                      <div className="bg-[#070e1c] border border-white/5 rounded-2xl p-5 space-y-3.5 transition-all duration-200 focus-within:border-purple-500/30">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">DEPOSIT</span>
+                          <div className="flex items-center gap-2 text-slate-500 font-mono">
+                            <span>Balance: {parseFloat(walletEurcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</span>
+                            <button
+                              onClick={handleEurcMax}
+                              className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all disabled:opacity-40"
                             >
                               MAX
-                            </Button>
+                            </button>
                           </div>
                         </div>
 
-                        {/* EURC Input */}
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-slate-400 font-semibold">EURC Amount</span>
-                            <span className="text-slate-500">
-                              Balance: {isLoading || !poolData ? "Loading..." : parseFloat(walletEurcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 }) + " EURC"}
-                            </span>
-                          </div>
-                          <div className="flex gap-2">
+                        <div className="flex justify-between items-center gap-4 pt-1">
+                          <div className="flex-1 min-w-0">
                             <input
                               type="text"
                               value={eurcInput}
                               onChange={(e) => handleEurcInputChange(e.target.value)}
                               placeholder="0.00"
-                              className="flex-1 bg-[#070f21] border border-white/8 rounded-xl px-4 py-2.5 text-white font-mono placeholder-slate-600 focus:outline-none focus:border-primary/50 text-sm"
+                              className="w-full bg-transparent text-4xl font-bold text-white placeholder-slate-700 focus:outline-none transition-all font-mono"
                             />
-                            <Button
-                              onClick={handleEurcMax}
-                              variant="outline"
-                              size="sm"
-                              className="h-10 rounded-xl px-3 text-xs border-white/10 hover:bg-white/5 text-slate-300"
-                            >
-                              MAX
-                            </Button>
+                          </div>
+
+                          <div className="shrink-0">
+                            <div className="flex items-center bg-[#070f21] border border-white/8 rounded-full pl-2.5 pr-4 py-2 text-white select-none">
+                              <TokenLogo symbol="EURC" />
+                              <span className="font-bold text-sm tracking-wider ml-2">EURC</span>
+                            </div>
                           </div>
                         </div>
+                      </div>
 
-                        {/* Add Preview */}
-                        {addEstimates && (
-                          <div className="p-3.5 rounded-xl border border-white/5 bg-white/[0.01] space-y-2 text-xs">
-                            <div className="flex justify-between">
-                              <span className="text-slate-400">Expected USDC:</span>
-                              <span className="font-mono text-white">{formatUnits(addEstimates.usdcAmountRaw, 6)} USDC</span>
+                      {/* Add Preview / Quote Details */}
+                      {addEstimates && (
+                        <div className="rounded-2xl border border-white/5 bg-[#070e1c] p-4.5 space-y-2 text-xs">
+                          <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                            <span className="font-semibold text-slate-300">Quote Details</span>
+                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              Live Quote
+                            </span>
+                          </div>
+
+                          <div className="space-y-1.5 pt-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-400">Pool Ratio</span>
+                              <span className="text-white font-mono font-medium">1 USDC ≈ {getRatioString()} EURC</span>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-slate-400">Expected EURC:</span>
-                              <span className="font-mono text-white">{formatUnits(addEstimates.eurcAmountRaw, 6)} EURC</span>
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-400">Expected USDC</span>
+                              <span className="text-white font-mono font-medium">{formatUnits(addEstimates.usdcAmountRaw, 6)} USDC</span>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-slate-400">Min. USDC (1% slippage):</span>
-                              <span className="font-mono text-white">{formatUnits(addEstimates.minUsdcRaw, 6)} USDC</span>
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-400">Expected EURC</span>
+                              <span className="text-white font-mono font-medium">{formatUnits(addEstimates.eurcAmountRaw, 6)} EURC</span>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-slate-400">Min. EURC (1% slippage):</span>
-                              <span className="font-mono text-white">{formatUnits(addEstimates.minEurcRaw, 6)} EURC</span>
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-400">Minimum USDC</span>
+                              <span className="text-white font-mono font-medium">{formatUnits(addEstimates.minUsdcRaw, 6)} USDC</span>
                             </div>
-                            <div className="flex justify-between border-t border-white/5 pt-2 mt-1">
-                              <span className="text-slate-400 font-semibold">Estimated LP Tokens:</span>
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-400">Minimum EURC</span>
+                              <span className="text-white font-mono font-medium">{formatUnits(addEstimates.minEurcRaw, 6)} EURC</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-400">Estimated LP Units</span>
                               <div className="text-right">
                                 <span className="font-mono text-white font-bold block">
-                                  {formatUnits(addEstimates.estimatedLPRaw, 18)} UNI-V2
+                                  {(Number(addEstimates.estimatedLPRaw) / 1000000).toFixed(6)} Units
                                 </span>
-                                <span className="text-[10px] text-slate-500 block">
-                                  ({(Number(addEstimates.estimatedLPRaw) / 1000000).toFixed(6)} Pool Units)
+                                <span className="text-[10px] text-slate-500 block font-mono">
+                                  ({formatUnits(addEstimates.estimatedLPRaw, 18)} UNI-V2)
                                 </span>
                               </div>
                             </div>
-                          </div>
-                        )}
 
-                        <Button
-                          disabled={!isAddValid || txStatus !== "idle"}
-                          onClick={handleAddLiquidity}
-                          className="w-full py-3 h-12 rounded-xl text-sm font-semibold text-white bg-primary hover:bg-primary/95 transition-all"
-                        >
-                          Add Liquidity
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        {/* LP Input */}
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-slate-400 font-semibold">LP Pool Units to Remove</span>
-                            <span className="text-slate-500">
-                              Max: {(Number(poolData.userLPBalanceRaw) / 1000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} Units
-                            </span>
+                            <div className="pt-1.5 border-t border-white/5 text-[10px] text-slate-500 flex items-center gap-1">
+                              <Clock className="h-3 w-3 text-purple-400 shrink-0" />
+                              <span>Slippage: 1% | Deadline: 20 minutes</span>
+                            </div>
                           </div>
-                          <div className="flex gap-2">
+                        </div>
+                      )}
+
+                      <Button
+                        disabled={!isAddValid || txStatus !== "idle"}
+                        onClick={handleAddLiquidity}
+                        className={cn(
+                          "w-full text-sm font-bold py-3.5 h-12 rounded-xl transition-all duration-300 active:scale-[0.98]",
+                          "bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf] hover:from-[#3b7cff] hover:via-[#8c3ed9] hover:to-[#6a1cb0]",
+                          "text-white shadow-[0_4px_14px_rgba(157,78,221,0.3)] hover:shadow-[0_4px_20px_rgba(157,78,221,0.5)]",
+                          (!isAddValid || txStatus !== "idle") && "opacity-50 cursor-not-allowed hover:shadow-none hover:from-[#4f8cff] hover:via-[#9d4edd] hover:to-[#7b2cbf]"
+                        )}
+                      >
+                        Add Liquidity
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* LP Input Panel */}
+                      <div className="bg-[#070e1c] border border-white/5 rounded-2xl p-5 space-y-3.5 transition-all duration-200 focus-within:border-purple-500/30">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">LP Pool Units to Remove</span>
+                          <div className="flex items-center gap-2 text-slate-500 font-mono">
+                            <span>Max: {(Number(poolData.userLPBalanceRaw) / 1000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} Units</span>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-between items-center gap-4 pt-1">
+                          <div className="flex-1 min-w-0">
                             <input
                               type="text"
                               value={lpInput}
                               onChange={(e) => handleLpInputChange(e.target.value)}
                               placeholder="0.00"
-                              className="flex-1 bg-[#070f21] border border-white/8 rounded-xl px-4 py-2.5 text-white font-mono placeholder-slate-600 focus:outline-none focus:border-primary/50 text-sm"
+                              className="w-full bg-transparent text-4xl font-bold text-white placeholder-slate-700 focus:outline-none transition-all font-mono"
                             />
-                            <div className="flex gap-1">
-                              {([25, 50, 75, 100] as const).map((pct) => (
-                                <Button
-                                  key={pct}
-                                  onClick={() => handlePercentSelect(pct)}
-                                  variant="outline"
-                                  size="sm"
-                                  className="h-10 rounded-xl px-2.5 text-[10px] border-white/10 hover:bg-white/5 text-slate-300"
-                                >
-                                  {pct === 100 ? "MAX" : `${pct}%`}
-                                </Button>
-                              ))}
+                          </div>
+
+                          <div className="shrink-0 flex gap-1">
+                            {([25, 50, 75, 100] as const).map((pct) => (
+                              <button
+                                key={pct}
+                                onClick={() => handlePercentSelect(pct)}
+                                className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all disabled:opacity-40"
+                              >
+                                {pct === 100 ? "MAX" : `${pct}%`}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Receive Preview Cards */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="bg-[#070e1c] border border-white/5 rounded-xl p-3 flex flex-col gap-1">
+                          <span className="text-[10px] text-slate-500 font-semibold uppercase">USDC to Receive</span>
+                          <span className="text-sm font-bold text-white font-mono">
+                            {removeEstimates 
+                              ? parseFloat(formatUnits(removeEstimates.usdcExpectedRaw, 6)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })
+                              : "0.00"}{" "}
+                            USDC
+                          </span>
+                        </div>
+                        <div className="bg-[#070e1c] border border-white/5 rounded-xl p-3 flex flex-col gap-1">
+                          <span className="text-[10px] text-slate-500 font-semibold uppercase">EURC to Receive</span>
+                          <span className="text-sm font-bold text-white font-mono">
+                            {removeEstimates 
+                              ? parseFloat(formatUnits(removeEstimates.eurcExpectedRaw, 6)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })
+                              : "0.00"}{" "}
+                            EURC
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Remove Preview / Quote Details */}
+                      {removeEstimates && (
+                        <div className="rounded-2xl border border-white/5 bg-[#070e1c] p-4.5 space-y-2 text-xs">
+                          <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                            <span className="font-semibold text-slate-300">Quote Details</span>
+                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              Live Quote
+                            </span>
+                          </div>
+
+                          <div className="space-y-1.5 pt-1">
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-400">Selected Pool Units</span>
+                              <span className="text-white font-mono font-medium">{lpInput} Units</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-400">Expected USDC</span>
+                              <span className="text-white font-mono font-medium">{formatUnits(removeEstimates.usdcExpectedRaw, 6)} USDC</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-400">Expected EURC</span>
+                              <span className="text-white font-mono font-medium">{formatUnits(removeEstimates.eurcExpectedRaw, 6)} EURC</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-400">Minimum USDC</span>
+                              <span className="text-white font-mono font-medium">{formatUnits(removeEstimates.minUsdcRaw, 6)} USDC</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-slate-400">Minimum EURC</span>
+                              <span className="text-white font-mono font-medium">{formatUnits(removeEstimates.minEurcRaw, 6)} EURC</span>
+                            </div>
+
+                            <div className="pt-1.5 border-t border-white/5 text-[10px] text-slate-500 flex items-center gap-1">
+                              <Clock className="h-3 w-3 text-purple-400 shrink-0" />
+                              <span>Slippage: 1% | Deadline: 20 minutes</span>
                             </div>
                           </div>
                         </div>
+                      )}
 
-                        {/* Remove Preview */}
-                        {removeEstimates && (
-                          <div className="p-3.5 rounded-xl border border-white/5 bg-white/[0.01] space-y-2 text-xs">
-                            <div className="flex justify-between">
-                              <span className="text-slate-400">Raw LP amount:</span>
-                              <span className="font-mono text-white">{rawLPToRemove.toString()}</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-slate-400">Est. USDC to Receive:</span>
-                              <span className="font-mono text-white">{formatUnits(removeEstimates.usdcExpectedRaw, 6)} USDC</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-slate-400">Est. EURC to Receive:</span>
-                              <span className="font-mono text-white">{formatUnits(removeEstimates.eurcExpectedRaw, 6)} EURC</span>
-                            </div>
-                            <div className="flex justify-between border-t border-white/5 pt-2 mt-1">
-                              <span className="text-slate-400">Min. USDC (1% slippage):</span>
-                              <span className="font-mono text-white font-semibold">{formatUnits(removeEstimates.minUsdcRaw, 6)} USDC</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-slate-400">Min. EURC (1% slippage):</span>
-                              <span className="font-mono text-white font-semibold">{formatUnits(removeEstimates.minEurcRaw, 6)} EURC</span>
-                            </div>
-                          </div>
+                      <Button
+                        disabled={!isRemoveValid || txStatus !== "idle"}
+                        onClick={handleRemoveLiquidity}
+                        className={cn(
+                          "w-full text-sm font-bold py-3.5 h-12 rounded-xl transition-all duration-300 active:scale-[0.98]",
+                          "bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf] hover:from-[#3b7cff] hover:via-[#8c3ed9] hover:to-[#6a1cb0]",
+                          "text-white shadow-[0_4px_14px_rgba(157,78,221,0.3)] hover:shadow-[0_4px_20px_rgba(157,78,221,0.5)]",
+                          (!isRemoveValid || txStatus !== "idle") && "opacity-50 cursor-not-allowed hover:shadow-none hover:from-[#4f8cff] hover:via-[#9d4edd] hover:to-[#7b2cbf]"
                         )}
+                      >
+                        Remove Liquidity
+                      </Button>
+                    </div>
+                  )}
 
-                        <Button
-                          disabled={!isRemoveValid || txStatus !== "idle"}
-                          onClick={handleRemoveLiquidity}
-                          className="w-full py-3 h-12 rounded-xl text-sm font-semibold text-white bg-primary hover:bg-primary/95 transition-all"
-                        >
-                          Remove Liquidity
-                        </Button>
+                  {/* Dynamic Status panel (below action buttons) */}
+                  {txStatus !== "idle" && (
+                    <div className="border-t border-white/5 pt-3.5 mt-2 space-y-2.5">
+                      <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
+                        <span>Transaction Status</span>
+                        {txStatus === "failed" && (
+                          <span className="text-[10px] font-medium text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20">Failed</span>
+                        )}
+                        {txStatus === "success" && (
+                          <span className="text-[10px] font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">Success</span>
+                        )}
                       </div>
-                    )}
 
-                    {/* Non-blocking Status Panel */}
-                    {txStatus !== "idle" && (
-                      <div className={cn(
-                        "mt-4 p-4 rounded-xl border",
-                        txStatus === "success" ? "border-emerald-500/20 bg-emerald-500/5 text-emerald-400" :
-                        txStatus === "failed" ? "border-rose-500/20 bg-rose-500/5 text-rose-400" :
-                        "border-white/5 bg-white/[0.02] text-slate-300"
-                      )}>
-                        <div className="flex items-center gap-3">
-                          {txStatus !== "success" && txStatus !== "failed" && (
-                            <Loader2 className="h-4.5 w-4.5 animate-spin text-primary shrink-0" />
-                          )}
-                          <div className="text-xs space-y-1">
-                            <p className="font-semibold">{confirmStage || "Executing transaction..."}</p>
-                            {txHash && (
-                              <p className="font-mono text-[10px] text-slate-400 flex items-center gap-1.5">
-                                Tx Hash: {txHash.slice(0, 10)}...{txHash.slice(-8)}
-                                <a
-                                  href={`https://testnet.arcscan.app/tx/${txHash}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-primary hover:text-white"
-                                >
-                                  <ExternalLink className="h-3 w-3" />
-                                </a>
-                              </p>
-                            )}
-                            {txStatus === "success" && <p className="text-[10px] text-emerald-500">Transaction completed successfully!</p>}
-                            {txStatus === "failed" && txError && <p className="text-[10px] text-rose-500">{txError}</p>}
-                          </div>
+                      <div className="flex items-center gap-3 bg-[#070e1c] border border-white/5 rounded-xl p-3 text-slate-300">
+                        {txStatus !== "success" && txStatus !== "failed" && (
+                          <Loader2 className="h-4 w-4 animate-spin text-purple-400 shrink-0" />
+                        )}
+                        <div className="text-xs space-y-1">
+                          <p className="font-semibold text-white">{confirmStage || "Executing transaction..."}</p>
+                          {txStatus === "success" && <p className="text-[10px] text-emerald-400 font-medium">Transaction completed successfully!</p>}
+                          {txStatus === "failed" && txError && <p className="text-[10px] text-rose-400 font-medium">{txError}</p>}
                         </div>
                       </div>
-                    )}
+
+                      {txHash && (
+                        <div className="flex justify-between items-center text-[10px] text-slate-500 pt-2 border-t border-white/5">
+                          <span>Transaction Hash</span>
+                          <a
+                            href={`https://testnet.arcscan.app/tx/${txHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-purple-400 hover:text-white flex items-center gap-1 transition-all font-mono"
+                          >
+                            {txHash.slice(0, 8)}...{txHash.slice(-6)}{" "}
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Collapsed link for protocol contracts */}
+              <div className="flex justify-end">
+                <a
+                  href="/settings#protocol-contracts"
+                  className="text-xs text-slate-500 hover:text-slate-300 flex items-center gap-1 transition-colors"
+                >
+                  View protocol contracts
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            </div>
+
+            {/* Right: Summary details */}
+            <div className="space-y-6">
+              {/* Card 1: Pool Overview */}
+              <Card className="border border-white/10 bg-[#060f24]/50 backdrop-blur-md relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-r from-purple-600/5 to-transparent pointer-events-none" />
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-bold flex items-center justify-between text-white">
+                    <span>Pool Overview</span>
+                    <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">Active</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3.5 text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">USDC Reserve:</span>
+                    <span className="font-semibold text-white font-mono">
+                      {parseFloat(poolData.reserve0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} USDC
+                    </span>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">EURC Reserve:</span>
+                    <span className="font-semibold text-white font-mono">
+                      {parseFloat(poolData.reserve1).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} EURC
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">Total Pool Units:</span>
+                    <span className="font-semibold text-white font-mono">
+                      {(Number(poolData.totalSupplyRaw) / 1000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} Units
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">Current Ratio:</span>
+                    <span className="font-semibold text-white font-mono">
+                      1 USDC = {getRatioString()} EURC
+                    </span>
+                  </div>
+                  <div className="flex justify-between items-center pt-2.5 border-t border-white/5">
+                    <span className="text-slate-400">Network:</span>
+                    <span className="font-semibold text-white">Arc Testnet (5042002)</span>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Card 2: My Position */}
+              <Card className="border border-white/10 bg-[#060f24]/50 backdrop-blur-md relative overflow-hidden">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+                    <Layers className="h-4 w-4 text-purple-400" />
+                    My Position
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3.5 text-xs">
+                  {!isConnected ? (
+                    <div className="rounded-xl border border-dashed border-white/10 p-4 text-center">
+                      <p className="text-slate-400">Wallet disconnected.</p>
+                    </div>
+                  ) : !isArcTestnet ? (
+                    <div className="rounded-xl border border-dashed border-red-500/20 bg-red-500/5 p-4 text-center">
+                      <p className="text-red-400 font-semibold">Wrong Network</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-400">Pool Units:</span>
+                        <span className="font-semibold text-white font-mono">
+                          {(Number(poolData.userLPBalanceRaw) / 1000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} Units
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-400">Pool Share:</span>
+                        <span className="font-semibold text-white">{(poolData.userPoolShare * 100).toFixed(6)}%</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-400">Underlying USDC:</span>
+                        <span className="font-semibold text-white font-mono">
+                          {parseFloat(poolData.underlyingUSDC).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} USDC
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-400">Underlying EURC:</span>
+                        <span className="font-semibold text-white font-mono">
+                          {parseFloat(poolData.underlyingEURC).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} EURC
+                        </span>
+                      </div>
+                      <div className="pt-2 border-t border-white/5">
+                        <details className="group">
+                          <summary className="text-[10px] text-slate-500 hover:text-slate-300 font-semibold cursor-pointer select-none list-none flex items-center justify-between">
+                            <span>Technical Details</span>
+                            <span className="transition-transform group-open:rotate-180">▼</span>
+                          </summary>
+                          <div className="mt-2 space-y-1.5 pl-1.5 text-[10px] text-slate-400 font-mono">
+                            <div className="flex justify-between">
+                              <span>Official ERC-20 LP Balance:</span>
+                              <span className="text-white">
+                                {Number(poolData.userLPBalance) === 0 ? "0.00" : parseFloat(poolData.userLPBalance).toFixed(12)} UNI-V2
+                              </span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span>LP Token Address:</span>
+                              <span className="text-white truncate max-w-[120px]" title={PAIR_ADDRESS}>{PAIR_ADDRESS}</span>
+                            </div>
+                          </div>
+                        </details>
+                      </div>
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Card 3: How Liquidity Works */}
+              <Card className="border border-white/10 bg-[#060f24]/50 backdrop-blur-md">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold flex items-center gap-2 text-white">
+                    <HelpCircle className="h-4 w-4 text-purple-400" />
+                    How Liquidity Works
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3.5 text-xs text-slate-400 leading-5">
+                  <div className="flex gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-purple-500 shrink-0 mt-2" />
+                    <p>Deposit USDC and EURC at the current pool ratio.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-purple-500 shrink-0 mt-2" />
+                    <p>Receive pool units representing your share.</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="h-1.5 w-1.5 rounded-full bg-purple-500 shrink-0 mt-2" />
+                    <p>Remove liquidity anytime to reclaim both assets.</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         )}
       </div>
     </AppShell>
