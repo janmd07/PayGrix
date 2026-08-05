@@ -280,3 +280,62 @@ export function clearArcReadCache(keyOrNamespace?: string): void {
     }
   }
 }
+
+/**
+ * Sanitizes transaction and execution errors to prevent leaking raw calldata,
+ * URLs, stack traces, or request bodies, mapping RPC failures to a standard message.
+ */
+export function sanitizeExecutionError(error: unknown): string {
+  if (!error) return "An unexpected error occurred.";
+
+  const errMsg = error instanceof Error ? error.message : String(error);
+  const errMsgLower = errMsg.toLowerCase();
+
+  // 1. Wallet rejection
+  if (
+    errMsgLower.includes("user rejected") ||
+    errMsgLower.includes("user_rejected") ||
+    errMsgLower.includes("transaction rejected") ||
+    errMsgLower.includes("rejected by user") ||
+    errMsgLower.includes("signature rejected") ||
+    (error as { code?: number }).code === 4001
+  ) {
+    return "Transaction rejected by wallet.";
+  }
+
+  // 2. Contract revert
+  if (
+    errMsgLower.includes("revert") ||
+    errMsgLower.includes("reverted") ||
+    errMsgLower.includes("contractfunctionrevertederror")
+  ) {
+    const match = errMsg.match(/reverted with the following reason:\s*([^\n]+)/i) ||
+                  errMsg.match(/execution reverted:\s*([^\n]+)/i);
+    if (match && match[1]) {
+      return `Transaction reverted: ${match[1].trim()}`;
+    }
+    return "Transaction reverted on-chain.";
+  }
+
+  // 3. Genuine RPC / Network / Connection failures
+  if (
+    errMsgLower.includes("429") ||
+    errMsgLower.includes("request limit reached") ||
+    errMsgLower.includes("rate limit") ||
+    errMsgLower.includes("too many requests") ||
+    errMsgLower.includes("busy") ||
+    errMsgLower.includes("timeout") ||
+    errMsgLower.includes("network") ||
+    errMsgLower.includes("fetch") ||
+    errMsgLower.includes("abort") ||
+    errMsgLower.includes("failed to fetch") ||
+    errMsgLower.includes("http request failed") ||
+    errMsgLower.includes("connection failed") ||
+    errMsgLower.includes("rpc")
+  ) {
+    return "Arc Testnet RPC is temporarily busy. Please try again shortly.";
+  }
+
+  // 4. Default clean fallback (avoid leaking calldata/stacktrace/URLs)
+  return "An unexpected error occurred. Please try again.";
+}

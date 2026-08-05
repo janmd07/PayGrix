@@ -4,8 +4,9 @@ import { useState, useCallback } from "react";
 import { useAccount } from "wagmi";
 import { createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2";
 import { ArcTestnet } from "@circle-fin/app-kit/chains";
-import { EIP1193Provider, erc20Abi, parseUnits } from "viem";
+import { EIP1193Provider, erc20Abi, parseUnits, createPublicClient, http } from "viem";
 import { arcPublicClient, clearBalanceCache } from "@/lib/arc-client";
+import { sanitizeExecutionError } from "@/lib/arc-read-infra";
 
 export type SwapStatus =
   | "idle"
@@ -238,7 +239,18 @@ export function useSwap() {
       }
 
       console.log("[SWAP DIAGNOSTIC] Creating Viem adapter from provider...");
-      const adapter = await createViemAdapterFromProvider({ provider });
+      const adapter = await createViemAdapterFromProvider({
+        provider,
+        getPublicClient: ({ chain }) => {
+          if (chain.id === 5042002) {
+            return arcPublicClient;
+          }
+          return createPublicClient({
+            chain,
+            transport: http(),
+          });
+        },
+      });
 
       // Step 1: Check Allowance & Approve if necessary
       setStatus("approving");
@@ -471,12 +483,7 @@ export function useSwap() {
         error: sanitizedError,
       });
 
-      const errMsg = err instanceof Error ? err.message : "An unexpected error occurred during the swap.";
-      if (errMsg.includes("rejected") || errMsg.includes("User rejected")) {
-        setError("User rejected the transaction");
-      } else {
-        setError(errMsg);
-      }
+      setError(sanitizeExecutionError(err));
       setStatus("failed");
       return null;
     } finally {

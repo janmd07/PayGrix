@@ -14,8 +14,9 @@ export type BridgeStatus =
   | "completed"
   | "failed";
 
-import { EIP1193Provider } from "viem";
-import { clearArcReadCache } from "@/lib/arc-read-infra";
+import { EIP1193Provider, createPublicClient, http } from "viem";
+import { clearArcReadCache, sanitizeExecutionError } from "@/lib/arc-read-infra";
+import { arcPublicClient } from "@/lib/arc-client";
 
 const APP_KIT_CHAINS: Record<
   string,
@@ -87,7 +88,18 @@ export function useBridge() {
 
     let adapter;
     try {
-      adapter = await createViemAdapterFromProvider({ provider });
+      adapter = await createViemAdapterFromProvider({
+        provider,
+        getPublicClient: ({ chain }) => {
+          if (chain.id === 5042002) {
+            return arcPublicClient;
+          }
+          return createPublicClient({
+            chain,
+            transport: http(),
+          });
+        },
+      });
     } catch (err) {
       console.error("Error creating viem adapter:", err);
       setError("Failed to connect wallet to Circle App Kit.");
@@ -163,12 +175,7 @@ export function useBridge() {
       }
     } catch (err) {
       console.error("Bridge execution error:", err);
-      const errMsg = err instanceof Error ? err.message : "An unexpected error occurred during the bridge process";
-      if (errMsg.includes("rejected") || errMsg.includes("User rejected")) {
-        setError("User rejected the transaction");
-      } else {
-        setError(errMsg);
-      }
+      setError(sanitizeExecutionError(err));
       setStatus("failed");
     } finally {
       // Clean up event listeners

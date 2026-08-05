@@ -7,7 +7,9 @@ import { AppKit } from "@circle-fin/app-kit";
 import { createSolanaAdapterFromProvider } from "@circle-fin/adapter-solana";
 import { createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2";
 import { ArcTestnet, SolanaDevnet } from "@circle-fin/app-kit/chains";
-import { EIP1193Provider } from "viem";
+import { EIP1193Provider, createPublicClient, http } from "viem";
+import { arcPublicClient } from "@/lib/arc-client";
+import { sanitizeExecutionError } from "@/lib/arc-read-infra";
 
 export type BridgeStatus =
   | "idle"
@@ -85,7 +87,18 @@ export function useSolanaBridge() {
     let evmAdapter;
     try {
       const provider = (await evmConnector.getProvider()) as EIP1193Provider;
-      evmAdapter = await createViemAdapterFromProvider({ provider });
+      evmAdapter = await createViemAdapterFromProvider({
+        provider,
+        getPublicClient: ({ chain }) => {
+          if (chain.id === 5042002) {
+            return arcPublicClient;
+          }
+          return createPublicClient({
+            chain,
+            transport: http(),
+          });
+        },
+      });
     } catch (err) {
       console.error("Error creating EVM adapter:", err);
       setError("Failed to initialize EVM wallet provider.");
@@ -228,12 +241,7 @@ export function useSolanaBridge() {
       }
     } catch (err) {
       console.error("Solana Bridge execution error:", err);
-      const errMsg = err instanceof Error ? err.message : "An unexpected error occurred during the bridge process";
-      if (errMsg.includes("rejected") || errMsg.includes("User rejected")) {
-        setError("User rejected the transaction");
-      } else {
-        setError(errMsg);
-      }
+      setError(sanitizeExecutionError(err));
       setStatus("failed");
     } finally {
       kit.off("bridge.approve", approveHandler);
