@@ -5,7 +5,7 @@ import { arcTestnet } from "../config/arc-testnet";
 export const arcPublicClient = createPublicClient({
   chain: arcTestnet,
   transport: http(typeof window !== "undefined" ? "/api/arc-rpc" : "https://rpc.testnet.arc.network", {
-    batch: true,
+    batch: false,
   }),
 });
 

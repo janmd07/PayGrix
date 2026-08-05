@@ -226,7 +226,8 @@ export async function POST(request: Request) {
       );
     }
 
-  } catch {
+  } catch (err) {
+    console.error("ERROR IN ARC-RPC API:", err);
     return NextResponse.json(
       {
         jsonrpc: "2.0",
