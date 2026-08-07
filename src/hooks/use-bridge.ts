@@ -145,7 +145,11 @@ export function useBridge() {
       setStatus("waiting-wallet");
       const rawResult = await kit.bridge({
         from: { adapter, chain: fromChainObj },
-        to: { adapter, chain: toChainObj },
+        to: { 
+          adapter, 
+          chain: toChainObj,
+          useForwarder: toChainObj.cctp.forwarderSupported?.destination === true,
+        },
         amount,
       });
  
