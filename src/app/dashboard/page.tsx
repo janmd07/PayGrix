@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import Image from "next/image";
+import { useState, useEffect } from "react";
 import { 
   Activity, 
   CalendarClock, 
@@ -75,31 +74,6 @@ export default function DashboardPage() {
   const [contributors, setContributors] = useState<Contributor[]>([]);
   const [batches, setBatches] = useState<PayrollBatch[]>([]);
   const [storageError, setStorageError] = useState(false);
-
-  const [tilt, setTilt] = useState({ x: 0, y: 0 });
-  const [isHovered, setIsHovered] = useState(false);
-  const logoRef = useRef<HTMLDivElement>(null);
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!logoRef.current) return;
-    const rect = logoRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width - 0.5;
-    const y = (e.clientY - rect.top) / rect.height - 0.5;
-    const maxTilt = 6;
-    setTilt({
-      x: x * maxTilt,
-      y: -y * maxTilt,
-    });
-  };
-
-  const handleMouseEnter = () => {
-    setIsHovered(true);
-  };
-
-  const handleMouseLeave = () => {
-    setIsHovered(false);
-    setTilt({ x: 0, y: 0 });
-  };
 
   // USDC balance read
   const { data: usdcBalance, isLoading: isBalanceLoading } = useReadContract({
@@ -199,20 +173,15 @@ export default function DashboardPage() {
   if (!mounted) {
     return (
       <AppShell>
-        <div className="grid gap-8 lg:grid-cols-5 items-center mt-4 lg:mt-8 animate-pulse">
-          <div className="lg:col-span-3 space-y-6">
-            <div className="h-6 w-48 bg-white/5 rounded-full" />
-            <div className="h-10 w-80 bg-white/5 rounded-lg" />
-            <div className="h-16 w-full bg-white/5 rounded-xl" />
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Card className="h-32 bg-[#060f24]/30 border-white/5" />
-              <Card className="h-32 bg-[#060f24]/30 border-white/5" />
-              <Card className="h-32 bg-[#060f24]/30 border-white/5" />
-              <Card className="h-32 bg-[#060f24]/30 border-white/5" />
-            </div>
-          </div>
-          <div className="lg:col-span-2 flex justify-center">
-            <div className="w-56 h-56 bg-white/5 rounded-full" />
+        <div className="space-y-6 mt-4 lg:mt-8 animate-pulse">
+          <div className="h-6 w-48 bg-white/5 rounded-full" />
+          <div className="h-10 w-80 bg-white/5 rounded-lg" />
+          <div className="h-16 w-full bg-white/5 rounded-xl" />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Card className="h-32 bg-[#060f24]/30 border-white/5" />
+            <Card className="h-32 bg-[#060f24]/30 border-white/5" />
+            <Card className="h-32 bg-[#060f24]/30 border-white/5" />
+            <Card className="h-32 bg-[#060f24]/30 border-white/5" />
           </div>
         </div>
       </AppShell>
@@ -273,149 +242,108 @@ export default function DashboardPage() {
 
   return (
     <AppShell>
-      <div className="grid gap-8 lg:grid-cols-5 items-center mt-4 lg:mt-8">
-        {/* Left Column: Heading, description, and metrics grid */}
-        <div className="lg:col-span-3 space-y-6">
-          {storageError && (
-            <div className="flex gap-3 p-4 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-200 text-sm">
-              <AlertTriangle className="h-5 w-5 shrink-0 text-amber-400 mt-0.5" />
-              <div>
-                <p className="font-semibold">Local Storage Corrupted</p>
-                <p className="mt-1 text-xs text-amber-300/90 leading-relaxed">
-                  Workspace configuration data is corrupted or invalid. Falling back to an empty roster and payout history.
-                </p>
-              </div>
+      <div className="space-y-6 mt-4 lg:mt-8">
+        {storageError && (
+          <div className="flex gap-3 p-4 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-200 text-sm">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-amber-400 mt-0.5" />
+            <div>
+              <p className="font-semibold">Local Storage Corrupted</p>
+              <p className="mt-1 text-xs text-amber-300/90 leading-relaxed">
+                Workspace configuration data is corrupted or invalid. Falling back to an empty roster and payout history.
+              </p>
             </div>
-          )}
-
-          {/* Status Chips */}
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold badge-live tracking-wide">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Arc Testnet · Live
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold badge-arc tracking-wide">
-              <Activity className="h-3.5 w-3.5" />
-              Stablecoin payroll
-            </span>
           </div>
+        )}
 
-          <div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl mb-4">
-              Welcome to PayGrix
-            </h1>
-            <p className="text-slate-400 text-sm sm:text-base leading-relaxed max-w-xl">
-              Manage contributors, schedule weekly and monthly stablecoin payouts, and monitor treasury operations from a single workspace.
-            </p>
-          </div>
-
-          {/* Metrics 2x2 Grid */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            {/* Active Contributors */}
-            <Card className="glass-card-component overflow-hidden relative group">
-              <CardContent className="p-6">
-                <div className="flex justify-between items-start mb-4">
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Active Contributors</p>
-                  <UsersRound className="h-5 w-5 text-slate-400 group-hover:text-[#6d5dfc] transition-colors" />
-                </div>
-                <p className="text-3xl font-extrabold text-white">{activeCount}</p>
-                <p className="mt-1.5 text-xs text-slate-500 font-medium">{activeSubtitle}</p>
-              </CardContent>
-            </Card>
-
-            {/* Total Paid USDC */}
-            <Card className="glass-card-component overflow-hidden relative group">
-              <CardContent className="p-6">
-                <div className="flex justify-between items-start mb-4">
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Paid USDC</p>
-                  <CircleDollarSign className="h-5 w-5 text-slate-400 group-hover:text-[#6d5dfc] transition-colors" />
-                </div>
-                <p className="text-3xl font-extrabold gradient-text inline-block">
-                  {totalPaid.toLocaleString()} USDC
-                </p>
-                <p className="mt-1.5 text-xs text-slate-500 font-medium">All-time payroll executed</p>
-              </CardContent>
-            </Card>
-
-            {/* Next Payroll Date */}
-            <Card className="glass-card-component overflow-hidden relative group">
-              <CardContent className="p-6">
-                <div className="flex justify-between items-start mb-4">
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Next Payroll Date</p>
-                  <CalendarClock className="h-5 w-5 text-slate-400 group-hover:text-[#6d5dfc] transition-colors" />
-                </div>
-                <p className={cn(
-                  "text-2xl font-extrabold",
-                  nextPayrollDateVal === "No payroll scheduled" ? "text-slate-400 font-semibold text-xl" : "text-white"
-                )}>
-                  {nextPayrollDateVal}
-                </p>
-                <p className="mt-1.5 text-xs text-slate-500 font-medium">Next cycle schedule</p>
-              </CardContent>
-            </Card>
-
-            {/* Treasury Balance */}
-            <Card className="glass-card-component overflow-hidden relative group">
-              <CardContent className="p-6">
-                <div className="flex justify-between items-start mb-4">
-                  <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Treasury Balance</p>
-                  <Wallet className="h-5 w-5 text-slate-400 group-hover:text-[#6d5dfc] transition-colors" />
-                </div>
-                <p className={cn(
-                  "text-3xl font-extrabold",
-                  isConnected ? "gradient-text inline-block" : "text-slate-400 font-semibold text-xl"
-                )}>
-                  {!isConnected 
-                    ? "Disconnected"
-                    : !isArcTestnet
-                      ? "Switch Network"
-                      : isBalanceLoading
-                        ? "Loading..."
-                        : `${usdcBalanceFormatted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC`
-                  }
-                </p>
-                <p className="mt-1.5 text-xs text-slate-500 font-medium">Current treasury balance</p>
-              </CardContent>
-            </Card>
-          </div>
+        {/* Status Chips */}
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold badge-live tracking-wide">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            Arc Testnet · Live
+          </span>
+          <span className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold badge-arc tracking-wide">
+            <Activity className="h-3.5 w-3.5" />
+            Stablecoin payroll
+          </span>
         </div>
 
-        {/* Right Column: Centered Interactive 3D Arc Logo */}
-        <div className="lg:col-span-2 flex justify-center">
-          <div className="relative inline-flex items-center justify-center group cursor-pointer">
-            {/* Soft breathing blue aura behind the logo */}
-            <div 
-              className="absolute -inset-12 pointer-events-none transition-all duration-700 opacity-60 group-hover:opacity-95 group-hover:scale-110" 
-              aria-hidden="true" 
-            >
-              <div className="w-64 h-64 rounded-full logo-glow-aura animate-logo-glow" />
-            </div>
-            {/* Logo image container with perspective, smooth mouse-follow tilt and hover scale */}
-            <div 
-              ref={logoRef}
-              onMouseMove={handleMouseMove}
-              onMouseEnter={handleMouseEnter}
-              onMouseLeave={handleMouseLeave}
-              className="relative z-10 w-44 h-44 sm:w-48 sm:h-48 md:w-56 md:h-56"
-              style={{ 
-                perspective: 800,
-                transform: `rotateY(${tilt.x}deg) rotateX(${tilt.y}deg) scale(${isHovered ? 1.05 : 1})`,
-                transition: 'transform 0.25s cubic-bezier(0.22, 1, 0.36, 1)',
-                transformStyle: 'preserve-3d'
-              }}
-            >
-              {/* Animating container that floats and rotates in 3D */}
-              <div className="w-full h-full animate-logo-float">
-                <Image
-                  src="/arc-logo.png"
-                  alt="Arc logo"
-                  fill
-                  className="object-contain"
-                  priority
-                />
+        <div>
+          <h1 className="text-3xl font-extrabold tracking-tight text-white sm:text-4xl mb-4">
+            Welcome to PayGrix
+          </h1>
+          <p className="text-slate-400 text-sm sm:text-base leading-relaxed max-w-xl">
+            Manage contributors, schedule weekly and monthly stablecoin payouts, and monitor treasury operations from a single workspace.
+          </p>
+        </div>
+
+        {/* Metrics Grid */}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Active Contributors */}
+          <Card className="glass-card-component overflow-hidden relative group">
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Active Contributors</p>
+                <UsersRound className="h-5 w-5 text-slate-400 group-hover:text-[#6d5dfc] transition-colors" />
               </div>
-            </div>
-          </div>
+              <p className="text-3xl font-extrabold text-white">{activeCount}</p>
+              <p className="mt-1.5 text-xs text-slate-500 font-medium">{activeSubtitle}</p>
+            </CardContent>
+          </Card>
+
+          {/* Total Paid USDC */}
+          <Card className="glass-card-component overflow-hidden relative group">
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Paid USDC</p>
+                <CircleDollarSign className="h-5 w-5 text-slate-400 group-hover:text-[#6d5dfc] transition-colors" />
+              </div>
+              <p className="text-3xl font-extrabold gradient-text inline-block">
+                {totalPaid.toLocaleString()} USDC
+              </p>
+              <p className="mt-1.5 text-xs text-slate-500 font-medium">All-time payroll executed</p>
+            </CardContent>
+          </Card>
+
+          {/* Next Payroll Date */}
+          <Card className="glass-card-component overflow-hidden relative group">
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Next Payroll Date</p>
+                <CalendarClock className="h-5 w-5 text-slate-400 group-hover:text-[#6d5dfc] transition-colors" />
+              </div>
+              <p className={cn(
+                "text-2xl font-extrabold",
+                nextPayrollDateVal === "No payroll scheduled" ? "text-slate-400 font-semibold text-xl" : "text-white"
+              )}>
+                {nextPayrollDateVal}
+              </p>
+              <p className="mt-1.5 text-xs text-slate-500 font-medium">Next cycle schedule</p>
+            </CardContent>
+          </Card>
+
+          {/* Treasury Balance */}
+          <Card className="glass-card-component overflow-hidden relative group">
+            <CardContent className="p-6">
+              <div className="flex justify-between items-start mb-4">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Treasury Balance</p>
+                <Wallet className="h-5 w-5 text-slate-400 group-hover:text-[#6d5dfc] transition-colors" />
+              </div>
+              <p className={cn(
+                "text-3xl font-extrabold",
+                isConnected ? "gradient-text inline-block" : "text-slate-400 font-semibold text-xl"
+              )}>
+                {!isConnected 
+                  ? "Disconnected"
+                  : !isArcTestnet
+                    ? "Switch Network"
+                    : isBalanceLoading
+                      ? "Loading..."
+                      : `${usdcBalanceFormatted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC`
+                }
+              </p>
+              <p className="mt-1.5 text-xs text-slate-500 font-medium">Current treasury balance</p>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </AppShell>
