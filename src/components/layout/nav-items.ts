@@ -10,6 +10,7 @@ import {
   QrCode,
   User,
   Coins,
+  HandCoins,
 } from "lucide-react";
 
 export const navItems = [
@@ -57,6 +58,11 @@ export const navItems = [
     title: "Pool",
     href: "/pool",
     icon: Coins,
+  },
+  {
+    title: "Lending",
+    href: "/lending",
+    icon: HandCoins,
   },
   {
     title: "Settings",
