@@ -7,14 +7,17 @@ import { Button } from "@/components/ui/button";
 import { TokenLogo } from "@/components/bridge/swap-form";
 import { cn } from "@/lib/utils";
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
+import { LendingOnChainData } from "@/hooks/use-lending-data";
 
 interface LendingWorkspaceProps {
   isConnected: boolean;
   isArcTestnet?: boolean;
   onConnectClick?: () => void;
+  lendingData?: LendingOnChainData;
+  isLoading?: boolean;
 }
 
-export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
+export function LendingWorkspace({ isConnected, lendingData, isLoading }: LendingWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<"supply" | "borrow" | "repay" | "withdraw">("supply");
   const [supplyInput, setSupplyInput] = useState<string>("");
   const [borrowInput, setBorrowInput] = useState<string>("");
@@ -32,12 +35,12 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
             <Layers className="h-5 w-5 text-purple-400" />
             Manage your position
           </CardTitle>
-          <span className="text-[11px] font-mono font-medium text-slate-400 bg-white/5 border border-white/10 px-2.5 py-1 rounded-full">
-            Arc Testnet Preview
+          <span className="text-[11px] font-mono font-medium text-[#4f8cff] bg-[#4f8cff]/10 border border-[#4f8cff]/20 px-2.5 py-1 rounded-full">
+            Arc Testnet Staging
           </span>
         </div>
         <CardDescription className="text-xs text-slate-400">
-          Supply collateral, borrow USDC, repay debt, or withdraw your assets.
+          Inspect collateral supply, debt balances, and borrowing limits on PayGrixLending.
         </CardDescription>
       </CardHeader>
 
@@ -48,7 +51,7 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
             type="button"
             onClick={() => setActiveTab("supply")}
             className={cn(
-              "py-2.5 text-xs font-bold rounded-lg transition-all duration-200 flex items-center justify-center gap-1.5",
+              "py-2.5 text-xs font-bold rounded-lg transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer",
               activeTab === "supply"
                 ? "bg-purple-600 text-white shadow-lg shadow-purple-600/20"
                 : "text-slate-400 hover:text-white hover:bg-white/5"
@@ -62,7 +65,7 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
             type="button"
             onClick={() => setActiveTab("borrow")}
             className={cn(
-              "py-2.5 text-xs font-bold rounded-lg transition-all duration-200 flex items-center justify-center gap-1.5",
+              "py-2.5 text-xs font-bold rounded-lg transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer",
               activeTab === "borrow"
                 ? "bg-purple-600 text-white shadow-lg shadow-purple-600/20"
                 : "text-slate-400 hover:text-white hover:bg-white/5"
@@ -76,7 +79,7 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
             type="button"
             onClick={() => setActiveTab("repay")}
             className={cn(
-              "py-2.5 text-xs font-bold rounded-lg transition-all duration-200 flex items-center justify-center gap-1.5",
+              "py-2.5 text-xs font-bold rounded-lg transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer",
               activeTab === "repay"
                 ? "bg-purple-600 text-white shadow-lg shadow-purple-600/20"
                 : "text-slate-400 hover:text-white hover:bg-white/5"
@@ -90,7 +93,7 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
             type="button"
             onClick={() => setActiveTab("withdraw")}
             className={cn(
-              "py-2.5 text-xs font-bold rounded-lg transition-all duration-200 flex items-center justify-center gap-1.5",
+              "py-2.5 text-xs font-bold rounded-lg transition-all duration-200 flex items-center justify-center gap-1.5 cursor-pointer",
               activeTab === "withdraw"
                 ? "bg-purple-600 text-white shadow-lg shadow-purple-600/20"
                 : "text-slate-400 hover:text-white hover:bg-white/5"
@@ -106,18 +109,20 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-white">Supply collateral</h3>
-              <span className="text-xs text-slate-400 font-mono">Asset: cirBTC</span>
+              <span className="text-xs text-slate-400 font-mono">
+                Supplied: {isLoading ? "..." : lendingData?.userCollateral || "0.00"} cirBTC
+              </span>
             </div>
 
             <div className="bg-[#070e1c] border border-white/5 rounded-2xl p-5 space-y-3.5 transition-all focus-within:border-purple-500/30">
               <div className="flex justify-between items-center text-xs">
                 <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">COLLATERAL AMOUNT</span>
                 <div className="flex items-center gap-2 text-slate-400 font-mono">
-                  <span>Wallet balance: 0.00 cirBTC</span>
+                  <span>Supplied: {isLoading ? "..." : lendingData?.userCollateral || "0.00"} cirBTC</span>
                   <button
                     type="button"
                     onClick={() => setSupplyInput("0.00")}
-                    className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all"
+                    className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all cursor-pointer"
                   >
                     MAX
                   </button>
@@ -147,7 +152,7 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
             {/* Info notice */}
             <div className="rounded-xl border border-white/5 bg-[#070e1c] p-3.5 text-xs text-slate-400 flex items-center gap-2">
               <Lock className="h-4 w-4 text-purple-400 shrink-0" />
-              <span>Lending contract not connected. On-chain supply transactions are coming soon.</span>
+              <span>Contract is paused (Staging Mode). Supply transactions are disabled.</span>
             </div>
 
             {/* CTA Button */}
@@ -158,7 +163,7 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
                 disabled
                 className="w-full text-sm font-bold py-3.5 h-12 rounded-xl bg-purple-600/40 text-purple-200 border border-purple-500/20 cursor-not-allowed"
               >
-                Supply collateral (Coming soon)
+                Supply Collateral (Disabled in Staging Mode)
               </Button>
             )}
           </div>
@@ -170,9 +175,9 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-white">Borrow USDC</h3>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">Borrowing factor:</span>
+                <span className="text-xs text-slate-400">Max LTV:</span>
                 <span className="text-xs font-bold text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded-full font-mono">
-                  50% (Reference)
+                  50%
                 </span>
               </div>
             </div>
@@ -181,11 +186,15 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-[#070e1c] border border-white/5 rounded-xl p-3 flex flex-col gap-1">
                 <span className="text-[10px] text-slate-400 uppercase font-semibold">Available to borrow</span>
-                <span className="text-base font-bold text-slate-400 font-mono">—</span>
+                <span className="text-base font-bold text-[#4f8cff] font-mono">
+                  {isLoading ? "..." : `${lendingData?.userMaxBorrow || "0.00"} USDC`}
+                </span>
               </div>
               <div className="bg-[#070e1c] border border-white/5 rounded-xl p-3 flex flex-col gap-1">
                 <span className="text-[10px] text-slate-400 uppercase font-semibold">Current debt</span>
-                <span className="text-base font-bold text-white font-mono">0.00 USDC</span>
+                <span className="text-base font-bold text-white font-mono">
+                  {isLoading ? "..." : `${lendingData?.userDebt || "0.00"} USDC`}
+                </span>
               </div>
             </div>
 
@@ -195,8 +204,8 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
                 <div className="flex items-center gap-2 text-slate-400 font-mono">
                   <button
                     type="button"
-                    onClick={() => setBorrowInput("0.00")}
-                    className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all"
+                    onClick={() => setBorrowInput(lendingData?.userMaxBorrow || "0.00")}
+                    className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all cursor-pointer"
                   >
                     MAX
                   </button>
@@ -227,7 +236,7 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3.5 text-xs text-amber-300 flex items-start gap-2.5">
               <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
               <p className="leading-relaxed">
-                Borrowing is unavailable until the lending pool has liquidity.
+                Contract is paused in staging mode. Borrow transactions are disabled in Phase 2D.
               </p>
             </div>
 
@@ -239,7 +248,7 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
                 disabled
                 className="w-full text-sm font-bold py-3.5 h-12 rounded-xl bg-slate-800/60 text-slate-500 border border-slate-700/50 cursor-not-allowed"
               >
-                Borrow USDC (Awaiting Liquidity)
+                Borrow USDC (Disabled in Staging Mode)
               </Button>
             )}
           </div>
@@ -250,18 +259,20 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-white">Repay USDC</h3>
-              <span className="text-xs text-slate-400 font-mono">Current debt: 0.00 USDC</span>
+              <span className="text-xs text-slate-400 font-mono">
+                Current debt: {isLoading ? "..." : lendingData?.userDebt || "0.00"} USDC
+              </span>
             </div>
 
             <div className="bg-[#070e1c] border border-white/5 rounded-2xl p-5 space-y-3.5 transition-all focus-within:border-purple-500/30">
               <div className="flex justify-between items-center text-xs">
                 <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">REPAY AMOUNT</span>
                 <div className="flex items-center gap-2 text-slate-400 font-mono">
-                  <span>Debt: 0.00 USDC</span>
+                  <span>Debt: {isLoading ? "..." : lendingData?.userDebt || "0.00"} USDC</span>
                   <button
                     type="button"
-                    onClick={() => setRepayInput("0.00")}
-                    className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all"
+                    onClick={() => setRepayInput(lendingData?.userDebt || "0.00")}
+                    className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all cursor-pointer"
                   >
                     MAX
                   </button>
@@ -290,7 +301,7 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
 
             <div className="rounded-xl border border-white/5 bg-[#070e1c] p-3.5 text-xs text-slate-400 flex items-center gap-2">
               <Lock className="h-4 w-4 text-purple-400 shrink-0" />
-              <span>No active debt to repay.</span>
+              <span>No active debt on-chain. Write transactions are disabled in Phase 2D.</span>
             </div>
 
             {/* CTA Button */}
@@ -301,7 +312,7 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
                 disabled
                 className="w-full text-sm font-bold py-3.5 h-12 rounded-xl bg-purple-600/40 text-purple-200 border border-purple-500/20 cursor-not-allowed"
               >
-                Repay USDC
+                Repay USDC (Disabled in Phase 2D)
               </Button>
             )}
           </div>
@@ -312,18 +323,20 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
           <div className="space-y-4">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-white">Withdraw collateral</h3>
-              <span className="text-xs text-slate-400 font-mono">Available collateral: 0.00 cirBTC</span>
+              <span className="text-xs text-slate-400 font-mono">
+                Available: {isLoading ? "..." : lendingData?.userAvailableCollateral || "0.00"} cirBTC
+              </span>
             </div>
 
             <div className="bg-[#070e1c] border border-white/5 rounded-2xl p-5 space-y-3.5 transition-all focus-within:border-purple-500/30">
               <div className="flex justify-between items-center text-xs">
                 <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">WITHDRAW AMOUNT</span>
                 <div className="flex items-center gap-2 text-slate-400 font-mono">
-                  <span>Max: 0.00 cirBTC</span>
+                  <span>Max: {isLoading ? "..." : lendingData?.userAvailableCollateral || "0.00"} cirBTC</span>
                   <button
                     type="button"
-                    onClick={() => setWithdrawInput("0.00")}
-                    className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all"
+                    onClick={() => setWithdrawInput(lendingData?.userAvailableCollateral || "0.00")}
+                    className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all cursor-pointer"
                   >
                     MAX
                   </button>
@@ -352,7 +365,7 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
 
             <div className="rounded-xl border border-white/5 bg-[#070e1c] p-3.5 text-xs text-slate-400 flex items-center gap-2">
               <Lock className="h-4 w-4 text-purple-400 shrink-0" />
-              <span>No collateral available to withdraw.</span>
+              <span>Contract is paused (Staging Mode). Collateral withdrawal is disabled.</span>
             </div>
 
             {/* CTA Button */}
@@ -363,7 +376,7 @@ export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
                 disabled
                 className="w-full text-sm font-bold py-3.5 h-12 rounded-xl bg-purple-600/40 text-purple-200 border border-purple-500/20 cursor-not-allowed"
               >
-                Withdraw collateral
+                Withdraw Collateral (Disabled in Staging Mode)
               </Button>
             )}
           </div>

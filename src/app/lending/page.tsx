@@ -1,10 +1,11 @@
 "use client";
 
-import { HandCoins, BookOpen } from "lucide-react";
+import { HandCoins, BookOpen, AlertTriangle } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
+import { useLendingData } from "@/hooks/use-lending-data";
 import { PositionOverview } from "@/components/lending/position-overview";
 import { LendingMarketCard } from "@/components/lending/lending-market-card";
 import { LendingWorkspace } from "@/components/lending/lending-workspace";
@@ -13,7 +14,8 @@ import { RiskParameters } from "@/components/lending/risk-parameters";
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
 
 export default function LendingPage() {
-  const { isConnected, isArcTestnet } = useArcWallet();
+  const { isConnected, isArcTestnet, address } = useArcWallet();
+  const { lendingData, isLoading, error } = useLendingData(address, isArcTestnet);
 
   const handleStartBorrowing = () => {
     const el = document.getElementById("manage-position");
@@ -32,19 +34,36 @@ export default function LendingPage() {
   return (
     <AppShell>
       <div className="flex flex-col gap-8 max-w-7xl mx-auto">
+        {/* ── STAGING & PAUSED STATUS BANNER ──────────────── */}
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-[0_4px_20px_rgba(245,158,11,0.1)]">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0" />
+            <div>
+              <span className="font-bold text-amber-300">Arc Testnet Staging Deployment</span>
+              <span className="mx-2 text-amber-500">•</span>
+              <span>Lending contract paused — staging mode (Write transactions disabled)</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 font-mono shrink-0">
+            <Badge variant="outline" className="border-amber-500/40 text-amber-300 bg-amber-500/10">
+              Contract: 0x5662...6111
+            </Badge>
+          </div>
+        </div>
+
         {/* ── TOP HERO / HEADER SECTION ─────────────────────── */}
         <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060f24] via-[#070e1c] to-[#0d1b3e] p-6 sm:p-8 lg:p-10 shadow-[0_12px_40px_rgba(6,15,36,0.6)]">
-          {/* Subtle ambient light glows */}
+          {/* Ambient light glows */}
           <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-[#6d5dfc]/15 blur-3xl pointer-events-none" />
           <div className="absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-[#4f8cff]/15 blur-3xl pointer-events-none" />
 
           <div className="relative z-10 flex flex-col gap-6 max-w-3xl">
             <div className="flex items-center gap-2.5 flex-wrap">
               <Badge variant="outline" className="text-xs text-[#4f8cff] border-[#4f8cff]/30 bg-[#4f8cff]/10 font-semibold px-3 py-1">
-                Arc Testnet • Lending
+                Arc Testnet • Lending Staging
               </Badge>
               <Badge variant="outline" className="text-xs text-purple-300 border-purple-500/20 bg-purple-500/10">
-                Phase 1 Preview
+                Phase 2D Verified
               </Badge>
             </div>
 
@@ -56,7 +75,7 @@ export default function LendingPage() {
                 </span>
               </h1>
               <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
-                Access stablecoin liquidity against supported collateral while keeping your assets within the PayGrix workspace.
+                Inspect real-time on-chain lending reserves, borrowing power, and user position states directly from PayGrixLending on Arc Testnet.
               </p>
             </div>
 
@@ -81,7 +100,7 @@ export default function LendingPage() {
                     className="gap-2 font-bold bg-gradient-to-r from-[#4f8cff] via-[#6d5dfc] to-[#9d4edd] hover:from-[#3b7cff] hover:to-[#8c3ed9] text-white shadow-[0_4px_16px_rgba(109,93,252,0.35)]"
                   >
                     <HandCoins className="h-4 w-4" />
-                    Start borrowing
+                    Inspect Position
                   </Button>
 
                   <Button
@@ -99,19 +118,29 @@ export default function LendingPage() {
         </div>
 
         {/* ── POSITION OVERVIEW ────────────────────────────── */}
-        <PositionOverview isConnected={isConnected} isArcTestnet={isArcTestnet} />
+        <PositionOverview
+          isConnected={isConnected}
+          isArcTestnet={isArcTestnet}
+          lendingData={lendingData}
+          isLoading={isLoading}
+        />
 
         {/* ── WORKSPACE & MARKET GRID ───────────────────────── */}
         <div id="manage-position" className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-6">
           {/* Left Column: Manage Position Workspace */}
           <div>
-            <LendingWorkspace isConnected={isConnected} isArcTestnet={isArcTestnet} />
+            <LendingWorkspace
+              isConnected={isConnected}
+              isArcTestnet={isArcTestnet}
+              lendingData={lendingData}
+              isLoading={isLoading}
+            />
           </div>
 
           {/* Right Column: Market Status & Risk Parameters */}
           <div className="space-y-6">
-            <LendingMarketCard />
-            <RiskParameters />
+            <LendingMarketCard lendingData={lendingData} isLoading={isLoading} error={error} />
+            <RiskParameters lendingData={lendingData} />
           </div>
         </div>
 

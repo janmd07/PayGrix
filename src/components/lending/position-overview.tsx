@@ -4,13 +4,18 @@ import { Wallet, Activity } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
+import { LendingOnChainData } from "@/hooks/use-lending-data";
 
 interface PositionOverviewProps {
   isConnected: boolean;
   isArcTestnet?: boolean;
+  lendingData?: LendingOnChainData;
+  isLoading?: boolean;
 }
 
-export function PositionOverview({ isConnected }: PositionOverviewProps) {
+export function PositionOverview({ isConnected, lendingData, isLoading }: PositionOverviewProps) {
+  const hasActivePosition = lendingData && (lendingData.userCollateralRaw > BigInt(0) || lendingData.userDebtRaw > BigInt(0));
+
   return (
     <Card className="border border-white/10 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_8px_32px_rgba(6,15,36,0.5)]">
       {/* Top accent line */}
@@ -28,6 +33,10 @@ export function PositionOverview({ isConnected }: PositionOverviewProps) {
               <Badge variant="outline" className="text-xs text-amber-400 border-amber-500/20 bg-amber-500/10">
                 Disconnected
               </Badge>
+            ) : hasActivePosition ? (
+              <Badge variant="outline" className="text-xs text-emerald-400 border-emerald-500/20 bg-emerald-500/10">
+                Active Position
+              </Badge>
             ) : (
               <Badge variant="outline" className="text-xs text-slate-400 border-white/10 bg-white/5">
                 No active position
@@ -35,7 +44,7 @@ export function PositionOverview({ isConnected }: PositionOverviewProps) {
             )}
           </div>
           <CardDescription className="text-xs text-slate-400 mt-1">
-            Real-time summary of supplied collateral and active USDC debt on Arc Testnet.
+            Real-time on-chain position state read directly from PayGrixLending on Arc Testnet.
           </CardDescription>
         </div>
       </CardHeader>
@@ -49,7 +58,7 @@ export function PositionOverview({ isConnected }: PositionOverviewProps) {
             <div>
               <p className="text-sm font-semibold text-white">Connect wallet to view your position</p>
               <p className="text-xs text-slate-400 mt-0.5">
-                Link your Web3 wallet to inspect collateral balances and borrowing power.
+                Link your Web3 wallet to inspect collateral balances, active debt, and borrowing power.
               </p>
             </div>
             <div className="pt-1">
@@ -64,7 +73,9 @@ export function PositionOverview({ isConnected }: PositionOverviewProps) {
                 Collateral
               </span>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-xl sm:text-2xl font-bold text-white font-mono">0.00</span>
+                <span className="text-xl sm:text-2xl font-bold text-white font-mono">
+                  {isLoading ? "..." : lendingData?.userCollateral || "0.00"}
+                </span>
                 <span className="text-xs font-semibold text-[#4f8cff]">cirBTC</span>
               </div>
               <span className="text-[10px] text-slate-500 block">Supplied balance</span>
@@ -76,9 +87,11 @@ export function PositionOverview({ isConnected }: PositionOverviewProps) {
                 Collateral Value
               </span>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-xl sm:text-2xl font-bold text-slate-400 font-mono">—</span>
+                <span className="text-xl sm:text-2xl font-bold text-slate-200 font-mono">
+                  {isLoading ? "..." : lendingData?.userCollateralValueUsdc || "$0.00"}
+                </span>
               </div>
-              <span className="text-[10px] text-slate-500 block">Awaiting price oracle</span>
+              <span className="text-[10px] text-slate-500 block">Derived from Staging Oracle</span>
             </div>
 
             {/* Metric 3: Current Debt */}
@@ -87,7 +100,9 @@ export function PositionOverview({ isConnected }: PositionOverviewProps) {
                 Current Debt
               </span>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-xl sm:text-2xl font-bold text-white font-mono">0.00</span>
+                <span className="text-xl sm:text-2xl font-bold text-white font-mono">
+                  {isLoading ? "..." : lendingData?.userDebt || "0.00"}
+                </span>
                 <span className="text-xs font-semibold text-emerald-400">USDC</span>
               </div>
               <span className="text-[10px] text-slate-500 block">Borrowed balance</span>
@@ -99,7 +114,10 @@ export function PositionOverview({ isConnected }: PositionOverviewProps) {
                 Borrowing Power
               </span>
               <div className="flex items-baseline gap-1.5">
-                <span className="text-xl sm:text-2xl font-bold text-slate-400 font-mono">—</span>
+                <span className="text-xl sm:text-2xl font-bold text-purple-300 font-mono">
+                  {isLoading ? "..." : lendingData?.userMaxBorrow || "0.00"}
+                </span>
+                <span className="text-xs font-semibold text-purple-400">USDC</span>
               </div>
               <span className="text-[10px] text-slate-500 block">Based on 50% max LTV</span>
             </div>
