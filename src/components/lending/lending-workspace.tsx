@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Layers, Lock, AlertCircle, ArrowUpRight, ArrowDownLeft, RotateCcw, ShieldAlert } from "lucide-react";
+import { Layers, Lock, AlertCircle, ArrowUpRight, ArrowDownLeft, RotateCcw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TokenLogo } from "@/components/bridge/swap-form";
@@ -10,11 +10,11 @@ import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
 
 interface LendingWorkspaceProps {
   isConnected: boolean;
-  isArcTestnet: boolean;
+  isArcTestnet?: boolean;
   onConnectClick?: () => void;
 }
 
-export function LendingWorkspace({ isConnected, isArcTestnet }: LendingWorkspaceProps) {
+export function LendingWorkspace({ isConnected }: LendingWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<"supply" | "borrow" | "repay" | "withdraw">("supply");
   const [supplyInput, setSupplyInput] = useState<string>("");
   const [borrowInput, setBorrowInput] = useState<string>("");

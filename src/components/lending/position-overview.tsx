@@ -1,16 +1,16 @@
 "use client";
 
-import { Wallet, ShieldAlert, Coins, Lock, Activity } from "lucide-react";
+import { Wallet, Activity } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
 
 interface PositionOverviewProps {
   isConnected: boolean;
-  isArcTestnet: boolean;
+  isArcTestnet?: boolean;
 }
 
-export function PositionOverview({ isConnected, isArcTestnet }: PositionOverviewProps) {
+export function PositionOverview({ isConnected }: PositionOverviewProps) {
   return (
     <Card className="border border-white/10 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_8px_32px_rgba(6,15,36,0.5)]">
       {/* Top accent line */}

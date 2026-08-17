@@ -1,7 +1,7 @@
 "use client";
 
-import { ArrowRight, ShieldCheck, Wallet, RefreshCw, Coins } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { ShieldCheck, Wallet, RefreshCw, Coins } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 
 const steps = [
   {

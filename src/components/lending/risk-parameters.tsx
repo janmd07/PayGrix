@@ -1,6 +1,6 @@
 "use client";
 
-import { Sliders, HelpCircle, CheckCircle2 } from "lucide-react";
+import { Sliders } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 
 export function RiskParameters() {
