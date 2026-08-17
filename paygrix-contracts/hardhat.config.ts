@@ -48,6 +48,9 @@ const config: HardhatUserConfig = {
     },
   },
   etherscan: {
+    apiKey: {
+      arcTestnet: "abc",
+    },
     customChains: [
       {
         network: "arcTestnet",

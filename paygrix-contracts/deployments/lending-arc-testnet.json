@@ -1,0 +1,28 @@
+{
+  "network": "Arc Testnet",
+  "chainId": 5042002,
+  "deployer": "0xf85085b73a4Ec4efE895B532Fe1560a06ff0d179",
+  "contracts": {
+    "StagingOracle": {
+      "address": "0x294629a4A59c80daDF68Bc1c0348efc22eEE9A45",
+      "deploymentTxHash": "0xd5c5615c1f4bc10825d02810b0812d3a38d667c35edb84c4b4e3b8e9fa578db0",
+      "blockNumber": 57478948,
+      "constructorArgs": {
+        "initialPrice": "60000000000",
+        "decimals": 6
+      }
+    },
+    "PayGrixLending": {
+      "address": "0x5662977d74e8f460d85F0c0499297B05C68c6111",
+      "deploymentTxHash": "0x915c86d7f642ccf36581ba03503eb2c370a9a2b7f8ec5dc4b9771f5943902ed7",
+      "blockNumber": 57478953,
+      "constructorArgs": {
+        "collateralToken": "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF",
+        "borrowToken": "0x3600000000000000000000000000000000000000",
+        "oracle": "0x294629a4A59c80daDF68Bc1c0348efc22eEE9A45",
+        "borrowLtvBps": 5000,
+        "liquidationThresholdBps": 7500
+      }
+    }
+  }
+}
