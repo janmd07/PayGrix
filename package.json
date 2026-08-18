@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:swap": "npx ts-node scripts/test-swap-regression.ts"
   },
   "dependencies": {
     "@circle-fin/adapter-solana": "^1.6.2",
