@@ -317,125 +317,106 @@ export function useSwap() {
         throw new Error("Invalid build response structure received from server proxy.");
       }
 
-      // Step 3: Parse and execute swap action via client adapter
+      // Step 3: Parse and execute swap action
       setStatus("swapping");
       console.log("[SWAP DIAGNOSTIC] Stage: preparing swap action");
-      interface InstructionItem {
-        target: string;
-        data: string;
-        value: string;
-        tokenIn: string;
-        amountToApprove: string;
-        tokenOut: string;
-        minTokenOut: string;
-      }
 
-      console.log("[SWAP DIAGNOSTIC] Inspecting raw executionParams shape:", {
-        stage: "inspect-execute-params-shape",
-        hasInstructions: Array.isArray(rawExecParams.instructions),
-        instructionsCount: rawExecParams.instructions?.length,
-        hasTokens: Array.isArray(rawExecParams.tokens),
-        tokensCount: rawExecParams.tokens?.length,
-        hasExecId: rawExecParams.execId !== undefined,
-        hasDeadline: rawExecParams.deadline !== undefined,
-        hasMetadata: rawExecParams.metadata !== undefined,
-        hasSignature: !!buildData.transaction.signature,
-      });
+      const targetAddress = buildData?.transaction?.to || buildData?.transaction?.routerAddress || adapterAddress;
+      const swapCalldata = buildData?.transaction?.data || buildData?.transaction?.executionParams?.instructions?.[0]?.data;
+      const isDirectRouterSwap = targetAddress.toLowerCase() === adapterAddress.toLowerCase();
 
-      const executeParams = {
-        instructions: (rawExecParams.instructions as InstructionItem[]).map((ins: InstructionItem) => ({
-          target: ins.target,
-          data: ins.data,
-          value: BigInt(ins.value ?? "0"),
-          tokenIn: ins.tokenIn,
-          amountToApprove: BigInt(ins.amountToApprove ?? "0"),
-          tokenOut: ins.tokenOut,
-          minTokenOut: BigInt(ins.minTokenOut ?? "0"),
-        })),
-        tokens: rawExecParams.tokens as { token: string; beneficiary: string }[],
-        execId: BigInt(rawExecParams.execId as string),
-        deadline: BigInt(rawExecParams.deadline as string),
-        metadata: rawExecParams.metadata as string,
-      };
+      let swapTx: string;
 
-      const signature = buildData.transaction.signature;
-      const inputAmount = BigInt(buildData.amount || rawAmount.toString());
+      if (isDirectRouterSwap && swapCalldata) {
+        console.log("[SWAP DIAGNOSTIC] Executing direct EVM swap transaction on PayGrixArcRouter:", {
+          to: targetAddress,
+          from: address,
+        });
 
-      const tokenInputs = [
-        {
-          permitType: 0, // PermitType.NONE
-          token: tokenInAddress as `0x${string}`,
-          amount: inputAmount,
-          permitCalldata: "0x" as `0x${string}`,
-        },
-      ];
+        const txHashResult = (await provider.request({
+          method: "eth_sendTransaction",
+          params: [
+            {
+              from: address,
+              to: targetAddress,
+              data: swapCalldata,
+              value: "0x0",
+            },
+          ],
+        })) as string;
 
-      console.log("[SWAP DIAGNOSTIC] Stage: adapter.prepareAction('swap.execute') - START", {
-        stage: "prepareAction-swap.execute-start",
-        chainId: providerChainId,
-        adapterAddress,
-      });
+        swapTx = txHashResult;
+        setTxHash(swapTx);
 
-      let preparedSwap;
-      try {
-        preparedSwap = await adapter.prepareAction(
-          "swap.execute",
+        // Wait for on-chain receipt confirmation on Arc Testnet
+        await client.waitForTransactionReceipt({ hash: swapTx as `0x${string}` });
+      } else {
+        // Fallback: Circle SDK path for Circle relayer swaps
+        interface InstructionItem {
+          target: string;
+          data: string;
+          value: string;
+          tokenIn: string;
+          amountToApprove: string;
+          tokenOut: string;
+          minTokenOut: string;
+        }
+
+        const executeParams = {
+          instructions: (rawExecParams.instructions as InstructionItem[]).map((ins: InstructionItem) => ({
+            target: ins.target,
+            data: ins.data,
+            value: BigInt(ins.value ?? "0"),
+            tokenIn: ins.tokenIn,
+            amountToApprove: BigInt(ins.amountToApprove ?? "0"),
+            tokenOut: ins.tokenOut,
+            minTokenOut: BigInt(ins.minTokenOut ?? "0"),
+          })),
+          tokens: rawExecParams.tokens as { token: string; beneficiary: string }[],
+          execId: BigInt(rawExecParams.execId as string),
+          deadline: BigInt(rawExecParams.deadline as string),
+          metadata: rawExecParams.metadata as string,
+        };
+
+        const signature = buildData.transaction.signature;
+        const inputAmount = BigInt(buildData.amount || rawAmount.toString());
+
+        const tokenInputs = [
           {
-            executeParams,
-            tokenInputs,
-            signature,
-            inputAmount,
-            tokenInAddress,
+            permitType: 0, // PermitType.NONE
+            token: tokenInAddress as `0x${string}`,
+            amount: inputAmount,
+            permitCalldata: "0x" as `0x${string}`,
           },
-          { chain: ArcTestnet }
-        );
+        ];
 
-        console.log("[SWAP DIAGNOSTIC] Stage: adapter.prepareAction('swap.execute') - SUCCESS", {
-          stage: "prepareAction-swap.execute-success",
+        console.log("[SWAP DIAGNOSTIC] Stage: adapter.prepareAction('swap.execute') - START", {
+          stage: "prepareAction-swap.execute-start",
           chainId: providerChainId,
-          type: preparedSwap?.type,
-          hasEstimate: typeof preparedSwap?.estimate === "function",
-          hasExecute: typeof preparedSwap?.execute === "function",
+          adapterAddress,
         });
-      } catch (prepErr: unknown) {
-        const errObj = prepErr as { name?: string; message?: string; code?: number; cause?: unknown };
-        console.error("[SWAP DIAGNOSTIC] Stage: adapter.prepareAction('swap.execute') - ERROR", {
-          stage: "prepareAction-swap.execute-error",
-          chainId: providerChainId,
-          errorName: errObj.name || "PrepareActionError",
-          errorMessage: errObj.message || String(prepErr),
-          errorCode: errObj.code,
-          sanitizedCause: errObj.cause ? (typeof errObj.cause === "object" ? JSON.stringify(errObj.cause) : String(errObj.cause)) : undefined,
-        });
-        throw prepErr;
+
+        let preparedSwap;
+        try {
+          preparedSwap = await adapter.prepareAction(
+            "swap.execute",
+            {
+              executeParams,
+              tokenInputs,
+              signature,
+              inputAmount,
+              tokenInAddress,
+            },
+            { chain: ArcTestnet }
+          );
+        } catch (prepErr: unknown) {
+          console.error("[SWAP DIAGNOSTIC] Stage: adapter.prepareAction('swap.execute') - ERROR", prepErr);
+          throw prepErr;
+        }
+
+        swapTx = (await preparedSwap.execute()) as string;
+        setTxHash(swapTx);
       }
-
-      console.log("[SWAP DIAGNOSTIC] Stage: preparedSwap.execute() - START", {
-        stage: "prepared.execute-start",
-        chainId: providerChainId,
-      });
-
-      let swapTx;
-      try {
-        swapTx = await preparedSwap.execute();
-        console.log("[SWAP DIAGNOSTIC] Stage: preparedSwap.execute() - SUCCESS", {
-          stage: "prepared.execute-success",
-          chainId: providerChainId,
-          txHash: swapTx,
-        });
-      } catch (execErr: unknown) {
-        const errObj = execErr as { name?: string; message?: string; code?: number; cause?: unknown };
-        console.error("[SWAP DIAGNOSTIC] Stage: preparedSwap.execute() - ERROR", {
-          stage: "prepared.execute-error",
-          chainId: providerChainId,
-          errorName: errObj.name || "PreparedExecuteError",
-          errorMessage: errObj.message || String(execErr),
-          errorCode: errObj.code,
-          sanitizedCause: errObj.cause ? (typeof errObj.cause === "object" ? JSON.stringify(errObj.cause) : String(execErr)) : undefined,
-        });
-        throw execErr;
-      }
-      setTxHash(swapTx);
 
       // Step 4: Poll status proxy route until completed
       console.log("[SWAP DIAGNOSTIC] Stage: polling swap status");

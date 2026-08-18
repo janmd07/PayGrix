@@ -4,7 +4,7 @@ import { arcTestnet } from "@/config/arc-testnet";
 
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 const EURC_ADDRESS = "0x89b50855aa3be2f677cd6303cec089b5f319d72a";
-const CIRBTC_ADDRESS = "0xf0c4a4ce82a5746abaad9425360ab04fbba432bf";
+const CIRBTC_ADDRESS = "0xf0c4a4ce82a5746abaad9425360ab04fbBA432BF";
 const ARC_TESTNET_CHAIN = "Arc_Testnet";
 const ROUTER_ADDRESS = "0xB2A97BAABaB64B389948bebB58D639a654ABac89" as const;
 
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   const tokenInLower = tokenInAddress.toLowerCase();
   const tokenOutLower = tokenOutAddress.toLowerCase();
 
-  const SUPPORTED_TOKENS = [USDC_ADDRESS, EURC_ADDRESS, CIRBTC_ADDRESS];
+  const SUPPORTED_TOKENS = [USDC_ADDRESS.toLowerCase(), EURC_ADDRESS.toLowerCase(), CIRBTC_ADDRESS.toLowerCase()];
   const isSupportedPair =
     SUPPORTED_TOKENS.includes(tokenInLower) &&
     SUPPORTED_TOKENS.includes(tokenOutLower) &&
@@ -136,6 +136,10 @@ export async function POST(request: Request) {
     return NextResponse.json({
       transaction: {
         routerAddress: ROUTER_ADDRESS,
+        to: ROUTER_ADDRESS,
+        data: swapData,
+        value: "0x0",
+        chainId: 5042002,
         executionParams: {
           instructions: [
             {
