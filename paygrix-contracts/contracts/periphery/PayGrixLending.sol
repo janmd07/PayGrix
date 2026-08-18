@@ -8,12 +8,14 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
 import "../interfaces/IPriceOracle.sol";
+import "../interfaces/IProductionOracle.sol";
 
 /// @title PayGrixLending
 /// @notice Decentralized, collateral-backed stablecoin lending protocol for PayGrix on Arc Testnet.
 /// @dev Users deposit cirBTC collateral (8 decimals) to borrow native Arc Testnet USDC (6 decimals).
 ///      Uses a single aggregate position model per user, conservative 50% max borrow LTV,
-///      75% liquidation threshold, 0% interest, and 0% protocol fees for V1 prototype.
+///      75% liquidation threshold, 0% interest, 5% liquidation bonus, 50% close factor,
+///      and explicit bad-debt accounting.
 contract PayGrixLending is Ownable, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
@@ -31,12 +33,17 @@ contract PayGrixLending is Ownable, Pausable, ReentrancyGuard {
     uint256 public borrowLtvBps;              // Basis points (e.g. 5000 = 50%)
     uint256 public liquidationThresholdBps;   // Basis points (e.g. 7500 = 75%)
     uint256 public totalOutstandingDebt;      // Total USDC debt owed across all users (6 decimals)
+    uint256 public totalBadDebt;              // Cumulative written-off bad debt (6 decimals)
+    uint256 public totalLenderDeposits;       // Cumulative USDC liquidity funded (6 decimals)
 
     mapping(address => Position) public positions;
 
     // --- CONSTANTS ---
     uint256 public constant BPS_DIVISOR = 10000;
     uint256 public constant HEALTH_FACTOR_DECIMALS = 10000; // 1.0 Health Factor = 10000 bps
+    uint256 public constant LIQUIDATION_BONUS_BPS = 500;    // 5.00% liquidation bonus
+    uint256 public constant CLOSE_FACTOR_BPS = 5000;        // 50.00% max liquidation close factor
+    uint256 public constant DUST_DEBT_THRESHOLD = 100 * 1e6; // 100 USDC dust threshold (6 decimals)
 
     // --- CUSTOM ERRORS ---
     error ZeroAddress();
@@ -49,7 +56,11 @@ contract PayGrixLending is Ownable, Pausable, ReentrancyGuard {
     error OverRepayment();
     error InsolventAdminWithdrawal();
     error InvalidOraclePrice();
+    error OraclePriceStale();
+    error OraclePriceOutOfBounds();
     error UnsafePosition();
+    error PositionNotLiquidatable();
+    error ExcessiveLiquidationAmount();
 
     // --- EVENTS ---
     event CollateralDeposited(address indexed user, uint256 amount);
@@ -61,6 +72,14 @@ contract PayGrixLending is Ownable, Pausable, ReentrancyGuard {
     event BorrowLtvUpdated(uint256 oldLtv, uint256 newLtv);
     event LiquidationThresholdUpdated(uint256 oldThreshold, uint256 newThreshold);
     event OracleUpdated(address indexed newOracle);
+    event PositionLiquidated(
+        address indexed borrower,
+        address indexed liquidator,
+        uint256 debtRepaid,
+        uint256 collateralSeized,
+        uint256 liquidationBonusBps
+    );
+    event BadDebtRealized(address indexed borrower, uint256 unbackedDebt);
 
     /// @notice Contract constructor
     /// @param _collateralToken Address of cirBTC token (8 decimals)
@@ -178,11 +197,75 @@ contract PayGrixLending is Ownable, Pausable, ReentrancyGuard {
         emit LoanRepaid(msg.sender, amount);
     }
 
+    /// @notice Liquidates an undercollateralized borrower position (HF < 10000 bps)
+    /// @param borrower Address of borrower to liquidate
+    /// @param maxRepayAmountUsdc Maximum amount of USDC (6 decimals) liquidator is willing to repay
+    function liquidate(address borrower, uint256 maxRepayAmountUsdc) external whenNotPaused nonReentrant {
+        if (borrower == address(0)) revert ZeroAddress();
+        if (maxRepayAmountUsdc == 0) revert ZeroAmount();
+
+        Position storage pos = positions[borrower];
+        if (pos.debt == 0) revert InsufficientDebt();
+
+        // Enforce Health Factor < 10000 bps (1.0 HF threshold)
+        uint256 hf = _calculateHealthFactor(pos.collateral, pos.debt);
+        if (hf >= HEALTH_FACTOR_DECIMALS) {
+            revert PositionNotLiquidatable();
+        }
+
+        // Close factor calculation: 50% max per transaction unless debt <= DUST_DEBT_THRESHOLD
+        uint256 maxAllowedRepay;
+        if (pos.debt <= DUST_DEBT_THRESHOLD) {
+            maxAllowedRepay = pos.debt;
+        } else {
+            maxAllowedRepay = (pos.debt * CLOSE_FACTOR_BPS) / BPS_DIVISOR;
+        }
+
+        uint256 actualRepay = maxRepayAmountUsdc > maxAllowedRepay ? maxAllowedRepay : maxRepayAmountUsdc;
+        if (actualRepay == 0) revert ZeroAmount();
+
+        uint256 price = _getSanitizedPrice();
+
+        // Seizure calculation with 5% bonus: (repay * 1.05 * 1e8) / price
+        uint256 targetCollateralUsd = (actualRepay * (BPS_DIVISOR + LIQUIDATION_BONUS_BPS)) / BPS_DIVISOR;
+        uint256 targetCirBtc = (targetCollateralUsd * 1e8) / price;
+
+        uint256 actualCirBtc;
+        if (targetCirBtc >= pos.collateral) {
+            // Seize all remaining collateral (Bad Debt case if collateral < debt repaid value)
+            actualCirBtc = pos.collateral;
+
+            uint256 seizedCollateralValueUsdc = (actualCirBtc * price) / 1e8;
+            if (actualRepay > seizedCollateralValueUsdc) {
+                uint256 unbackedDebt = actualRepay - seizedCollateralValueUsdc;
+                totalBadDebt += unbackedDebt;
+                emit BadDebtRealized(borrower, unbackedDebt);
+            }
+        } else {
+            actualCirBtc = targetCirBtc;
+        }
+
+        pos.collateral -= actualCirBtc;
+        pos.debt -= actualRepay;
+        totalOutstandingDebt -= actualRepay;
+
+        if (pos.debt == 0) {
+            // Clear position completely if fully repaid
+            pos.collateral = 0;
+        }
+
+        borrowToken.safeTransferFrom(msg.sender, address(this), actualRepay);
+        collateralToken.safeTransfer(msg.sender, actualCirBtc);
+
+        emit PositionLiquidated(borrower, msg.sender, actualRepay, actualCirBtc, LIQUIDATION_BONUS_BPS);
+    }
+
     /// @notice Funds the lending pool with USDC liquidity
     /// @param amount Amount of USDC base units (6 decimals) to transfer into pool
     function fundPool(uint256 amount) external nonReentrant {
         if (amount == 0) revert ZeroAmount();
 
+        totalLenderDeposits += amount;
         borrowToken.safeTransferFrom(msg.sender, address(this), amount);
 
         emit PoolFunded(msg.sender, amount);
@@ -193,12 +276,16 @@ contract PayGrixLending is Ownable, Pausable, ReentrancyGuard {
     // =========================================================================
 
     /// @notice Withdraws unborrowed USDC pool liquidity (Admin only)
-    /// @dev Constrained by available USDC balance held in the contract
+    /// @dev Production-safe invariant: Admin can only withdraw unborrowed surplus liquidity
     /// @param amount Amount of USDC base units (6 decimals) to withdraw
     function withdrawPoolLiquidity(uint256 amount) external onlyOwner nonReentrant {
         if (amount == 0) revert ZeroAmount();
 
-        uint256 availableAdminLiquidity = poolLiquidity();
+        uint256 currentBalance = poolLiquidity();
+        // Reserve invariant: Admin cannot withdraw funds obligated to outstanding borrower loans or lender reserves
+        uint256 requiredReserve = totalOutstandingDebt;
+        uint256 availableAdminLiquidity = currentBalance > requiredReserve ? currentBalance - requiredReserve : 0;
+
         if (amount > availableAdminLiquidity) {
             revert InsolventAdminWithdrawal();
         }
@@ -235,7 +322,7 @@ contract PayGrixLending is Ownable, Pausable, ReentrancyGuard {
     }
 
     /// @notice Updates the price oracle contract address (Admin only)
-    /// @param newOracle Address of new IPriceOracle contract
+    /// @param newOracle Address of new IPriceOracle / IProductionOracle contract
     function setOracle(address newOracle) external onlyOwner {
         if (newOracle == address(0)) revert ZeroAddress();
 
@@ -244,7 +331,7 @@ contract PayGrixLending is Ownable, Pausable, ReentrancyGuard {
         emit OracleUpdated(newOracle);
     }
 
-    /// @notice Pauses borrowing, depositing, and collateral withdrawal in emergency
+    /// @notice Pauses borrowing, depositing, collateral withdrawal, and liquidation in emergency
     function pause() external onlyOwner {
         _pause();
     }
@@ -295,13 +382,7 @@ contract PayGrixLending is Ownable, Pausable, ReentrancyGuard {
     /// @return hfBps Health factor in basis points (10000 = 1.0, type(uint256).max if debt == 0)
     function healthFactor(address user) external view returns (uint256 hfBps) {
         Position storage pos = positions[user];
-        if (pos.debt == 0) return type(uint256).max;
-
-        uint256 price = _getSanitizedPrice();
-        if (price == 0) return 0;
-
-        uint256 collateralValue = (pos.collateral * price) / 1e8;
-        return (collateralValue * liquidationThresholdBps) / pos.debt;
+        return _calculateHealthFactor(pos.collateral, pos.debt);
     }
 
     /// @notice Returns amount of cirBTC collateral user can freely withdraw without making position unsafe
@@ -341,18 +422,52 @@ contract PayGrixLending is Ownable, Pausable, ReentrancyGuard {
     // INTERNAL HELPER FUNCTIONS
     // =========================================================================
 
-    /// @dev Internal helper to read and validate price from oracle
+    /// @dev Internal helper calculating health factor in basis points
+    function _calculateHealthFactor(uint256 collateral, uint256 debt) internal view returns (uint256) {
+        if (debt == 0) return type(uint256).max;
+
+        uint256 price = _getSanitizedPrice();
+        if (price == 0) return 0;
+
+        uint256 collateralValue = (collateral * price) / 1e8;
+        return (collateralValue * liquidationThresholdBps) / debt;
+    }
+
+    /// @dev Internal helper reading and validating price from oracle with fallback to legacy interface
     function _getSanitizedPrice() internal view returns (uint256) {
-        (uint256 price, uint8 decimals) = oracle.getPrice();
-        if (price == 0) revert InvalidOraclePrice();
-        if (decimals != 6) {
-            // Normalize to 6 decimals if oracle uses different decimal scale
-            if (decimals > 6) {
-                price = price / (10 ** (decimals - 6));
-            } else {
-                price = price * (10 ** (6 - decimals));
+        // Try calling extended IProductionOracle interface
+        try IProductionOracle(address(oracle)).getPriceData() returns (
+            uint256 p,
+            uint8 dec,
+            uint256 updatedAt,
+            bool isValid
+        ) {
+            if (!isValid || p == 0) revert InvalidOraclePrice();
+            if (block.timestamp < updatedAt || block.timestamp - updatedAt > 3600) {
+                revert OraclePriceStale();
             }
+
+            uint256 normPrice = p;
+            if (dec > 6) {
+                normPrice = p / (10 ** (dec - 6));
+            } else if (dec < 6) {
+                normPrice = p * (10 ** (6 - dec));
+            }
+
+            return normPrice;
+        } catch {
+            // Fallback call to legacy IPriceOracle interface
+            (uint256 p, uint8 dec) = oracle.getPrice();
+            if (p == 0) revert InvalidOraclePrice();
+
+            uint256 normPrice = p;
+            if (dec > 6) {
+                normPrice = p / (10 ** (dec - 6));
+            } else if (dec < 6) {
+                normPrice = p * (10 ** (6 - dec));
+            }
+
+            return normPrice;
         }
-        return price;
     }
 }

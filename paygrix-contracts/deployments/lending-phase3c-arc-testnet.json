@@ -1,0 +1,42 @@
+{
+  "network": "Arc Testnet",
+  "chainId": 5042002,
+  "deployer": "0xf85085b73a4Ec4efE895B532Fe1560a06ff0d179",
+  "contracts": {
+    "ProductionOracleAdapter": {
+      "classification": "TESTNET SIMULATION ONLY",
+      "address": "0xA17Bfb3332A83F0e247129ee9c0d1A454A332287",
+      "deploymentTxHash": "0x7ff64d63dffd228c0eaefcce38b165923e0b58c35f0d8fc9ce33d7e75da00280",
+      "blockNumber": 57579801,
+      "constructorArgs": {
+        "initialPrice": "60000000000",
+        "initialDecimals": 6,
+        "initialStaleness": 3600,
+        "initialMinPrice": "1000000000",
+        "initialMaxPrice": "500000000000"
+      }
+    },
+    "PayGrixLendingPhase3B": {
+      "address": "0x800Cd0a3b737e989F45E69f64eEeB118724522aE",
+      "deploymentTxHash": "0x01eae67cf915753804e7afbbc7df8b648fd92749cefbef02b3afcbf2b75a6a3d",
+      "blockNumber": 57579805,
+      "pauseTxHash": "0xc6ba7708891a17835e1fa00b0bf593aa277d0711afe599fb41702f1d3f941ac5",
+      "fundingApprovalTxHash": "0x7f530edec7f041fb9576c70bcee912334931a664ca31f0114234b7c0710e0d15",
+      "fundingTxHash": "0xe0f1c3230f073b2284746b2266baeb4ef016922c6f4bd5d7695e17c5629e5f8a",
+      "constructorArgs": {
+        "collateralToken": "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF",
+        "borrowToken": "0x3600000000000000000000000000000000000000",
+        "oracle": "0xA17Bfb3332A83F0e247129ee9c0d1A454A332287",
+        "borrowLtvBps": 5000,
+        "liquidationThresholdBps": 7500
+      },
+      "statePostFunding": {
+        "paused": true,
+        "poolLiquidityUsdc": "1.0",
+        "totalOutstandingDebtUsdc": "0.0",
+        "totalBadDebtUsdc": "0.0",
+        "collateralPriceUsdc": "60000.0"
+      }
+    }
+  }
+}
