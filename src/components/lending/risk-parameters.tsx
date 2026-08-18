@@ -10,6 +10,10 @@ interface RiskParametersProps {
 
 export function RiskParameters({ lendingData }: RiskParametersProps) {
   const referencePrice = lendingData?.collateralPrice || "60,000.00";
+  const contractAddressShort = lendingData?.contractAddressShort || "0x800C...22aE";
+  const oracleAddressShort = lendingData?.oracleAddressShort || "0xA17B...2287";
+  const ltvStr = lendingData?.borrowLtvBps ? `${lendingData.borrowLtvBps / 100}%` : "50%";
+  const thresholdStr = lendingData?.liquidationThresholdBps ? `${lendingData.liquidationThresholdBps / 100}%` : "75%";
 
   return (
     <Card className="border border-white/10 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_8px_32px_rgba(6,15,36,0.5)]">
@@ -22,7 +26,7 @@ export function RiskParameters({ lendingData }: RiskParametersProps) {
           Lending Parameters & Addresses
         </CardTitle>
         <CardDescription className="text-xs text-slate-400">
-          On-chain parameters read directly from PayGrixLending on Arc Testnet.
+          On-chain parameters read directly from PayGrixLending Phase 3C contract on Arc Testnet.
         </CardDescription>
       </CardHeader>
 
@@ -31,14 +35,14 @@ export function RiskParameters({ lendingData }: RiskParametersProps) {
           <div className="flex justify-between items-center p-3">
             <span className="text-slate-400 font-medium">Lending Contract</span>
             <span className="text-white font-mono font-bold text-[11px]">
-              0x5662...6111
+              {contractAddressShort}
             </span>
           </div>
 
           <div className="flex justify-between items-center p-3">
-            <span className="text-slate-400 font-medium">Oracle Feed</span>
+            <span className="text-slate-400 font-medium">Oracle Infrastructure</span>
             <span className="text-purple-300 font-mono font-bold text-[11px]">
-              0x2946...9A45 (${referencePrice})
+              {oracleAddressShort} (Testnet Simulation Oracle)
             </span>
           </div>
 
@@ -60,22 +64,22 @@ export function RiskParameters({ lendingData }: RiskParametersProps) {
 
           <div className="flex justify-between items-center p-3">
             <span className="text-slate-400 font-medium">Max Borrow LTV</span>
-            <span className="text-purple-400 font-mono font-bold">50%</span>
+            <span className="text-purple-400 font-mono font-bold">{ltvStr}</span>
           </div>
 
           <div className="flex justify-between items-center p-3">
             <span className="text-slate-400 font-medium">Liquidation Threshold</span>
-            <span className="text-amber-400 font-mono font-bold">75%</span>
+            <span className="text-amber-400 font-mono font-bold">{thresholdStr}</span>
           </div>
 
           <div className="flex justify-between items-center p-3">
             <span className="text-slate-400 font-medium">Interest / Protocol Fee</span>
-            <span className="text-emerald-400 font-mono font-bold">0% (V1 Prototype)</span>
+            <span className="text-emerald-400 font-mono font-bold">0% (V1 Production-MVP)</span>
           </div>
         </div>
 
         <p className="text-[11px] text-slate-500 italic leading-relaxed pt-1 border-t border-white/5">
-          * Arc Testnet staging environment. StagingOracle price is reference-only (${referencePrice} / cirBTC). Real borrowing is disabled in Phase 2D.
+          * Arc Testnet Phase 3C staging environment. Testnet Simulation Oracle reference price: ${referencePrice} / cirBTC. Public borrowing is disabled.
         </p>
       </CardContent>
     </Card>

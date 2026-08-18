@@ -4,8 +4,11 @@ import { useState, useEffect, useCallback } from "react";
 import { formatUnits, Address } from "viem";
 import { safeArcReadContract, sanitizeArcError } from "@/lib/arc-read-infra";
 
-export const PAYGRIX_LENDING_ADDRESS: Address = "0x5662977d74e8f460d85F0c0499297B05C68c6111";
+// Phase 3B/3C Deployed PayGrix Lending Contract & Testnet Simulation Oracle (Arc Testnet 5042002)
+export const PAYGRIX_LENDING_ADDRESS: Address = "0x800Cd0a3b737e989F45E69f64eEeB118724522aE";
+export const TESTNET_SIMULATION_ORACLE_ADDRESS: Address = "0xA17Bfb3332A83F0e247129ee9c0d1A454A332287";
 export const USDC_ADDRESS: Address = "0x3600000000000000000000000000000000000000";
+export const CIRBTC_ADDRESS: Address = "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF";
 
 export const PAYGRIX_LENDING_ABI = [
   {
@@ -19,6 +22,48 @@ export const PAYGRIX_LENDING_ABI = [
     inputs: [],
     name: "totalOutstandingDebt",
     outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "totalBadDebt",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "borrowLtvBps",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "liquidationThresholdBps",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "oracle",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "collateralToken",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "borrowToken",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
     stateMutability: "view",
     type: "function",
   },
@@ -74,13 +119,6 @@ export const PAYGRIX_LENDING_ABI = [
     stateMutability: "view",
     type: "function",
   },
-  {
-    inputs: [{ internalType: "uint256", name: "amount", type: "uint256" }],
-    name: "fundPool",
-    outputs: [],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
 ] as const;
 
 export const USDC_ABI = [
@@ -101,16 +139,6 @@ export const USDC_ABI = [
     stateMutability: "view",
     type: "function",
   },
-  {
-    inputs: [
-      { internalType: "address", name: "spender", type: "address" },
-      { internalType: "uint256", name: "value", type: "uint256" },
-    ],
-    name: "approve",
-    outputs: [{ internalType: "bool", name: "", type: "bool" }],
-    stateMutability: "nonpayable",
-    type: "function",
-  },
 ] as const;
 
 export interface LendingOnChainData {
@@ -118,6 +146,10 @@ export interface LendingOnChainData {
   poolLiquidityRaw: bigint;
   totalOutstandingDebt: string;
   totalOutstandingDebtRaw: bigint;
+  totalBadDebt: string;
+  totalBadDebtRaw: bigint;
+  borrowLtvBps: number;
+  liquidationThresholdBps: number;
   isPaused: boolean;
   collateralPrice: string;
   collateralPriceRaw: bigint;
@@ -129,10 +161,14 @@ export interface LendingOnChainData {
   userMaxBorrowRaw: bigint;
   userAvailableCollateral: string;
   userAvailableCollateralRaw: bigint;
-  userHealthFactor: string; // "—" or formatted number
+  userHealthFactor: string; // "—" or formatted float string
   userHealthFactorBps: bigint;
   userCollateralValueUsdc: string;
   ownerAddress: Address | null;
+  oracleAddress: Address;
+  oracleAddressShort: string;
+  contractAddress: Address;
+  contractAddressShort: string;
   isContractOwner: boolean;
   userUsdcBalance: string;
   userUsdcBalanceRaw: bigint;
@@ -141,10 +177,14 @@ export interface LendingOnChainData {
 }
 
 const DEFAULT_LENDING_DATA: LendingOnChainData = {
-  poolLiquidity: "0.00",
-  poolLiquidityRaw: BigInt(0),
+  poolLiquidity: "1.00",
+  poolLiquidityRaw: BigInt(1000000),
   totalOutstandingDebt: "0.00",
   totalOutstandingDebtRaw: BigInt(0),
+  totalBadDebt: "0.00",
+  totalBadDebtRaw: BigInt(0),
+  borrowLtvBps: 5000,
+  liquidationThresholdBps: 7500,
   isPaused: true, // Safety default
   collateralPrice: "60,000.00",
   collateralPriceRaw: BigInt(60000000000),
@@ -160,6 +200,10 @@ const DEFAULT_LENDING_DATA: LendingOnChainData = {
   userHealthFactorBps: BigInt(0),
   userCollateralValueUsdc: "$0.00",
   ownerAddress: null,
+  oracleAddress: TESTNET_SIMULATION_ORACLE_ADDRESS,
+  oracleAddressShort: `${TESTNET_SIMULATION_ORACLE_ADDRESS.slice(0, 6)}...${TESTNET_SIMULATION_ORACLE_ADDRESS.slice(-4)}`,
+  contractAddress: PAYGRIX_LENDING_ADDRESS,
+  contractAddressShort: `${PAYGRIX_LENDING_ADDRESS.slice(0, 6)}...${PAYGRIX_LENDING_ADDRESS.slice(-4)}`,
   isContractOwner: false,
   userUsdcBalance: "0.00",
   userUsdcBalanceRaw: BigInt(0),
@@ -185,6 +229,24 @@ async function fetchLendingOnChainData(
     functionName: "totalOutstandingDebt",
   }, { cachePolicy: "shared", forceRefresh });
 
+  const totalBadDebtPromise = safeArcReadContract<bigint>({
+    address: PAYGRIX_LENDING_ADDRESS,
+    abi: PAYGRIX_LENDING_ABI,
+    functionName: "totalBadDebt",
+  }, { cachePolicy: "shared", forceRefresh }).catch(() => BigInt(0));
+
+  const ltvPromise = safeArcReadContract<bigint>({
+    address: PAYGRIX_LENDING_ADDRESS,
+    abi: PAYGRIX_LENDING_ABI,
+    functionName: "borrowLtvBps",
+  }, { cachePolicy: "static", forceRefresh }).catch(() => BigInt(5000));
+
+  const thresholdPromise = safeArcReadContract<bigint>({
+    address: PAYGRIX_LENDING_ADDRESS,
+    abi: PAYGRIX_LENDING_ABI,
+    functionName: "liquidationThresholdBps",
+  }, { cachePolicy: "static", forceRefresh }).catch(() => BigInt(7500));
+
   const pausedPromise = safeArcReadContract<boolean>({
     address: PAYGRIX_LENDING_ADDRESS,
     abi: PAYGRIX_LENDING_ABI,
@@ -196,6 +258,12 @@ async function fetchLendingOnChainData(
     abi: PAYGRIX_LENDING_ABI,
     functionName: "collateralPrice",
   }, { cachePolicy: "shared", forceRefresh });
+
+  const oraclePromise = safeArcReadContract<Address>({
+    address: PAYGRIX_LENDING_ADDRESS,
+    abi: PAYGRIX_LENDING_ABI,
+    functionName: "oracle",
+  }, { cachePolicy: "static", forceRefresh }).catch(() => TESTNET_SIMULATION_ORACLE_ADDRESS);
 
   const ownerPromise = safeArcReadContract<Address>({
     address: PAYGRIX_LENDING_ADDRESS,
@@ -258,8 +326,12 @@ async function fetchLendingOnChainData(
   const [
     poolLiquidityRaw,
     totalDebtRaw,
+    totalBadDebtRaw,
+    borrowLtvBpsRaw,
+    liquidationThresholdBpsRaw,
     isPaused,
     priceRaw,
+    oracleAddr,
     ownerAddress,
     userPosition,
     maxBorrowRaw,
@@ -270,8 +342,12 @@ async function fetchLendingOnChainData(
   ] = await Promise.all([
     poolLiquidityPromise,
     totalDebtPromise,
+    totalBadDebtPromise,
+    ltvPromise,
+    thresholdPromise,
     pausedPromise,
     pricePromise,
+    oraclePromise,
     ownerPromise,
     userPositionPromise,
     userMaxBorrowPromise,
@@ -286,6 +362,7 @@ async function fetchLendingOnChainData(
   // Format Global Values
   const poolLiquidityStr = formatUnits(poolLiquidityRaw, 6);
   const totalDebtStr = formatUnits(totalDebtRaw, 6);
+  const totalBadDebtStr = formatUnits(totalBadDebtRaw, 6);
   const priceNum = Number(priceRaw) / 1e6;
   const priceStr = priceNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -316,11 +393,17 @@ async function fetchLendingOnChainData(
     collateralValueStr = `$${valNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
 
+  const actualOracleAddr = oracleAddr || TESTNET_SIMULATION_ORACLE_ADDRESS;
+
   return {
     poolLiquidity: poolLiquidityStr,
     poolLiquidityRaw,
     totalOutstandingDebt: totalDebtStr,
     totalOutstandingDebtRaw: totalDebtRaw,
+    totalBadDebt: totalBadDebtStr,
+    totalBadDebtRaw,
+    borrowLtvBps: Number(borrowLtvBpsRaw),
+    liquidationThresholdBps: Number(liquidationThresholdBpsRaw),
     isPaused,
     collateralPrice: priceStr,
     collateralPriceRaw: priceRaw,
@@ -336,6 +419,10 @@ async function fetchLendingOnChainData(
     userHealthFactorBps: hfBps,
     userCollateralValueUsdc: collateralValueStr,
     ownerAddress: ownerAddress || null,
+    oracleAddress: actualOracleAddr,
+    oracleAddressShort: `${actualOracleAddr.slice(0, 6)}...${actualOracleAddr.slice(-4)}`,
+    contractAddress: PAYGRIX_LENDING_ADDRESS,
+    contractAddressShort: `${PAYGRIX_LENDING_ADDRESS.slice(0, 6)}...${PAYGRIX_LENDING_ADDRESS.slice(-4)}`,
     isContractOwner,
     userUsdcBalance: userUsdcBalanceStr,
     userUsdcBalanceRaw,

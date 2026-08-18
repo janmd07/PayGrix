@@ -16,7 +16,7 @@ import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
 
 export default function LendingPage() {
   const { isConnected, isArcTestnet, address } = useArcWallet();
-  const { lendingData, isLoading, error, refreshLendingData } = useLendingData(address, isArcTestnet);
+  const { lendingData, isLoading, error } = useLendingData(address, isArcTestnet);
 
   const handleStartBorrowing = () => {
     const el = document.getElementById("manage-position");
@@ -32,6 +32,8 @@ export default function LendingPage() {
     }
   };
 
+  const contractAddressShort = lendingData?.contractAddressShort || "0x800C...22aE";
+
   return (
     <AppShell>
       <div className="flex flex-col gap-8 max-w-7xl mx-auto">
@@ -40,14 +42,14 @@ export default function LendingPage() {
           <div className="flex items-center gap-2.5">
             <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0" />
             <div>
-              <span className="font-bold text-amber-300">Arc Testnet Staging Deployment</span>
+              <span className="font-bold text-amber-300">Arc Testnet — Lending Security Staging</span>
               <span className="mx-2 text-amber-500">•</span>
-              <span>Lending contract paused — staging mode (Write transactions disabled)</span>
+              <span>PayGrixLending Phase 3C contract paused (Public write operations & borrowing disabled)</span>
             </div>
           </div>
           <div className="flex items-center gap-2 font-mono shrink-0">
             <Badge variant="outline" className="border-amber-500/40 text-amber-300 bg-amber-500/10">
-              Contract: 0x5662...6111
+              Contract: {contractAddressShort}
             </Badge>
           </div>
         </div>
@@ -61,10 +63,10 @@ export default function LendingPage() {
           <div className="relative z-10 flex flex-col gap-6 max-w-3xl">
             <div className="flex items-center gap-2.5 flex-wrap">
               <Badge variant="outline" className="text-xs text-[#4f8cff] border-[#4f8cff]/30 bg-[#4f8cff]/10 font-semibold px-3 py-1">
-                Arc Testnet • Lending Staging
+                Arc Testnet • Security Staging
               </Badge>
               <Badge variant="outline" className="text-xs text-purple-300 border-purple-500/20 bg-purple-500/10">
-                Phase 2E Market Funding
+                Phase 3C Testnet Simulation Oracle
               </Badge>
             </div>
 
@@ -76,7 +78,7 @@ export default function LendingPage() {
                 </span>
               </h1>
               <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
-                Inspect real-time on-chain lending reserves, borrowing power, and user position states directly from PayGrixLending on Arc Testnet.
+                Inspect real-time on-chain lending reserves, liquidation thresholds, and user position metrics directly from PayGrixLending Phase 3C on Arc Testnet.
               </p>
             </div>
 
@@ -144,7 +146,6 @@ export default function LendingPage() {
               lendingData={lendingData}
               isLoading={isLoading}
               error={error}
-              onRefreshData={refreshLendingData}
             />
             <LendingSafetyCard lendingData={lendingData} isLoading={isLoading} />
             <RiskParameters lendingData={lendingData} />

@@ -14,7 +14,9 @@ export function LendingSafetyCard({ lendingData, isLoading }: LendingSafetyCardP
   const isPaused = lendingData?.isPaused ?? true;
   const poolLiquidity = lendingData?.poolLiquidity || "1.00";
   const totalDebt = lendingData?.totalOutstandingDebt || "0.00";
+  const totalBadDebt = lendingData?.totalBadDebt || "0.00";
   const collateralPrice = lendingData?.collateralPrice || "60,000.00";
+  const contractAddressShort = lendingData?.contractAddressShort || "0x800C...22aE";
 
   return (
     <Card className="border border-emerald-500/20 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_8px_32px_rgba(6,15,36,0.5)]">
@@ -25,14 +27,14 @@ export function LendingSafetyCard({ lendingData, isLoading }: LendingSafetyCardP
         <div className="flex items-center justify-between">
           <CardTitle className="text-base font-bold text-white flex items-center gap-2">
             <ShieldCheck className="h-4.5 w-4.5 text-emerald-400" />
-            Lending Safety & Staging State
+            Lending Safety & Staging Checklist
           </CardTitle>
           <Badge variant="outline" className="text-[10px] text-emerald-400 border-emerald-500/30 bg-emerald-500/10 font-mono">
-            Phase 2F Verified
+            Phase 3C Verified
           </Badge>
         </div>
         <CardDescription className="text-xs text-slate-400">
-          Live safety parameters and contract operational state on Arc Testnet.
+          On-chain safety parameters and contract operational state on Arc Testnet.
         </CardDescription>
       </CardHeader>
 
@@ -44,8 +46,8 @@ export function LendingSafetyCard({ lendingData, isLoading }: LendingSafetyCardP
               <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
               <span className="text-slate-300 font-medium">Contract Deployed</span>
             </div>
-            <span className="font-mono text-[11px] text-slate-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded">
-              0x5662...6111
+            <span className="font-mono text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded font-bold">
+              {contractAddressShort}
             </span>
           </div>
 
@@ -53,21 +55,21 @@ export function LendingSafetyCard({ lendingData, isLoading }: LendingSafetyCardP
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-              <span className="text-slate-300 font-medium">Pool Liquidity Funded</span>
+              <span className="text-slate-300 font-medium">Pool Liquidity</span>
             </div>
             <span className="font-mono text-emerald-400 font-bold">
               {isLoading ? "..." : `${poolLiquidity} USDC`}
             </span>
           </div>
 
-          {/* Item 3: Contract Paused */}
+          {/* Item 3: Contract Status */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
               <span className="text-slate-300 font-medium">Contract Status</span>
             </div>
             <span className="font-mono text-amber-300 font-semibold bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">
-              {isPaused ? "Paused (Staging Mode)" : "Active"}
+              {isPaused ? "Paused — Staging Mode" : "Active"}
             </span>
           </div>
 
@@ -82,14 +84,14 @@ export function LendingSafetyCard({ lendingData, isLoading }: LendingSafetyCardP
             </span>
           </div>
 
-          {/* Item 5: Oracle Staging */}
+          {/* Item 5: Oracle */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-              <span className="text-slate-300 font-medium">Oracle Reference</span>
+              <span className="text-slate-300 font-medium">Oracle</span>
             </div>
             <span className="font-mono text-purple-300 font-medium">
-              Staging (${isLoading ? "..." : collateralPrice})
+              Testnet Simulation Oracle (${isLoading ? "..." : collateralPrice})
             </span>
           </div>
 
@@ -103,13 +105,24 @@ export function LendingSafetyCard({ lendingData, isLoading }: LendingSafetyCardP
               {isLoading ? "..." : `${totalDebt} USDC`}
             </span>
           </div>
+
+          {/* Item 7: Total Bad Debt */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span className="text-slate-300 font-medium">Total Bad Debt</span>
+            </div>
+            <span className="font-mono text-emerald-400 font-bold">
+              {isLoading ? "..." : `${totalBadDebt} USDC`}
+            </span>
+          </div>
         </div>
 
         {/* Safety Note */}
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 flex items-start gap-2.5 text-[11px] text-amber-200/90 leading-relaxed">
           <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
           <span>
-            Safety Mode: PayGrixLending remains paused in staging on Arc Testnet. Funding is permitted for liquidity testing, but borrowing is disabled.
+            Safety Staging: PayGrixLending Phase 3C remains paused on Arc Testnet. Public borrowing, deposits, repayments, and liquidations are disabled. Production borrowing is not enabled.
           </span>
         </div>
       </CardContent>
