@@ -5,6 +5,7 @@ import { formatUnits, Address } from "viem";
 import { safeArcReadContract, sanitizeArcError } from "@/lib/arc-read-infra";
 
 export const PAYGRIX_LENDING_ADDRESS: Address = "0x5662977d74e8f460d85F0c0499297B05C68c6111";
+export const USDC_ADDRESS: Address = "0x3600000000000000000000000000000000000000";
 
 export const PAYGRIX_LENDING_ABI = [
   {
@@ -66,6 +67,50 @@ export const PAYGRIX_LENDING_ABI = [
     stateMutability: "view",
     type: "function",
   },
+  {
+    inputs: [],
+    name: "owner",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "amount", type: "uint256" }],
+    name: "fundPool",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+] as const;
+
+export const USDC_ABI = [
+  {
+    inputs: [{ internalType: "address", name: "account", type: "address" }],
+    name: "balanceOf",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "owner", type: "address" },
+      { internalType: "address", name: "spender", type: "address" },
+    ],
+    name: "allowance",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "spender", type: "address" },
+      { internalType: "uint256", name: "value", type: "uint256" },
+    ],
+    name: "approve",
+    outputs: [{ internalType: "bool", name: "", type: "bool" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
 ] as const;
 
 export interface LendingOnChainData {
@@ -87,6 +132,12 @@ export interface LendingOnChainData {
   userHealthFactor: string; // "—" or formatted number
   userHealthFactorBps: bigint;
   userCollateralValueUsdc: string;
+  ownerAddress: Address | null;
+  isContractOwner: boolean;
+  userUsdcBalance: string;
+  userUsdcBalanceRaw: bigint;
+  userUsdcAllowance: string;
+  userUsdcAllowanceRaw: bigint;
 }
 
 const DEFAULT_LENDING_DATA: LendingOnChainData = {
@@ -108,6 +159,12 @@ const DEFAULT_LENDING_DATA: LendingOnChainData = {
   userHealthFactor: "—",
   userHealthFactorBps: BigInt(0),
   userCollateralValueUsdc: "$0.00",
+  ownerAddress: null,
+  isContractOwner: false,
+  userUsdcBalance: "0.00",
+  userUsdcBalanceRaw: BigInt(0),
+  userUsdcAllowance: "0.00",
+  userUsdcAllowanceRaw: BigInt(0),
 };
 
 async function fetchLendingOnChainData(
@@ -140,11 +197,19 @@ async function fetchLendingOnChainData(
     functionName: "collateralPrice",
   }, { cachePolicy: "shared", forceRefresh });
 
+  const ownerPromise = safeArcReadContract<Address>({
+    address: PAYGRIX_LENDING_ADDRESS,
+    abi: PAYGRIX_LENDING_ABI,
+    functionName: "owner",
+  }, { cachePolicy: "static", forceRefresh }).catch(() => null);
+
   // 2. User-Specific Read Calls (Only if connected & on Arc Testnet)
   let userPositionPromise = Promise.resolve([BigInt(0), BigInt(0)] as readonly [bigint, bigint]);
   let userMaxBorrowPromise = Promise.resolve(BigInt(0));
   let userHealthFactorPromise = Promise.resolve(BigInt(0));
   let userAvailableCollateralPromise = Promise.resolve(BigInt(0));
+  let userUsdcBalancePromise = Promise.resolve(BigInt(0));
+  let userUsdcAllowancePromise = Promise.resolve(BigInt(0));
 
   if (userAddress && isArcTestnet) {
     userPositionPromise = safeArcReadContract<readonly [bigint, bigint]>({
@@ -174,6 +239,20 @@ async function fetchLendingOnChainData(
       functionName: "availableCollateral",
       args: [userAddress],
     }, { cachePolicy: "wallet", forceRefresh });
+
+    userUsdcBalancePromise = safeArcReadContract<bigint>({
+      address: USDC_ADDRESS,
+      abi: USDC_ABI,
+      functionName: "balanceOf",
+      args: [userAddress],
+    }, { cachePolicy: "wallet", forceRefresh });
+
+    userUsdcAllowancePromise = safeArcReadContract<bigint>({
+      address: USDC_ADDRESS,
+      abi: USDC_ABI,
+      functionName: "allowance",
+      args: [userAddress, PAYGRIX_LENDING_ADDRESS],
+    }, { cachePolicy: "wallet", forceRefresh });
   }
 
   const [
@@ -181,19 +260,25 @@ async function fetchLendingOnChainData(
     totalDebtRaw,
     isPaused,
     priceRaw,
+    ownerAddress,
     userPosition,
     maxBorrowRaw,
     hfBps,
     availableCollateralRaw,
+    userUsdcBalanceRaw,
+    userUsdcAllowanceRaw,
   ] = await Promise.all([
     poolLiquidityPromise,
     totalDebtPromise,
     pausedPromise,
     pricePromise,
+    ownerPromise,
     userPositionPromise,
     userMaxBorrowPromise,
     userHealthFactorPromise,
     userAvailableCollateralPromise,
+    userUsdcBalancePromise,
+    userUsdcAllowancePromise,
   ]);
 
   const [userCollateralRaw, userDebtRaw] = userPosition;
@@ -209,6 +294,12 @@ async function fetchLendingOnChainData(
   const userDebtStr = formatUnits(userDebtRaw, 6);
   const userMaxBorrowStr = formatUnits(maxBorrowRaw, 6);
   const userAvailableCollateralStr = formatUnits(availableCollateralRaw, 8);
+  const userUsdcBalanceStr = formatUnits(userUsdcBalanceRaw, 6);
+  const userUsdcAllowanceStr = formatUnits(userUsdcAllowanceRaw, 6);
+
+  const isContractOwner = Boolean(
+    userAddress && ownerAddress && userAddress.toLowerCase() === ownerAddress.toLowerCase()
+  );
 
   // Health Factor String Formatting
   let hfStr = "—";
@@ -244,6 +335,12 @@ async function fetchLendingOnChainData(
     userHealthFactor: hfStr,
     userHealthFactorBps: hfBps,
     userCollateralValueUsdc: collateralValueStr,
+    ownerAddress: ownerAddress || null,
+    isContractOwner,
+    userUsdcBalance: userUsdcBalanceStr,
+    userUsdcBalanceRaw,
+    userUsdcAllowance: userUsdcAllowanceStr,
+    userUsdcAllowanceRaw,
   };
 }
 

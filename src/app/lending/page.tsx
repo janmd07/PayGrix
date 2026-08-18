@@ -11,11 +11,12 @@ import { LendingMarketCard } from "@/components/lending/lending-market-card";
 import { LendingWorkspace } from "@/components/lending/lending-workspace";
 import { HowItWorks } from "@/components/lending/how-it-works";
 import { RiskParameters } from "@/components/lending/risk-parameters";
+import { LendingSafetyCard } from "@/components/lending/lending-safety-card";
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
 
 export default function LendingPage() {
   const { isConnected, isArcTestnet, address } = useArcWallet();
-  const { lendingData, isLoading, error } = useLendingData(address, isArcTestnet);
+  const { lendingData, isLoading, error, refreshLendingData } = useLendingData(address, isArcTestnet);
 
   const handleStartBorrowing = () => {
     const el = document.getElementById("manage-position");
@@ -63,7 +64,7 @@ export default function LendingPage() {
                 Arc Testnet • Lending Staging
               </Badge>
               <Badge variant="outline" className="text-xs text-purple-300 border-purple-500/20 bg-purple-500/10">
-                Phase 2D Verified
+                Phase 2E Market Funding
               </Badge>
             </div>
 
@@ -139,7 +140,13 @@ export default function LendingPage() {
 
           {/* Right Column: Market Status & Risk Parameters */}
           <div className="space-y-6">
-            <LendingMarketCard lendingData={lendingData} isLoading={isLoading} error={error} />
+            <LendingMarketCard
+              lendingData={lendingData}
+              isLoading={isLoading}
+              error={error}
+              onRefreshData={refreshLendingData}
+            />
+            <LendingSafetyCard lendingData={lendingData} isLoading={isLoading} />
             <RiskParameters lendingData={lendingData} />
           </div>
         </div>

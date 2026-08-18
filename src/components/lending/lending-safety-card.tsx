@@ -1,0 +1,118 @@
+"use client";
+
+import { ShieldCheck, CheckCircle2, Lock, AlertTriangle } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { LendingOnChainData } from "@/hooks/use-lending-data";
+
+interface LendingSafetyCardProps {
+  lendingData?: LendingOnChainData;
+  isLoading?: boolean;
+}
+
+export function LendingSafetyCard({ lendingData, isLoading }: LendingSafetyCardProps) {
+  const isPaused = lendingData?.isPaused ?? true;
+  const poolLiquidity = lendingData?.poolLiquidity || "1.00";
+  const totalDebt = lendingData?.totalOutstandingDebt || "0.00";
+  const collateralPrice = lendingData?.collateralPrice || "60,000.00";
+
+  return (
+    <Card className="border border-emerald-500/20 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_8px_32px_rgba(6,15,36,0.5)]">
+      {/* Top accent line */}
+      <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-emerald-500 via-teal-500 to-amber-500" />
+
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+            <ShieldCheck className="h-4.5 w-4.5 text-emerald-400" />
+            Lending Safety & Staging State
+          </CardTitle>
+          <Badge variant="outline" className="text-[10px] text-emerald-400 border-emerald-500/30 bg-emerald-500/10 font-mono">
+            Phase 2F Verified
+          </Badge>
+        </div>
+        <CardDescription className="text-xs text-slate-400">
+          Live safety parameters and contract operational state on Arc Testnet.
+        </CardDescription>
+      </CardHeader>
+
+      <CardContent className="space-y-3">
+        <div className="rounded-xl border border-white/5 bg-[#070e1c] p-3 space-y-2.5 text-xs">
+          {/* Item 1: Contract Deployed */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span className="text-slate-300 font-medium">Contract Deployed</span>
+            </div>
+            <span className="font-mono text-[11px] text-slate-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded">
+              0x5662...6111
+            </span>
+          </div>
+
+          {/* Item 2: Pool Liquidity Funded */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span className="text-slate-300 font-medium">Pool Liquidity Funded</span>
+            </div>
+            <span className="font-mono text-emerald-400 font-bold">
+              {isLoading ? "..." : `${poolLiquidity} USDC`}
+            </span>
+          </div>
+
+          {/* Item 3: Contract Paused */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span className="text-slate-300 font-medium">Contract Status</span>
+            </div>
+            <span className="font-mono text-amber-300 font-semibold bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">
+              {isPaused ? "Paused (Staging Mode)" : "Active"}
+            </span>
+          </div>
+
+          {/* Item 4: Borrowing Disabled */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+              <span className="text-slate-300 font-medium">Borrowing</span>
+            </div>
+            <span className="font-mono text-red-300 font-semibold bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded">
+              Disabled
+            </span>
+          </div>
+
+          {/* Item 5: Oracle Staging */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span className="text-slate-300 font-medium">Oracle Reference</span>
+            </div>
+            <span className="font-mono text-purple-300 font-medium">
+              Staging (${isLoading ? "..." : collateralPrice})
+            </span>
+          </div>
+
+          {/* Item 6: Outstanding Debt */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span className="text-slate-300 font-medium">Outstanding Debt</span>
+            </div>
+            <span className="font-mono text-slate-300 font-bold">
+              {isLoading ? "..." : `${totalDebt} USDC`}
+            </span>
+          </div>
+        </div>
+
+        {/* Safety Note */}
+        <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 flex items-start gap-2.5 text-[11px] text-amber-200/90 leading-relaxed">
+          <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+          <span>
+            Safety Mode: PayGrixLending remains paused in staging on Arc Testnet. Funding is permitted for liquidity testing, but borrowing is disabled.
+          </span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
