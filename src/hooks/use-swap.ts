@@ -134,8 +134,8 @@ export function useSwap() {
       return null;
     }
 
-    // Safety Requirement 3: Check spender address in chain configuration
-    const adapterAddress = ArcTestnet.kitContracts?.adapter;
+    // Spender address: PayGrixArcRouter on Arc Testnet
+    const adapterAddress = "0xB2A97BAABaB64B389948bebB58D639a654ABac89" as const;
     if (!adapterAddress) {
       setError("Adapter contract address configuration is missing on Arc Testnet.");
       setStatus("failed");
