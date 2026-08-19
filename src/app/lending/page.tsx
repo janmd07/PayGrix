@@ -32,6 +32,51 @@ export default function LendingPage() {
 
   const contractAddressShort = lendingData?.contractAddressShort || "0x800C...22aE";
 
+  if (!isConnected) {
+    return (
+      <AppShell>
+        <div className="flex items-center justify-center min-h-[60vh] py-8 px-4">
+          <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#060f24] via-[#070e1c] to-[#0d1b3e] p-8 text-center shadow-[0_8px_32px_rgba(6,15,36,0.4)]">
+            <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-[#4f8cff] via-[#6d5dfc] to-[#9d4edd]" />
+            
+            <div className="flex flex-col items-center gap-5">
+              {/* Small Lending badge */}
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-[10px] text-[#4f8cff] border-[#4f8cff]/30 bg-[#4f8cff]/10 font-semibold px-2.5 py-0.5">
+                  Lending
+                </Badge>
+              </div>
+
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#6d5dfc]/10 border border-[#6d5dfc]/20 text-[#4f8cff] shadow-inner">
+                <HandCoins className="h-7 w-7" />
+              </div>
+
+              {/* Title & Description */}
+              <div className="space-y-2">
+                <h1 className="text-xl font-bold text-white tracking-tight">
+                  Connect your wallet to access Lending
+                </h1>
+                <p className="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto">
+                  Connect your wallet to view your collateral, borrowing power, debt, and lending actions on Arc Testnet.
+                </p>
+              </div>
+
+              {/* Prominent Connect Wallet Button */}
+              <div className="pt-2 pb-1">
+                <ConnectWalletButton />
+              </div>
+
+              {/* Optional small Arc Testnet network badge */}
+              <Badge variant="outline" className="text-[10px] text-slate-400 border-white/10 bg-white/5 font-mono px-2.5 py-0.5">
+                Arc Testnet
+              </Badge>
+            </div>
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell>
       <div className="flex flex-col gap-5 max-w-6xl mx-auto">
@@ -91,41 +136,24 @@ export default function LendingPage() {
 
             {/* Compact Header CTAs */}
             <div className="flex items-center gap-2 shrink-0">
-              {!isConnected ? (
-                <div className="flex items-center gap-2">
-                  <ConnectWalletButton />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleLearnHowItWorks}
-                    className="h-9 gap-1.5 text-xs border-white/10 text-slate-300 hover:text-white hover:bg-white/5"
-                  >
-                    <BookOpen className="h-3.5 w-3.5" />
-                    How it works
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <Button
-                    size="sm"
-                    onClick={handleStartBorrowing}
-                    className="h-9 gap-1.5 text-xs font-bold bg-gradient-to-r from-[#4f8cff] via-[#6d5dfc] to-[#9d4edd] hover:from-[#3b7cff] hover:to-[#8c3ed9] text-white shadow-md shadow-purple-600/20"
-                  >
-                    <HandCoins className="h-3.5 w-3.5" />
-                    Inspect Position
-                  </Button>
+              <Button
+                size="sm"
+                onClick={handleStartBorrowing}
+                className="h-9 gap-1.5 text-xs font-bold bg-gradient-to-r from-[#4f8cff] via-[#6d5dfc] to-[#9d4edd] hover:from-[#3b7cff] hover:to-[#8c3ed9] text-white shadow-md shadow-purple-600/20"
+              >
+                <HandCoins className="h-3.5 w-3.5" />
+                Inspect Position
+              </Button>
 
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleLearnHowItWorks}
-                    className="h-9 gap-1.5 text-xs border-white/10 text-slate-300 hover:text-white hover:bg-white/5"
-                  >
-                    <BookOpen className="h-3.5 w-3.5" />
-                    How it works
-                  </Button>
-                </>
-              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLearnHowItWorks}
+                className="h-9 gap-1.5 text-xs border-white/10 text-slate-300 hover:text-white hover:bg-white/5"
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                How it works
+              </Button>
             </div>
           </div>
         </div>
