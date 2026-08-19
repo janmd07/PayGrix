@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { Landmark, ShieldCheck, ArrowRight, Activity, TrendingUp, AlertTriangle } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
+import { Landmark, ShieldCheck, ArrowRight, AlertTriangle } from "lucide-react";
+import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { LendingOnChainData } from "@/hooks/use-lending-data";

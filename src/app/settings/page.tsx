@@ -6,7 +6,7 @@ import { Database, ExternalLink, Network, Shield, Copy, Check, Landmark, ShieldC
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
@@ -35,7 +35,7 @@ const contracts = [
 export default function SettingsPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const { isConnected, isArcTestnet, address } = useArcWallet();
+  const { isArcTestnet, address } = useArcWallet();
   const { lendingData, isLoading, error } = useLendingData(address, isArcTestnet);
 
   const formatAddress = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
