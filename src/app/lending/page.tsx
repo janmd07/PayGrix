@@ -16,7 +16,7 @@ import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
 
 export default function LendingPage() {
   const { isConnected, isArcTestnet, address } = useArcWallet();
-  const { lendingData, isLoading, error } = useLendingData(address, isArcTestnet);
+  const { lendingData, isLoading, error, refreshLendingData } = useLendingData(address, isArcTestnet);
 
   const handleStartBorrowing = () => {
     const el = document.getElementById("manage-position");
@@ -158,6 +158,7 @@ export default function LendingPage() {
               isArcTestnet={isArcTestnet}
               lendingData={lendingData}
               isLoading={isLoading}
+              refreshLendingData={refreshLendingData}
             />
           </div>
 

@@ -8,6 +8,7 @@ import { TokenLogo } from "@/components/bridge/swap-form";
 import { cn } from "@/lib/utils";
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
 import { LendingOnChainData, PAYGRIX_LENDING_ADDRESS, USDC_ADDRESS, CIRBTC_ADDRESS } from "@/hooks/use-lending-data";
+import { clearArcReadCache } from "@/lib/arc-read-infra";
 import { useWriteContract } from "wagmi";
 import { parseUnits } from "viem";
 
@@ -61,9 +62,15 @@ interface LendingWorkspaceProps {
   onConnectClick?: () => void;
   lendingData?: LendingOnChainData;
   isLoading?: boolean;
+  refreshLendingData?: () => Promise<void>;
 }
 
-export function LendingWorkspace({ isConnected, lendingData, isLoading }: LendingWorkspaceProps) {
+export function LendingWorkspace({
+  isConnected,
+  lendingData,
+  isLoading,
+  refreshLendingData,
+}: LendingWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<"supply" | "borrow" | "repay" | "withdraw">("supply");
   const [supplyInput, setSupplyInput] = useState<string>("");
   const [borrowInput, setBorrowInput] = useState<string>("");
@@ -98,6 +105,12 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
 
       setStatusMsg("Collateral supplied successfully!");
       setSupplyInput("");
+
+      // Generic post-transaction cache invalidation & state refresh for all users
+      clearArcReadCache();
+      if (refreshLendingData) {
+        await refreshLendingData();
+      }
     } catch (err: unknown) {
       console.error("Supply error:", err);
     } finally {
@@ -121,6 +134,12 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
 
       setStatusMsg("USDC borrowed successfully!");
       setBorrowInput("");
+
+      // Generic post-transaction cache invalidation & state refresh for all users
+      clearArcReadCache();
+      if (refreshLendingData) {
+        await refreshLendingData();
+      }
     } catch (err: unknown) {
       console.error("Borrow error:", err);
     } finally {
@@ -152,6 +171,12 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
 
       setStatusMsg("USDC debt repaid successfully!");
       setRepayInput("");
+
+      // Generic post-transaction cache invalidation & state refresh for all users
+      clearArcReadCache();
+      if (refreshLendingData) {
+        await refreshLendingData();
+      }
     } catch (err: unknown) {
       console.error("Repay error:", err);
     } finally {
@@ -175,6 +200,12 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
 
       setStatusMsg("Collateral withdrawn successfully!");
       setWithdrawInput("");
+
+      // Generic post-transaction cache invalidation & state refresh for all users
+      clearArcReadCache();
+      if (refreshLendingData) {
+        await refreshLendingData();
+      }
     } catch (err: unknown) {
       console.error("Withdraw error:", err);
     } finally {

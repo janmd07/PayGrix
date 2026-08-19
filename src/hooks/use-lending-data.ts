@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { formatUnits, Address } from "viem";
-import { safeArcReadContract, sanitizeArcError } from "@/lib/arc-read-infra";
+import { safeArcReadContract, sanitizeArcError, clearArcReadCache } from "@/lib/arc-read-infra";
 
 // Phase 3B/3C Deployed PayGrix Lending Contract & Testnet Simulation Oracle (Arc Testnet 5042002)
 export const PAYGRIX_LENDING_ADDRESS: Address = "0x800Cd0a3b737e989F45E69f64eEeB118724522aE";
@@ -474,6 +474,7 @@ export function useLendingData(userAddress?: Address, isArcTestnet?: boolean) {
     setIsLoading(true);
     setError(null);
     try {
+      clearArcReadCache();
       const data = await fetchLendingOnChainData(userAddress, isArcTestnet, true);
       setLendingData(data);
     } catch (err: unknown) {
@@ -491,7 +492,8 @@ export function useLendingData(userAddress?: Address, isArcTestnet?: boolean) {
       setIsLoading(true);
       setError(null);
       try {
-        const data = await fetchLendingOnChainData(userAddress, isArcTestnet, false);
+        clearArcReadCache();
+        const data = await fetchLendingOnChainData(userAddress, isArcTestnet, true);
         if (isMounted) {
           setLendingData(data);
         }
