@@ -34,104 +34,95 @@ export default function LendingPage() {
 
   return (
     <AppShell>
-      <div className="flex flex-col gap-8 max-w-7xl mx-auto">
-        {/* ── STAGING & PAUSED STATUS BANNER ──────────────── */}
+      <div className="flex flex-col gap-5 max-w-6xl mx-auto">
+        {/* ── 1. COMPACT STATUS BAR ───────────────────────── */}
         {lendingData?.isPaused ? (
-          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-[0_4px_20px_rgba(245,158,11,0.1)]">
-            <div className="flex items-center gap-2.5">
-              <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0" />
-              <div>
-                <span className="font-bold text-amber-300">Arc Testnet — Lending Security Staging</span>
-                <span className="mx-2 text-amber-500">•</span>
-                <span>PayGrixLending contract paused (Public write operations disabled)</span>
-              </div>
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 px-3.5 text-xs text-amber-200 flex flex-row items-center justify-between gap-2 shadow-sm">
+            <div className="flex items-center gap-2 font-medium">
+              <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+              <span>Arc Testnet — Lending Paused • Public lending actions disabled</span>
             </div>
             <div className="flex items-center gap-2 font-mono shrink-0">
-              <Badge variant="outline" className="border-amber-500/40 text-amber-300 bg-amber-500/10">
+              <Badge variant="outline" className="border-amber-500/40 text-amber-300 bg-amber-500/10 text-[10px] py-0 px-2">
                 Contract: {contractAddressShort}
               </Badge>
             </div>
           </div>
         ) : (
-          <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-[0_4px_20px_rgba(16,185,129,0.1)]">
-            <div className="flex items-center gap-2.5">
-              <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
-              <div>
-                <span className="font-bold text-emerald-300">Arc Testnet — PayGrixLending Active</span>
-                <span className="mx-2 text-emerald-500">•</span>
-                <span>Market unpaused & operational for collateral supply and USDC borrowing</span>
-              </div>
+          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 px-3.5 text-xs text-emerald-200 flex flex-row items-center justify-between gap-2 shadow-sm">
+            <div className="flex items-center gap-2 font-medium">
+              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span>Arc Testnet — Lending Active • Supply & Borrow available</span>
             </div>
             <div className="flex items-center gap-2 font-mono shrink-0">
-              <Badge variant="outline" className="border-emerald-500/40 text-emerald-300 bg-emerald-500/10">
+              <Badge variant="outline" className="border-emerald-500/40 text-emerald-300 bg-emerald-500/10 text-[10px] py-0 px-2">
                 Status: Active
               </Badge>
-              <Badge variant="outline" className="border-emerald-500/40 text-emerald-300 bg-emerald-500/10">
+              <Badge variant="outline" className="border-emerald-500/40 text-emerald-300 bg-emerald-500/10 text-[10px] py-0 px-2">
                 Contract: {contractAddressShort}
               </Badge>
             </div>
           </div>
         )}
 
-        {/* ── TOP HERO / HEADER SECTION ─────────────────────── */}
-        <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060f24] via-[#070e1c] to-[#0d1b3e] p-6 sm:p-8 lg:p-10 shadow-[0_12px_40px_rgba(6,15,36,0.6)]">
-          {/* Ambient light glows */}
-          <div className="absolute -top-24 -right-24 h-72 w-72 rounded-full bg-[#6d5dfc]/15 blur-3xl pointer-events-none" />
-          <div className="absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-[#4f8cff]/15 blur-3xl pointer-events-none" />
+        {/* ── 2. COMPACT LENDING HEADER ───────────────────── */}
+        <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#060f24] via-[#070e1c] to-[#0d1b3e] p-4 sm:p-5 shadow-[0_8px_32px_rgba(6,15,36,0.4)]">
+          <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1.5 max-w-2xl">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="text-[10px] text-[#4f8cff] border-[#4f8cff]/30 bg-[#4f8cff]/10 font-semibold px-2 py-0.5">
+                  Arc Testnet • Security Staging
+                </Badge>
+                <Badge variant="outline" className="text-[10px] text-purple-300 border-purple-500/20 bg-purple-500/10 px-2 py-0.5">
+                  Simulation Oracle ($60,000/BTC)
+                </Badge>
+              </div>
 
-          <div className="relative z-10 flex flex-col gap-6 max-w-3xl">
-            <div className="flex items-center gap-2.5 flex-wrap">
-              <Badge variant="outline" className="text-xs text-[#4f8cff] border-[#4f8cff]/30 bg-[#4f8cff]/10 font-semibold px-3 py-1">
-                Arc Testnet • Security Staging
-              </Badge>
-              <Badge variant="outline" className="text-xs text-purple-300 border-purple-500/20 bg-purple-500/10">
-                Phase 3C Testnet Simulation Oracle
-              </Badge>
-            </div>
-
-            <div className="space-y-3">
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight leading-[1.15]">
-                Borrow USDC against <br className="hidden sm:inline" />
+              <h1 className="text-xl sm:text-2xl font-bold text-white tracking-tight">
+                Borrow USDC against{" "}
                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf]">
                   your collateral.
                 </span>
               </h1>
-              <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
-                Inspect real-time on-chain lending reserves, liquidation thresholds, and user position metrics directly from PayGrixLending Phase 3C on Arc Testnet.
+              <p className="text-xs text-slate-300 leading-relaxed">
+                Supply cirBTC collateral, borrow USDC up to 50% LTV, repay debt, and manage your position on PayGrixLending.
               </p>
             </div>
 
-            {/* CTAs */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2">
+            {/* Compact Header CTAs */}
+            <div className="flex items-center gap-2 shrink-0">
               {!isConnected ? (
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                   <ConnectWalletButton />
                   <Button
                     variant="outline"
+                    size="sm"
                     onClick={handleLearnHowItWorks}
-                    className="gap-2 border-white/10 text-slate-300 hover:text-white hover:bg-white/5"
+                    className="h-9 gap-1.5 text-xs border-white/10 text-slate-300 hover:text-white hover:bg-white/5"
                   >
-                    <BookOpen className="h-4 w-4" />
-                    Learn how it works
+                    <BookOpen className="h-3.5 w-3.5" />
+                    How it works
                   </Button>
                 </div>
               ) : (
                 <>
                   <Button
+                    size="sm"
                     onClick={handleStartBorrowing}
-                    className="gap-2 font-bold bg-gradient-to-r from-[#4f8cff] via-[#6d5dfc] to-[#9d4edd] hover:from-[#3b7cff] hover:to-[#8c3ed9] text-white shadow-[0_4px_16px_rgba(109,93,252,0.35)]"
+                    className="h-9 gap-1.5 text-xs font-bold bg-gradient-to-r from-[#4f8cff] via-[#6d5dfc] to-[#9d4edd] hover:from-[#3b7cff] hover:to-[#8c3ed9] text-white shadow-md shadow-purple-600/20"
                   >
-                    <HandCoins className="h-4 w-4" />
+                    <HandCoins className="h-3.5 w-3.5" />
                     Inspect Position
                   </Button>
 
                   <Button
                     variant="outline"
+                    size="sm"
                     onClick={handleLearnHowItWorks}
-                    className="gap-2 border-white/10 text-slate-300 hover:text-white hover:bg-white/5"
+                    className="h-9 gap-1.5 text-xs border-white/10 text-slate-300 hover:text-white hover:bg-white/5"
                   >
-                    <BookOpen className="h-4 w-4" />
-                    Learn how it works
+                    <BookOpen className="h-3.5 w-3.5" />
+                    How it works
                   </Button>
                 </>
               )}
@@ -139,7 +130,7 @@ export default function LendingPage() {
           </div>
         </div>
 
-        {/* ── POSITION OVERVIEW ────────────────────────────── */}
+        {/* ── 3. COMPACT POSITION OVERVIEW ────────────────── */}
         <PositionOverview
           isConnected={isConnected}
           isArcTestnet={isArcTestnet}
@@ -147,7 +138,7 @@ export default function LendingPage() {
           isLoading={isLoading}
         />
 
-        {/* ── MANAGE POSITION WORKSPACE ────────────────────── */}
+        {/* ── 4. MAIN LENDING WORKSPACE ────────────────────── */}
         <div id="manage-position">
           <LendingWorkspace
             isConnected={isConnected}
@@ -158,13 +149,13 @@ export default function LendingPage() {
           />
         </div>
 
-        {/* ── COMPACT MARKET SUMMARY ───────────────────────── */}
+        {/* ── 5. COMPACT MARKET SUMMARY ───────────────────── */}
         <CompactLendingMarket
           lendingData={lendingData}
           isLoading={isLoading}
         />
 
-        {/* ── HOW IT WORKS ─────────────────────────────────── */}
+        {/* ── 6. HOW IT WORKS ─────────────────────────────── */}
         <HowItWorks />
       </div>
     </AppShell>
