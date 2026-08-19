@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { formatUnits, Address } from "viem";
 import { safeArcReadContract, sanitizeArcError, clearArcReadCache } from "@/lib/arc-read-infra";
+import { fetchTokenBalanceDeduped } from "@/lib/arc-client";
 
 // Phase 3B/3C Deployed PayGrix Lending Contract & Testnet Simulation Oracle (Arc Testnet 5042002)
 export const PAYGRIX_LENDING_ADDRESS: Address = "0x800Cd0a3b737e989F45E69f64eEeB118724522aE";
@@ -279,72 +280,84 @@ async function fetchLendingOnChainData(
     functionName: "owner",
   }, { cachePolicy: "static", forceRefresh }).catch(() => null);
 
-  // 2. User-Specific Read Calls (Only if connected & on Arc Testnet)
+  // 2. User-Specific Read Calls (Only if connected)
   let userPositionPromise = Promise.resolve([BigInt(0), BigInt(0)] as readonly [bigint, bigint]);
   let userMaxBorrowPromise = Promise.resolve(BigInt(0));
   let userHealthFactorPromise = Promise.resolve(BigInt(0));
   let userAvailableCollateralPromise = Promise.resolve(BigInt(0));
   let userUsdcBalancePromise = Promise.resolve(BigInt(0));
   let userUsdcAllowancePromise = Promise.resolve(BigInt(0));
-  let userCirBtcBalancePromise = Promise.resolve(BigInt(0));
+  let userCirBtcBalancePromise: Promise<bigint | null> = Promise.resolve(BigInt(0));
   let userCirBtcAllowancePromise = Promise.resolve(BigInt(0));
 
-  if (userAddress && isArcTestnet) {
+  if (userAddress && (isArcTestnet ?? true)) {
     userPositionPromise = safeArcReadContract<readonly [bigint, bigint]>({
       address: PAYGRIX_LENDING_ADDRESS,
       abi: PAYGRIX_LENDING_ABI,
       functionName: "getPosition",
       args: [userAddress],
-    }, { cachePolicy: "wallet", forceRefresh });
+      account: userAddress,
+    }, { cachePolicy: "wallet", forceRefresh }).catch(() => [BigInt(0), BigInt(0)] as readonly [bigint, bigint]);
 
     userMaxBorrowPromise = safeArcReadContract<bigint>({
       address: PAYGRIX_LENDING_ADDRESS,
       abi: PAYGRIX_LENDING_ABI,
       functionName: "maxBorrow",
       args: [userAddress],
-    }, { cachePolicy: "wallet", forceRefresh });
+      account: userAddress,
+    }, { cachePolicy: "wallet", forceRefresh }).catch(() => BigInt(0));
 
     userHealthFactorPromise = safeArcReadContract<bigint>({
       address: PAYGRIX_LENDING_ADDRESS,
       abi: PAYGRIX_LENDING_ABI,
       functionName: "healthFactor",
       args: [userAddress],
-    }, { cachePolicy: "wallet", forceRefresh });
+      account: userAddress,
+    }, { cachePolicy: "wallet", forceRefresh }).catch(() => BigInt(0));
 
     userAvailableCollateralPromise = safeArcReadContract<bigint>({
       address: PAYGRIX_LENDING_ADDRESS,
       abi: PAYGRIX_LENDING_ABI,
       functionName: "availableCollateral",
       args: [userAddress],
-    }, { cachePolicy: "wallet", forceRefresh });
+      account: userAddress,
+    }, { cachePolicy: "wallet", forceRefresh }).catch(() => BigInt(0));
 
     userUsdcBalancePromise = safeArcReadContract<bigint>({
       address: USDC_ADDRESS,
       abi: USDC_ABI,
       functionName: "balanceOf",
       args: [userAddress],
-    }, { cachePolicy: "wallet", forceRefresh });
+      account: userAddress,
+    }, { cachePolicy: "wallet", forceRefresh })
+      .catch(async () => await fetchTokenBalanceDeduped(USDC_ADDRESS, userAddress))
+      .catch(() => BigInt(0));
 
     userUsdcAllowancePromise = safeArcReadContract<bigint>({
       address: USDC_ADDRESS,
       abi: USDC_ABI,
       functionName: "allowance",
       args: [userAddress, PAYGRIX_LENDING_ADDRESS],
-    }, { cachePolicy: "wallet", forceRefresh });
+      account: userAddress,
+    }, { cachePolicy: "wallet", forceRefresh }).catch(() => BigInt(0));
 
     userCirBtcBalancePromise = safeArcReadContract<bigint>({
       address: CIRBTC_ADDRESS,
       abi: USDC_ABI,
       functionName: "balanceOf",
       args: [userAddress],
-    }, { cachePolicy: "wallet", forceRefresh });
+      account: userAddress,
+    }, { cachePolicy: "wallet", forceRefresh })
+      .catch(async () => await fetchTokenBalanceDeduped(CIRBTC_ADDRESS, userAddress))
+      .catch(() => null);
 
     userCirBtcAllowancePromise = safeArcReadContract<bigint>({
       address: CIRBTC_ADDRESS,
       abi: USDC_ABI,
       functionName: "allowance",
       args: [userAddress, PAYGRIX_LENDING_ADDRESS],
-    }, { cachePolicy: "wallet", forceRefresh });
+      account: userAddress,
+    }, { cachePolicy: "wallet", forceRefresh }).catch(() => BigInt(0));
   }
 
   const [
@@ -401,7 +414,20 @@ async function fetchLendingOnChainData(
   const userAvailableCollateralStr = formatUnits(availableCollateralRaw, 8);
   const userUsdcBalanceStr = formatUnits(userUsdcBalanceRaw, 6);
   const userUsdcAllowanceStr = formatUnits(userUsdcAllowanceRaw, 6);
-  const userCirBtcBalanceStr = formatUnits(userCirBtcBalanceRaw, 8);
+
+  let userCirBtcBalanceStr = "0.00";
+  let safeUserCirBtcBalanceRaw = BigInt(0);
+  if (userCirBtcBalanceRaw !== null) {
+    safeUserCirBtcBalanceRaw = userCirBtcBalanceRaw;
+    if (userCirBtcBalanceRaw === BigInt(0)) {
+      userCirBtcBalanceStr = "0.00";
+    } else {
+      userCirBtcBalanceStr = formatUnits(userCirBtcBalanceRaw, 8);
+    }
+  } else {
+    userCirBtcBalanceStr = "Unable to load";
+  }
+
   const userCirBtcAllowanceStr = formatUnits(userCirBtcAllowanceRaw, 8);
 
   const isContractOwner = Boolean(
@@ -459,7 +485,7 @@ async function fetchLendingOnChainData(
     userUsdcAllowance: userUsdcAllowanceStr,
     userUsdcAllowanceRaw,
     userCirBtcBalance: userCirBtcBalanceStr,
-    userCirBtcBalanceRaw,
+    userCirBtcBalanceRaw: safeUserCirBtcBalanceRaw,
     userCirBtcAllowance: userCirBtcAllowanceStr,
     userCirBtcAllowanceRaw,
   };
@@ -488,11 +514,17 @@ export function useLendingData(userAddress?: Address, isArcTestnet?: boolean) {
   useEffect(() => {
     let isMounted = true;
 
+    if (!userAddress) {
+      setLendingData(DEFAULT_LENDING_DATA);
+      setIsLoading(false);
+      return;
+    }
+
     const load = async () => {
       setIsLoading(true);
       setError(null);
       try {
-        clearArcReadCache();
+        clearArcReadCache(userAddress);
         const data = await fetchLendingOnChainData(userAddress, isArcTestnet, true);
         if (isMounted) {
           setLendingData(data);

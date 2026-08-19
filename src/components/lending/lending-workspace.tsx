@@ -10,7 +10,7 @@ import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
 import { LendingOnChainData, PAYGRIX_LENDING_ADDRESS, USDC_ADDRESS, CIRBTC_ADDRESS } from "@/hooks/use-lending-data";
 import { clearArcReadCache } from "@/lib/arc-read-infra";
 import { useWriteContract } from "wagmi";
-import { parseUnits } from "viem";
+import { parseUnits, formatUnits } from "viem";
 
 const LENDING_WRITE_ABI = [
   {
@@ -305,11 +305,11 @@ export function LendingWorkspace({
               <span className="font-semibold text-slate-300">Supply cirBTC Collateral</span>
               <div className="flex items-center gap-2 font-mono text-[11px]">
                 <span className="text-slate-400">
-                  Wallet: <strong className="text-white">{isLoading ? "..." : lendingData?.userCirBtcBalance || "0.00"}</strong> cirBTC
+                  Wallet: <strong className="text-white">{isLoading ? "Loading..." : lendingData?.userCirBtcBalance || "0.00"}</strong> cirBTC
                 </span>
                 <span className="text-slate-600">•</span>
                 <span className="text-slate-400">
-                  Supplied: <strong className="text-purple-300">{isLoading ? "..." : lendingData?.userCollateral || "0.00"}</strong> cirBTC
+                  Supplied: <strong className="text-purple-300">{isLoading ? "Loading..." : lendingData?.userCollateral || "0.00"}</strong> cirBTC
                 </span>
               </div>
             </div>
@@ -319,7 +319,13 @@ export function LendingWorkspace({
                 <span className="font-semibold text-slate-400 uppercase tracking-wider">COLLATERAL AMOUNT</span>
                 <button
                   type="button"
-                  onClick={() => setSupplyInput(lendingData?.userCirBtcBalance || "0.00")}
+                  onClick={() => {
+                    if (lendingData?.userCirBtcBalanceRaw && lendingData.userCirBtcBalanceRaw > BigInt(0)) {
+                      setSupplyInput(formatUnits(lendingData.userCirBtcBalanceRaw, 8));
+                    } else if (lendingData?.userCirBtcBalance && lendingData.userCirBtcBalance !== "Unable to load") {
+                      setSupplyInput(lendingData.userCirBtcBalance);
+                    }
+                  }}
                   className="rounded bg-[#000000] border border-white/10 hover:bg-white/5 px-2 py-0.5 text-[10px] font-bold text-white transition-all cursor-pointer font-mono"
                 >
                   MAX

@@ -74,12 +74,12 @@ export function PositionOverview({ isConnected, lendingData, isLoading }: Positi
               </span>
               <div className="flex items-baseline gap-1">
                 <span className="text-lg sm:text-xl font-bold text-white font-mono">
-                  {isLoading ? "..." : lendingData?.userCollateral || "0.00"}
+                  {isLoading ? "Loading..." : lendingData?.userCollateral || "0.00"}
                 </span>
                 <span className="text-[11px] font-semibold text-[#4f8cff]">cirBTC</span>
               </div>
               <span className="text-[10px] text-slate-400 block font-mono">
-                Wallet: {isLoading ? "..." : lendingData?.userCirBtcBalance || "0.00"} cirBTC
+                Wallet: {isLoading ? "Loading..." : lendingData?.userCirBtcBalance || "0.00"} cirBTC
               </span>
             </div>
 
@@ -90,7 +90,7 @@ export function PositionOverview({ isConnected, lendingData, isLoading }: Positi
               </span>
               <div className="flex items-baseline gap-1">
                 <span className="text-lg sm:text-xl font-bold text-slate-200 font-mono">
-                  {isLoading ? "..." : lendingData?.userCollateralValueUsdc || "$0.00"}
+                  {isLoading ? "Loading..." : lendingData?.userCollateralValueUsdc || "$0.00"}
                 </span>
               </div>
               <span className="text-[10px] text-slate-500 block">Oracle: $60,000/BTC</span>
@@ -103,7 +103,7 @@ export function PositionOverview({ isConnected, lendingData, isLoading }: Positi
               </span>
               <div className="flex items-baseline gap-1">
                 <span className="text-lg sm:text-xl font-bold text-white font-mono">
-                  {isLoading ? "..." : lendingData?.userDebt || "0.00"}
+                  {isLoading ? "Loading..." : lendingData?.userDebt || "0.00"}
                 </span>
                 <span className="text-[11px] font-semibold text-emerald-400">USDC</span>
               </div>
@@ -117,7 +117,7 @@ export function PositionOverview({ isConnected, lendingData, isLoading }: Positi
               </span>
               <div className="flex items-baseline gap-1">
                 <span className="text-lg sm:text-xl font-bold text-purple-300 font-mono">
-                  {isLoading ? "..." : lendingData?.userMaxBorrow || "0.00"}
+                  {isLoading ? "Loading..." : lendingData?.userMaxBorrow || "0.00"}
                 </span>
                 <span className="text-[11px] font-semibold text-purple-400">USDC</span>
               </div>
