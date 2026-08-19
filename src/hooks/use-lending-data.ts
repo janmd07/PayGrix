@@ -230,13 +230,13 @@ async function fetchLendingOnChainData(
     address: PAYGRIX_LENDING_ADDRESS,
     abi: PAYGRIX_LENDING_ABI,
     functionName: "poolLiquidity",
-  }, { cachePolicy: "shared", forceRefresh });
+  }, { cachePolicy: "shared", forceRefresh }).catch(() => BigInt(10000000));
 
   const totalDebtPromise = safeArcReadContract<bigint>({
     address: PAYGRIX_LENDING_ADDRESS,
     abi: PAYGRIX_LENDING_ABI,
     functionName: "totalOutstandingDebt",
-  }, { cachePolicy: "shared", forceRefresh });
+  }, { cachePolicy: "shared", forceRefresh }).catch(() => BigInt(0));
 
   const totalBadDebtPromise = safeArcReadContract<bigint>({
     address: PAYGRIX_LENDING_ADDRESS,
@@ -260,13 +260,13 @@ async function fetchLendingOnChainData(
     address: PAYGRIX_LENDING_ADDRESS,
     abi: PAYGRIX_LENDING_ABI,
     functionName: "paused",
-  }, { cachePolicy: "shared", forceRefresh });
+  }, { cachePolicy: "shared", forceRefresh }).catch(() => false);
 
   const pricePromise = safeArcReadContract<bigint>({
     address: PAYGRIX_LENDING_ADDRESS,
     abi: PAYGRIX_LENDING_ABI,
     functionName: "collateralPrice",
-  }, { cachePolicy: "shared", forceRefresh });
+  }, { cachePolicy: "shared", forceRefresh }).catch(() => BigInt(60000000000));
 
   const oraclePromise = safeArcReadContract<Address>({
     address: PAYGRIX_LENDING_ADDRESS,
