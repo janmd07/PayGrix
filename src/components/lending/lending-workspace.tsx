@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
 import { LendingOnChainData, PAYGRIX_LENDING_ADDRESS, USDC_ADDRESS, CIRBTC_ADDRESS } from "@/hooks/use-lending-data";
 import { clearArcReadCache } from "@/lib/arc-read-infra";
-import { useWriteContract } from "wagmi";
+import { useWriteContract, usePublicClient } from "wagmi";
 import { parseUnits, formatUnits } from "viem";
 
 const LENDING_WRITE_ABI = [
@@ -78,6 +78,7 @@ export function LendingWorkspace({
   const [withdrawInput, setWithdrawInput] = useState<string>("");
 
   const { writeContractAsync } = useWriteContract();
+  const publicClient = usePublicClient();
   const [isPending, setIsPending] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
 
@@ -88,25 +89,35 @@ export function LendingWorkspace({
       setStatusMsg("Approving cirBTC...");
       const amountRaw = parseUnits(supplyInput, 8);
 
-      await writeContractAsync({
+      const approveHash = await writeContractAsync({
         address: CIRBTC_ADDRESS,
         abi: ERC20_WRITE_ABI,
         functionName: "approve",
         args: [PAYGRIX_LENDING_ADDRESS, amountRaw],
       });
 
+      if (publicClient) {
+        setStatusMsg("Waiting for approval confirmation...");
+        await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      }
+
       setStatusMsg("Depositing cirBTC collateral...");
-      await writeContractAsync({
+      const depositHash = await writeContractAsync({
         address: PAYGRIX_LENDING_ADDRESS,
         abi: LENDING_WRITE_ABI,
         functionName: "depositCollateral",
         args: [amountRaw],
       });
 
+      if (publicClient) {
+        setStatusMsg("Waiting for deposit confirmation...");
+        await publicClient.waitForTransactionReceipt({ hash: depositHash });
+      }
+
       setStatusMsg("Collateral supplied successfully!");
       setSupplyInput("");
 
-      // Generic post-transaction cache invalidation & state refresh for all users
+      // Generic post-transaction cache invalidation & state refresh after block confirmation
       clearArcReadCache();
       if (refreshLendingData) {
         await refreshLendingData();
@@ -125,17 +136,22 @@ export function LendingWorkspace({
       setStatusMsg("Borrowing USDC...");
       const amountRaw = parseUnits(borrowInput, 6);
 
-      await writeContractAsync({
+      const txHash = await writeContractAsync({
         address: PAYGRIX_LENDING_ADDRESS,
         abi: LENDING_WRITE_ABI,
         functionName: "borrow",
         args: [amountRaw],
       });
 
+      if (publicClient) {
+        setStatusMsg("Waiting for borrow confirmation...");
+        await publicClient.waitForTransactionReceipt({ hash: txHash });
+      }
+
       setStatusMsg("USDC borrowed successfully!");
       setBorrowInput("");
 
-      // Generic post-transaction cache invalidation & state refresh for all users
+      // Generic post-transaction cache invalidation & state refresh after block confirmation
       clearArcReadCache();
       if (refreshLendingData) {
         await refreshLendingData();
@@ -154,25 +170,35 @@ export function LendingWorkspace({
       setStatusMsg("Approving USDC...");
       const amountRaw = parseUnits(repayInput, 6);
 
-      await writeContractAsync({
+      const approveHash = await writeContractAsync({
         address: USDC_ADDRESS,
         abi: ERC20_WRITE_ABI,
         functionName: "approve",
         args: [PAYGRIX_LENDING_ADDRESS, amountRaw],
       });
 
+      if (publicClient) {
+        setStatusMsg("Waiting for approval confirmation...");
+        await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      }
+
       setStatusMsg("Repaying USDC debt...");
-      await writeContractAsync({
+      const repayHash = await writeContractAsync({
         address: PAYGRIX_LENDING_ADDRESS,
         abi: LENDING_WRITE_ABI,
         functionName: "repay",
         args: [amountRaw],
       });
 
+      if (publicClient) {
+        setStatusMsg("Waiting for repay confirmation...");
+        await publicClient.waitForTransactionReceipt({ hash: repayHash });
+      }
+
       setStatusMsg("USDC debt repaid successfully!");
       setRepayInput("");
 
-      // Generic post-transaction cache invalidation & state refresh for all users
+      // Generic post-transaction cache invalidation & state refresh after block confirmation
       clearArcReadCache();
       if (refreshLendingData) {
         await refreshLendingData();
@@ -191,17 +217,22 @@ export function LendingWorkspace({
       setStatusMsg("Withdrawing cirBTC collateral...");
       const amountRaw = parseUnits(withdrawInput, 8);
 
-      await writeContractAsync({
+      const txHash = await writeContractAsync({
         address: PAYGRIX_LENDING_ADDRESS,
         abi: LENDING_WRITE_ABI,
         functionName: "withdrawCollateral",
         args: [amountRaw],
       });
 
+      if (publicClient) {
+        setStatusMsg("Waiting for withdrawal confirmation...");
+        await publicClient.waitForTransactionReceipt({ hash: txHash });
+      }
+
       setStatusMsg("Collateral withdrawn successfully!");
       setWithdrawInput("");
 
-      // Generic post-transaction cache invalidation & state refresh for all users
+      // Generic post-transaction cache invalidation & state refresh after block confirmation
       clearArcReadCache();
       if (refreshLendingData) {
         await refreshLendingData();
