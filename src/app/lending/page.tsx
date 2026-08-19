@@ -1,6 +1,6 @@
 "use client";
 
-import { HandCoins, BookOpen, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { HandCoins, BookOpen } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,8 +29,6 @@ export default function LendingPage() {
       el.scrollIntoView({ behavior: "smooth" });
     }
   };
-
-  const contractAddressShort = lendingData?.contractAddressShort || "0x800C...22aE";
 
   if (!isConnected) {
     return (
@@ -80,37 +78,7 @@ export default function LendingPage() {
   return (
     <AppShell>
       <div className="flex flex-col gap-5 max-w-6xl mx-auto">
-        {/* ── 1. COMPACT STATUS BAR ───────────────────────── */}
-        {lendingData?.isPaused ? (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-2.5 px-3.5 text-xs text-amber-200 flex flex-row items-center justify-between gap-2 shadow-sm">
-            <div className="flex items-center gap-2 font-medium">
-              <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
-              <span>Arc Testnet — Lending Paused • Public lending actions disabled</span>
-            </div>
-            <div className="flex items-center gap-2 font-mono shrink-0">
-              <Badge variant="outline" className="border-amber-500/40 text-amber-300 bg-amber-500/10 text-[10px] py-0 px-2">
-                Contract: {contractAddressShort}
-              </Badge>
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-2.5 px-3.5 text-xs text-emerald-200 flex flex-row items-center justify-between gap-2 shadow-sm">
-            <div className="flex items-center gap-2 font-medium">
-              <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-              <span>Arc Testnet — Lending Active • Supply & Borrow available</span>
-            </div>
-            <div className="flex items-center gap-2 font-mono shrink-0">
-              <Badge variant="outline" className="border-emerald-500/40 text-emerald-300 bg-emerald-500/10 text-[10px] py-0 px-2">
-                Status: Active
-              </Badge>
-              <Badge variant="outline" className="border-emerald-500/40 text-emerald-300 bg-emerald-500/10 text-[10px] py-0 px-2">
-                Contract: {contractAddressShort}
-              </Badge>
-            </div>
-          </div>
-        )}
-
-        {/* ── 2. COMPACT LENDING HEADER ───────────────────── */}
+        {/* ── 1. COMPACT LENDING HEADER ───────────────────── */}
         <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-[#060f24] via-[#070e1c] to-[#0d1b3e] p-4 sm:p-5 shadow-[0_8px_32px_rgba(6,15,36,0.4)]">
           <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1.5 max-w-2xl">
