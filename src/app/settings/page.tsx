@@ -1,14 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { Database, ExternalLink, Network, Shield, Copy, Check } from "lucide-react";
+import { Database, ExternalLink, Network, Shield, Copy, Check, Landmark, ShieldCheck, Settings as SettingsIcon } from "lucide-react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { isSupabaseConfigured } from "@/lib/supabase";
+import { useArcWallet } from "@/components/wallet/use-arc-wallet";
+import { useLendingData } from "@/hooks/use-lending-data";
+import { LendingMarketCard } from "@/components/lending/lending-market-card";
+import { LendingSafetyCard } from "@/components/lending/lending-safety-card";
+import { RiskParameters } from "@/components/lending/risk-parameters";
 
 const settings = [
   { label: "Chain name", value: "Arc Testnet", icon: Network },
@@ -23,10 +28,15 @@ const contracts = [
   { name: "USDC/EURC Pair Address", address: "0xf9d04BDdA9C857C9440ac9eD6EbB9118686Ef7b2" },
   { name: "USDC Address", address: "0x3600000000000000000000000000000000000000" },
   { name: "EURC Address", address: "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a" },
+  { name: "PayGrixLending Address", address: "0x800Cd0a3b737e989F45E69f64eEeB118724522aE" },
+  { name: "cirBTC Collateral Address", address: "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF" },
 ];
 
 export default function SettingsPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const { isConnected, isArcTestnet, address } = useArcWallet();
+  const { lendingData, isLoading, error } = useLendingData(address, isArcTestnet);
 
   const formatAddress = (addr: string) => `${addr.slice(0, 6)}...${addr.slice(-4)}`;
 
@@ -40,10 +50,11 @@ export default function SettingsPage() {
     <AppShell>
       <PageHeader
         eyebrow="Settings"
-        title="Workspace configuration"
-        description="Project-level configuration for Arc Testnet, Supabase, and wallet infrastructure."
+        title="Workspace & Protocol Configuration"
+        description="Project-level configuration for Arc Testnet, Supabase, and PayGrix Lending infrastructure."
       />
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-8">
+        {/* Network & Infrastructure Grid */}
         <div className="grid gap-4 xl:grid-cols-[1fr_0.8fr]">
           <Card>
             <CardHeader>
@@ -85,11 +96,12 @@ export default function SettingsPage() {
           </Card>
         </div>
 
+        {/* Deployed Contracts */}
         <Card id="protocol-contracts">
           <CardHeader>
             <CardTitle>Protocol Contracts</CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              Deployed PayGrix liquidity infrastructure on Arc Testnet.
+              Deployed PayGrix liquidity & lending infrastructure on Arc Testnet.
             </p>
           </CardHeader>
           <CardContent className="flex flex-col gap-4">
@@ -159,6 +171,62 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        {/* ── DEDICATED LENDING PROTOCOL SECTION ───────────── */}
+        <div id="lending-protocol" className="space-y-6 pt-4 border-t border-white/10">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <Landmark className="h-5 w-5 text-[#4f8cff]" />
+                Lending Protocol & Market Safety
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Detailed protocol metrics, safety checklist, risk parameters, and deployment addresses powered by live on-chain reads from PayGrixLending.
+              </p>
+            </div>
+            <Badge variant="outline" className="text-xs text-purple-300 border-purple-500/30 bg-purple-500/10 font-mono py-1 px-3">
+              Phase 3C Audit & Security
+            </Badge>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* A. Full Lending Market Details */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                <Landmark className="h-4 w-4 text-[#4f8cff]" />
+                A. Lending Market
+              </h3>
+              <LendingMarketCard
+                lendingData={lendingData}
+                isLoading={isLoading}
+                error={error}
+              />
+            </div>
+
+            {/* B. Lending Safety & Staging Checklist */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-emerald-400" />
+                B. Safety & Staging Checklist
+              </h3>
+              <LendingSafetyCard
+                lendingData={lendingData}
+                isLoading={isLoading}
+              />
+            </div>
+
+            {/* C. Lending Parameters & Addresses */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                <SettingsIcon className="h-4 w-4 text-purple-400" />
+                C. Parameters & Addresses
+              </h3>
+              <RiskParameters
+                lendingData={lendingData}
+              />
+            </div>
+          </div>
+        </div>
       </div>
     </AppShell>
   );

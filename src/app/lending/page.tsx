@@ -7,16 +7,14 @@ import { Button } from "@/components/ui/button";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { useLendingData } from "@/hooks/use-lending-data";
 import { PositionOverview } from "@/components/lending/position-overview";
-import { LendingMarketCard } from "@/components/lending/lending-market-card";
 import { LendingWorkspace } from "@/components/lending/lending-workspace";
+import { CompactLendingMarket } from "@/components/lending/compact-lending-market";
 import { HowItWorks } from "@/components/lending/how-it-works";
-import { RiskParameters } from "@/components/lending/risk-parameters";
-import { LendingSafetyCard } from "@/components/lending/lending-safety-card";
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
 
 export default function LendingPage() {
   const { isConnected, isArcTestnet, address } = useArcWallet();
-  const { lendingData, isLoading, error, refreshLendingData } = useLendingData(address, isArcTestnet);
+  const { lendingData, isLoading, refreshLendingData } = useLendingData(address, isArcTestnet);
 
   const handleStartBorrowing = () => {
     const el = document.getElementById("manage-position");
@@ -149,30 +147,22 @@ export default function LendingPage() {
           isLoading={isLoading}
         />
 
-        {/* ── WORKSPACE & MARKET GRID ───────────────────────── */}
-        <div id="manage-position" className="grid grid-cols-1 lg:grid-cols-[1.2fr_0.8fr] gap-6">
-          {/* Left Column: Manage Position Workspace */}
-          <div>
-            <LendingWorkspace
-              isConnected={isConnected}
-              isArcTestnet={isArcTestnet}
-              lendingData={lendingData}
-              isLoading={isLoading}
-              refreshLendingData={refreshLendingData}
-            />
-          </div>
-
-          {/* Right Column: Market Status & Risk Parameters */}
-          <div className="space-y-6">
-            <LendingMarketCard
-              lendingData={lendingData}
-              isLoading={isLoading}
-              error={error}
-            />
-            <LendingSafetyCard lendingData={lendingData} isLoading={isLoading} />
-            <RiskParameters lendingData={lendingData} />
-          </div>
+        {/* ── MANAGE POSITION WORKSPACE ────────────────────── */}
+        <div id="manage-position">
+          <LendingWorkspace
+            isConnected={isConnected}
+            isArcTestnet={isArcTestnet}
+            lendingData={lendingData}
+            isLoading={isLoading}
+            refreshLendingData={refreshLendingData}
+          />
         </div>
+
+        {/* ── COMPACT MARKET SUMMARY ───────────────────────── */}
+        <CompactLendingMarket
+          lendingData={lendingData}
+          isLoading={isLoading}
+        />
 
         {/* ── HOW IT WORKS ─────────────────────────────────── */}
         <HowItWorks />
