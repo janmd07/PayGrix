@@ -410,7 +410,21 @@ async function fetchLendingOnChainData(
   // Format User Values
   const userCollateralStr = formatUnits(userCollateralRaw, 8);
   const userDebtStr = formatUnits(userDebtRaw, 6);
-  const userMaxBorrowStr = formatUnits(maxBorrowRaw, 6);
+
+  // Derive borrowing capacity via canonical protocol math if on-chain maxBorrow() call reverted
+  let safeMaxBorrowRaw = maxBorrowRaw;
+  if ((safeMaxBorrowRaw === null || safeMaxBorrowRaw === BigInt(0)) && userCollateralRaw > BigInt(0) && priceRaw > BigInt(0)) {
+    const collateralValueUsdcRaw = (userCollateralRaw * priceRaw) / BigInt(100000000); // cirBTC 8 decimals -> USDC 6 decimals
+    const maxDebtUsdcRaw = (collateralValueUsdcRaw * borrowLtvBpsRaw) / BigInt(10000); // 50% LTV
+    if (maxDebtUsdcRaw > userDebtRaw) {
+      const capacityRaw = maxDebtUsdcRaw - userDebtRaw;
+      safeMaxBorrowRaw = capacityRaw < poolLiquidityRaw ? capacityRaw : poolLiquidityRaw;
+    } else {
+      safeMaxBorrowRaw = BigInt(0);
+    }
+  }
+
+  const userMaxBorrowStr = formatUnits(safeMaxBorrowRaw, 6);
   const userAvailableCollateralStr = formatUnits(availableCollateralRaw, 8);
   const userUsdcBalanceStr = formatUnits(userUsdcBalanceRaw, 6);
   const userUsdcAllowanceStr = formatUnits(userUsdcAllowanceRaw, 6);
@@ -468,7 +482,7 @@ async function fetchLendingOnChainData(
     userDebt: userDebtStr,
     userDebtRaw,
     userMaxBorrow: userMaxBorrowStr,
-    userMaxBorrowRaw: maxBorrowRaw,
+    userMaxBorrowRaw: safeMaxBorrowRaw,
     userAvailableCollateral: userAvailableCollateralStr,
     userAvailableCollateralRaw: availableCollateralRaw,
     userHealthFactor: hfStr,

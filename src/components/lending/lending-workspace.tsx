@@ -214,7 +214,28 @@ export function LendingWorkspace({
   };
 
   const isSupplyDisabled = lendingData?.isPaused || !supplyInput || parseFloat(supplyInput) <= 0 || isPending;
-  const isBorrowDisabled = lendingData?.isPaused || !borrowInput || parseFloat(borrowInput) <= 0 || isPending;
+  
+  let isBorrowAmountValid = false;
+  let borrowError: string | null = null;
+  if (borrowInput && !isNaN(Number(borrowInput)) && parseFloat(borrowInput) > 0) {
+    try {
+      const borrowAmountRaw = parseUnits(borrowInput, 6);
+      const maxBorrow = lendingData?.userMaxBorrowRaw ?? BigInt(0);
+      const liquidity = lendingData?.poolLiquidityRaw ?? BigInt(0);
+
+      if (borrowAmountRaw > maxBorrow) {
+        borrowError = "Amount exceeds available borrowing capacity.";
+      } else if (borrowAmountRaw > liquidity) {
+        borrowError = "Amount exceeds available pool liquidity.";
+      } else {
+        isBorrowAmountValid = true;
+      }
+    } catch {
+      borrowError = "Invalid borrowing amount format.";
+    }
+  }
+
+  const isBorrowDisabled = lendingData?.isPaused || !isBorrowAmountValid || isPending;
   const isRepayDisabled = !repayInput || parseFloat(repayInput) <= 0 || (lendingData?.userDebtRaw ?? BigInt(0)) === BigInt(0) || isPending;
   const isWithdrawDisabled = lendingData?.isPaused || !withdrawInput || parseFloat(withdrawInput) <= 0 || isPending;
 
@@ -422,7 +443,13 @@ export function LendingWorkspace({
                 <span className="font-semibold text-slate-400 uppercase tracking-wider">BORROW AMOUNT</span>
                 <button
                   type="button"
-                  onClick={() => setBorrowInput(lendingData?.userMaxBorrow || "0.00")}
+                  onClick={() => {
+                    if (lendingData?.userMaxBorrowRaw && lendingData.userMaxBorrowRaw > BigInt(0)) {
+                      setBorrowInput(formatUnits(lendingData.userMaxBorrowRaw, 6));
+                    } else if (lendingData?.userMaxBorrow && lendingData.userMaxBorrow !== "Unable to load") {
+                      setBorrowInput(lendingData.userMaxBorrow);
+                    }
+                  }}
                   className="rounded bg-[#000000] border border-white/10 hover:bg-white/5 px-2 py-0.5 text-[10px] font-bold text-white transition-all cursor-pointer font-mono"
                 >
                   MAX
@@ -448,6 +475,14 @@ export function LendingWorkspace({
                 </div>
               </div>
             </div>
+
+            {/* Validation error notice */}
+            {borrowError && (
+              <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-2.5 text-xs text-red-300 flex items-center gap-2 font-mono">
+                <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                <span>{borrowError}</span>
+              </div>
+            )}
 
             {/* Liquidity notice */}
             <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5 text-xs text-amber-300 flex items-center gap-2">
