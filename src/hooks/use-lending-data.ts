@@ -290,7 +290,7 @@ async function fetchLendingOnChainData(
   let userCirBtcBalancePromise: Promise<bigint | null> = Promise.resolve(BigInt(0));
   let userCirBtcAllowancePromise = Promise.resolve(BigInt(0));
 
-  if (userAddress && (isArcTestnet ?? true)) {
+  if (userAddress) {
     userPositionPromise = safeArcReadContract<readonly [bigint, bigint]>({
       address: PAYGRIX_LENDING_ADDRESS,
       abi: PAYGRIX_LENDING_ABI,

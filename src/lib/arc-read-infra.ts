@@ -270,12 +270,14 @@ export function clearArcReadCache(keyOrNamespace?: string): void {
 
   const target = keyOrNamespace.toLowerCase();
   for (const key of clientReadCache.keys()) {
-    if (key.toLowerCase() === target || key.toLowerCase().startsWith(target)) {
+    const kLower = key.toLowerCase();
+    if (kLower === target || kLower.startsWith(target) || kLower.includes(target)) {
       clientReadCache.delete(key);
     }
   }
   for (const key of inFlightRequests.keys()) {
-    if (key.toLowerCase() === target || key.toLowerCase().startsWith(target)) {
+    const kLower = key.toLowerCase();
+    if (kLower === target || kLower.startsWith(target) || kLower.includes(target)) {
       inFlightRequests.delete(key);
     }
   }
