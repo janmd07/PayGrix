@@ -1,6 +1,6 @@
 "use client";
 
-import { HandCoins, BookOpen, AlertTriangle } from "lucide-react";
+import { HandCoins, BookOpen, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -38,21 +38,42 @@ export default function LendingPage() {
     <AppShell>
       <div className="flex flex-col gap-8 max-w-7xl mx-auto">
         {/* ── STAGING & PAUSED STATUS BANNER ──────────────── */}
-        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-[0_4px_20px_rgba(245,158,11,0.1)]">
-          <div className="flex items-center gap-2.5">
-            <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0" />
-            <div>
-              <span className="font-bold text-amber-300">Arc Testnet — Lending Security Staging</span>
-              <span className="mx-2 text-amber-500">•</span>
-              <span>PayGrixLending Phase 3C contract paused (Public write operations & borrowing disabled)</span>
+        {lendingData?.isPaused ? (
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-[0_4px_20px_rgba(245,158,11,0.1)]">
+            <div className="flex items-center gap-2.5">
+              <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0" />
+              <div>
+                <span className="font-bold text-amber-300">Arc Testnet — Lending Security Staging</span>
+                <span className="mx-2 text-amber-500">•</span>
+                <span>PayGrixLending contract paused (Public write operations disabled)</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 font-mono shrink-0">
+              <Badge variant="outline" className="border-amber-500/40 text-amber-300 bg-amber-500/10">
+                Contract: {contractAddressShort}
+              </Badge>
             </div>
           </div>
-          <div className="flex items-center gap-2 font-mono shrink-0">
-            <Badge variant="outline" className="border-amber-500/40 text-amber-300 bg-amber-500/10">
-              Contract: {contractAddressShort}
-            </Badge>
+        ) : (
+          <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-xs text-emerald-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-[0_4px_20px_rgba(16,185,129,0.1)]">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
+              <div>
+                <span className="font-bold text-emerald-300">Arc Testnet — PayGrixLending Active</span>
+                <span className="mx-2 text-emerald-500">•</span>
+                <span>Market unpaused & operational for collateral supply and USDC borrowing</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 font-mono shrink-0">
+              <Badge variant="outline" className="border-emerald-500/40 text-emerald-300 bg-emerald-500/10">
+                Status: Active
+              </Badge>
+              <Badge variant="outline" className="border-emerald-500/40 text-emerald-300 bg-emerald-500/10">
+                Contract: {contractAddressShort}
+              </Badge>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* ── TOP HERO / HEADER SECTION ─────────────────────── */}
         <div className="relative overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-[#060f24] via-[#070e1c] to-[#0d1b3e] p-6 sm:p-8 lg:p-10 shadow-[0_12px_40px_rgba(6,15,36,0.6)]">

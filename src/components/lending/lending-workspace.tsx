@@ -1,13 +1,59 @@
 "use client";
 
 import { useState } from "react";
-import { Layers, Lock, AlertCircle, ArrowUpRight, ArrowDownLeft, RotateCcw } from "lucide-react";
+import { Layers, Lock, AlertCircle, ArrowUpRight, ArrowDownLeft, RotateCcw, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TokenLogo } from "@/components/bridge/swap-form";
 import { cn } from "@/lib/utils";
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
-import { LendingOnChainData } from "@/hooks/use-lending-data";
+import { LendingOnChainData, PAYGRIX_LENDING_ADDRESS, USDC_ADDRESS, CIRBTC_ADDRESS } from "@/hooks/use-lending-data";
+import { useWriteContract } from "wagmi";
+import { parseUnits } from "viem";
+
+const LENDING_WRITE_ABI = [
+  {
+    inputs: [{ internalType: "uint256", name: "amount", type: "uint256" }],
+    name: "depositCollateral",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "amount", type: "uint256" }],
+    name: "borrow",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "amount", type: "uint256" }],
+    name: "repay",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "amount", type: "uint256" }],
+    name: "withdrawCollateral",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+] as const;
+
+const ERC20_WRITE_ABI = [
+  {
+    inputs: [
+      { internalType: "address", name: "spender", type: "address" },
+      { internalType: "uint256", name: "amount", type: "uint256" },
+    ],
+    name: "approve",
+    outputs: [{ internalType: "bool", name: "", type: "bool" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+] as const;
 
 interface LendingWorkspaceProps {
   isConnected: boolean;
@@ -24,6 +70,123 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
   const [repayInput, setRepayInput] = useState<string>("");
   const [withdrawInput, setWithdrawInput] = useState<string>("");
 
+  const { writeContractAsync } = useWriteContract();
+  const [isPending, setIsPending] = useState(false);
+  const [statusMsg, setStatusMsg] = useState<string | null>(null);
+
+  const handleSupply = async () => {
+    if (!supplyInput || parseFloat(supplyInput) <= 0) return;
+    try {
+      setIsPending(true);
+      setStatusMsg("Approving cirBTC...");
+      const amountRaw = parseUnits(supplyInput, 8);
+
+      await writeContractAsync({
+        address: CIRBTC_ADDRESS,
+        abi: ERC20_WRITE_ABI,
+        functionName: "approve",
+        args: [PAYGRIX_LENDING_ADDRESS, amountRaw],
+      });
+
+      setStatusMsg("Depositing cirBTC collateral...");
+      await writeContractAsync({
+        address: PAYGRIX_LENDING_ADDRESS,
+        abi: LENDING_WRITE_ABI,
+        functionName: "depositCollateral",
+        args: [amountRaw],
+      });
+
+      setStatusMsg("Collateral supplied successfully!");
+      setSupplyInput("");
+    } catch (err: unknown) {
+      console.error("Supply error:", err);
+    } finally {
+      setIsPending(false);
+    }
+  };
+
+  const handleBorrow = async () => {
+    if (!borrowInput || parseFloat(borrowInput) <= 0) return;
+    try {
+      setIsPending(true);
+      setStatusMsg("Borrowing USDC...");
+      const amountRaw = parseUnits(borrowInput, 6);
+
+      await writeContractAsync({
+        address: PAYGRIX_LENDING_ADDRESS,
+        abi: LENDING_WRITE_ABI,
+        functionName: "borrow",
+        args: [amountRaw],
+      });
+
+      setStatusMsg("USDC borrowed successfully!");
+      setBorrowInput("");
+    } catch (err: unknown) {
+      console.error("Borrow error:", err);
+    } finally {
+      setIsPending(false);
+    }
+  };
+
+  const handleRepay = async () => {
+    if (!repayInput || parseFloat(repayInput) <= 0) return;
+    try {
+      setIsPending(true);
+      setStatusMsg("Approving USDC...");
+      const amountRaw = parseUnits(repayInput, 6);
+
+      await writeContractAsync({
+        address: USDC_ADDRESS,
+        abi: ERC20_WRITE_ABI,
+        functionName: "approve",
+        args: [PAYGRIX_LENDING_ADDRESS, amountRaw],
+      });
+
+      setStatusMsg("Repaying USDC debt...");
+      await writeContractAsync({
+        address: PAYGRIX_LENDING_ADDRESS,
+        abi: LENDING_WRITE_ABI,
+        functionName: "repay",
+        args: [amountRaw],
+      });
+
+      setStatusMsg("USDC debt repaid successfully!");
+      setRepayInput("");
+    } catch (err: unknown) {
+      console.error("Repay error:", err);
+    } finally {
+      setIsPending(false);
+    }
+  };
+
+  const handleWithdraw = async () => {
+    if (!withdrawInput || parseFloat(withdrawInput) <= 0) return;
+    try {
+      setIsPending(true);
+      setStatusMsg("Withdrawing cirBTC collateral...");
+      const amountRaw = parseUnits(withdrawInput, 8);
+
+      await writeContractAsync({
+        address: PAYGRIX_LENDING_ADDRESS,
+        abi: LENDING_WRITE_ABI,
+        functionName: "withdrawCollateral",
+        args: [amountRaw],
+      });
+
+      setStatusMsg("Collateral withdrawn successfully!");
+      setWithdrawInput("");
+    } catch (err: unknown) {
+      console.error("Withdraw error:", err);
+    } finally {
+      setIsPending(false);
+    }
+  };
+
+  const isSupplyDisabled = lendingData?.isPaused || !supplyInput || parseFloat(supplyInput) <= 0 || isPending;
+  const isBorrowDisabled = lendingData?.isPaused || !borrowInput || parseFloat(borrowInput) <= 0 || isPending;
+  const isRepayDisabled = !repayInput || parseFloat(repayInput) <= 0 || (lendingData?.userDebtRaw ?? BigInt(0)) === BigInt(0) || isPending;
+  const isWithdrawDisabled = lendingData?.isPaused || !withdrawInput || parseFloat(withdrawInput) <= 0 || isPending;
+
   return (
     <Card className="border border-white/10 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_8px_32px_rgba(6,15,36,0.5)]">
       {/* Top accent line */}
@@ -36,11 +199,11 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
             Manage your position
           </CardTitle>
           <span className="text-[11px] font-mono font-medium text-[#4f8cff] bg-[#4f8cff]/10 border border-[#4f8cff]/20 px-2.5 py-1 rounded-full">
-            Arc Testnet Staging
+            {lendingData?.isPaused ? "Arc Testnet Paused" : "Arc Testnet Active"}
           </span>
         </div>
         <CardDescription className="text-xs text-slate-400">
-          Inspect collateral supply, debt balances, and borrowing limits on PayGrixLending.
+          Supply collateral, borrow USDC, repay debt, and manage your position on PayGrixLending.
         </CardDescription>
       </CardHeader>
 
@@ -121,10 +284,10 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
                   <span>Supplied: {isLoading ? "..." : lendingData?.userCollateral || "0.00"} cirBTC</span>
                   <button
                     type="button"
-                    onClick={() => setSupplyInput("0.00")}
+                    onClick={() => setSupplyInput("0.001")}
                     className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all cursor-pointer"
                   >
-                    MAX
+                    TEST (0.001)
                   </button>
                 </div>
               </div>
@@ -152,7 +315,11 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
             {/* Info notice */}
             <div className="rounded-xl border border-white/5 bg-[#070e1c] p-3.5 text-xs text-slate-400 flex items-center gap-2">
               <Lock className="h-4 w-4 text-purple-400 shrink-0" />
-              <span>Contract is paused (Staging Mode). Supply transactions are disabled.</span>
+              <span>
+                {lendingData?.isPaused
+                  ? "Contract is paused (Staging Mode). Supply transactions are disabled."
+                  : "Supply cirBTC collateral to increase borrowing capacity on PayGrixLending."}
+              </span>
             </div>
 
             {/* CTA Button */}
@@ -160,10 +327,25 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
               <ConnectWalletButton />
             ) : (
               <Button
-                disabled
-                className="w-full text-sm font-bold py-3.5 h-12 rounded-xl bg-purple-600/40 text-purple-200 border border-purple-500/20 cursor-not-allowed"
+                disabled={isSupplyDisabled}
+                onClick={handleSupply}
+                className={cn(
+                  "w-full text-sm font-bold py-3.5 h-12 rounded-xl transition-all",
+                  isSupplyDisabled
+                    ? "bg-purple-600/40 text-purple-200 border border-purple-500/20 cursor-not-allowed"
+                    : "bg-purple-600 hover:bg-purple-500 text-white cursor-pointer shadow-lg shadow-purple-600/30"
+                )}
               >
-                Supply Collateral (Disabled in Staging Mode)
+                {isPending ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {statusMsg || "Processing..."}
+                  </span>
+                ) : lendingData?.isPaused ? (
+                  "Supply Collateral (Paused)"
+                ) : (
+                  "Supply Collateral"
+                )}
               </Button>
             )}
           </div>
@@ -236,7 +418,9 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
             <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3.5 text-xs text-amber-300 flex items-start gap-2.5">
               <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
               <p className="leading-relaxed">
-                Contract is paused in staging mode. Borrow transactions are disabled in Phase 2D.
+                {lendingData?.isPaused
+                  ? "Contract is paused in staging mode. Borrow transactions are disabled."
+                  : "Borrow USDC against your deposited cirBTC collateral up to 50% LTV."}
               </p>
             </div>
 
@@ -245,10 +429,25 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
               <ConnectWalletButton />
             ) : (
               <Button
-                disabled
-                className="w-full text-sm font-bold py-3.5 h-12 rounded-xl bg-slate-800/60 text-slate-500 border border-slate-700/50 cursor-not-allowed"
+                disabled={isBorrowDisabled}
+                onClick={handleBorrow}
+                className={cn(
+                  "w-full text-sm font-bold py-3.5 h-12 rounded-xl transition-all",
+                  isBorrowDisabled
+                    ? "bg-slate-800/60 text-slate-500 border border-slate-700/50 cursor-not-allowed"
+                    : "bg-gradient-to-r from-[#4f8cff] to-[#6d5dfc] hover:from-[#3b7cff] hover:to-[#5b4be0] text-white cursor-pointer shadow-lg shadow-blue-500/30"
+                )}
               >
-                Borrow USDC (Disabled in Staging Mode)
+                {isPending ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {statusMsg || "Processing..."}
+                  </span>
+                ) : lendingData?.isPaused ? (
+                  "Borrow USDC (Paused)"
+                ) : (
+                  "Borrow USDC"
+                )}
               </Button>
             )}
           </div>
@@ -301,7 +500,11 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
 
             <div className="rounded-xl border border-white/5 bg-[#070e1c] p-3.5 text-xs text-slate-400 flex items-center gap-2">
               <Lock className="h-4 w-4 text-purple-400 shrink-0" />
-              <span>No active debt on-chain. Write transactions are disabled in Phase 2D.</span>
+              <span>
+                {(lendingData?.userDebtRaw ?? BigInt(0)) === BigInt(0)
+                  ? "No active debt on-chain."
+                  : "Repay USDC debt to unlock deposited cirBTC collateral."}
+              </span>
             </div>
 
             {/* CTA Button */}
@@ -309,10 +512,25 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
               <ConnectWalletButton />
             ) : (
               <Button
-                disabled
-                className="w-full text-sm font-bold py-3.5 h-12 rounded-xl bg-purple-600/40 text-purple-200 border border-purple-500/20 cursor-not-allowed"
+                disabled={isRepayDisabled}
+                onClick={handleRepay}
+                className={cn(
+                  "w-full text-sm font-bold py-3.5 h-12 rounded-xl transition-all",
+                  isRepayDisabled
+                    ? "bg-purple-600/40 text-purple-200 border border-purple-500/20 cursor-not-allowed"
+                    : "bg-purple-600 hover:bg-purple-500 text-white cursor-pointer shadow-lg shadow-purple-600/30"
+                )}
               >
-                Repay USDC (Disabled in Phase 2D)
+                {isPending ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {statusMsg || "Processing..."}
+                  </span>
+                ) : (lendingData?.userDebtRaw ?? BigInt(0)) === BigInt(0) ? (
+                  "Repay USDC (No Active Debt)"
+                ) : (
+                  "Repay USDC"
+                )}
               </Button>
             )}
           </div>
@@ -365,7 +583,11 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
 
             <div className="rounded-xl border border-white/5 bg-[#070e1c] p-3.5 text-xs text-slate-400 flex items-center gap-2">
               <Lock className="h-4 w-4 text-purple-400 shrink-0" />
-              <span>Contract is paused (Staging Mode). Collateral withdrawal is disabled.</span>
+              <span>
+                {lendingData?.isPaused
+                  ? "Contract is paused (Staging Mode). Collateral withdrawal is disabled."
+                  : "Withdraw available cirBTC collateral back to your connected wallet."}
+              </span>
             </div>
 
             {/* CTA Button */}
@@ -373,10 +595,25 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
               <ConnectWalletButton />
             ) : (
               <Button
-                disabled
-                className="w-full text-sm font-bold py-3.5 h-12 rounded-xl bg-purple-600/40 text-purple-200 border border-purple-500/20 cursor-not-allowed"
+                disabled={isWithdrawDisabled}
+                onClick={handleWithdraw}
+                className={cn(
+                  "w-full text-sm font-bold py-3.5 h-12 rounded-xl transition-all",
+                  isWithdrawDisabled
+                    ? "bg-purple-600/40 text-purple-200 border border-purple-500/20 cursor-not-allowed"
+                    : "bg-purple-600 hover:bg-purple-500 text-white cursor-pointer shadow-lg shadow-purple-600/30"
+                )}
               >
-                Withdraw Collateral (Disabled in Staging Mode)
+                {isPending ? (
+                  <span className="flex items-center gap-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {statusMsg || "Processing..."}
+                  </span>
+                ) : lendingData?.isPaused ? (
+                  "Withdraw Collateral (Paused)"
+                ) : (
+                  "Withdraw Collateral"
+                )}
               </Button>
             )}
           </div>
