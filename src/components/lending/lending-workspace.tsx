@@ -270,24 +270,30 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
         {/* ── SUPPLY TAB ──────────────────────────────────── */}
         {activeTab === "supply" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <h3 className="text-sm font-semibold text-white">Supply collateral</h3>
-              <span className="text-xs text-slate-400 font-mono">
-                Supplied: {isLoading ? "..." : lendingData?.userCollateral || "0.00"} cirBTC
-              </span>
+              <div className="flex items-center gap-3 text-xs font-mono">
+                <span className="text-slate-400">
+                  Wallet Balance: <strong className="text-white">{isLoading ? "..." : lendingData?.userCirBtcBalance || "0.00"}</strong> cirBTC
+                </span>
+                <span className="text-slate-500">•</span>
+                <span className="text-slate-400">
+                  Supplied: <strong className="text-purple-300">{isLoading ? "..." : lendingData?.userCollateral || "0.00"}</strong> cirBTC
+                </span>
+              </div>
             </div>
 
             <div className="bg-[#070e1c] border border-white/5 rounded-2xl p-5 space-y-3.5 transition-all focus-within:border-purple-500/30">
               <div className="flex justify-between items-center text-xs">
                 <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">COLLATERAL AMOUNT</span>
                 <div className="flex items-center gap-2 text-slate-400 font-mono">
-                  <span>Supplied: {isLoading ? "..." : lendingData?.userCollateral || "0.00"} cirBTC</span>
+                  <span>Wallet Balance: {isLoading ? "..." : lendingData?.userCirBtcBalance || "0.00"} cirBTC</span>
                   <button
                     type="button"
-                    onClick={() => setSupplyInput("0.001")}
+                    onClick={() => setSupplyInput(lendingData?.userCirBtcBalance || "0.00")}
                     className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all cursor-pointer"
                   >
-                    TEST (0.001)
+                    MAX
                   </button>
                 </div>
               </div>
@@ -317,7 +323,7 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
               <Lock className="h-4 w-4 text-purple-400 shrink-0" />
               <span>
                 {lendingData?.isPaused
-                  ? "Contract is paused (Staging Mode). Supply transactions are disabled."
+                  ? "Contract is paused. Supply transactions are disabled."
                   : "Supply cirBTC collateral to increase borrowing capacity on PayGrixLending."}
               </span>
             </div>
@@ -419,7 +425,7 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
               <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
               <p className="leading-relaxed">
                 {lendingData?.isPaused
-                  ? "Contract is paused in staging mode. Borrow transactions are disabled."
+                  ? "Contract is paused. Borrow transactions are disabled."
                   : "Borrow USDC against your deposited cirBTC collateral up to 50% LTV."}
               </p>
             </div>
@@ -585,7 +591,7 @@ export function LendingWorkspace({ isConnected, lendingData, isLoading }: Lendin
               <Lock className="h-4 w-4 text-purple-400 shrink-0" />
               <span>
                 {lendingData?.isPaused
-                  ? "Contract is paused (Staging Mode). Collateral withdrawal is disabled."
+                  ? "Contract is paused. Collateral withdrawal is disabled."
                   : "Withdraw available cirBTC collateral back to your connected wallet."}
               </span>
             </div>

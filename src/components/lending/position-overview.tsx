@@ -67,10 +67,10 @@ export function PositionOverview({ isConnected, lendingData, isLoading }: Positi
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {/* Metric 1: Collateral */}
+            {/* Metric 1: Supplied Collateral */}
             <div className="rounded-xl border border-white/5 bg-[#070e1c] p-4 space-y-1.5 transition-all hover:border-white/10">
               <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">
-                Collateral
+                Supplied Collateral
               </span>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-xl sm:text-2xl font-bold text-white font-mono">
@@ -78,7 +78,9 @@ export function PositionOverview({ isConnected, lendingData, isLoading }: Positi
                 </span>
                 <span className="text-xs font-semibold text-[#4f8cff]">cirBTC</span>
               </div>
-              <span className="text-[10px] text-slate-500 block">Supplied balance</span>
+              <span className="text-[10px] text-slate-400 block font-mono">
+                Wallet Balance: {isLoading ? "..." : lendingData?.userCirBtcBalance || "0.00"} cirBTC
+              </span>
             </div>
 
             {/* Metric 2: Collateral Value */}
@@ -91,7 +93,7 @@ export function PositionOverview({ isConnected, lendingData, isLoading }: Positi
                   {isLoading ? "..." : lendingData?.userCollateralValueUsdc || "$0.00"}
                 </span>
               </div>
-              <span className="text-[10px] text-slate-500 block">Derived from Staging Oracle</span>
+              <span className="text-[10px] text-slate-500 block">Derived from Oracle ($60,000/BTC)</span>
             </div>
 
             {/* Metric 3: Current Debt */}

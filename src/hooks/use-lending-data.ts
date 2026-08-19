@@ -174,6 +174,10 @@ export interface LendingOnChainData {
   userUsdcBalanceRaw: bigint;
   userUsdcAllowance: string;
   userUsdcAllowanceRaw: bigint;
+  userCirBtcBalance: string;
+  userCirBtcBalanceRaw: bigint;
+  userCirBtcAllowance: string;
+  userCirBtcAllowanceRaw: bigint;
 }
 
 const DEFAULT_LENDING_DATA: LendingOnChainData = {
@@ -209,6 +213,10 @@ const DEFAULT_LENDING_DATA: LendingOnChainData = {
   userUsdcBalanceRaw: BigInt(0),
   userUsdcAllowance: "0.00",
   userUsdcAllowanceRaw: BigInt(0),
+  userCirBtcBalance: "0.00",
+  userCirBtcBalanceRaw: BigInt(0),
+  userCirBtcAllowance: "0.00",
+  userCirBtcAllowanceRaw: BigInt(0),
 };
 
 async function fetchLendingOnChainData(
@@ -278,6 +286,8 @@ async function fetchLendingOnChainData(
   let userAvailableCollateralPromise = Promise.resolve(BigInt(0));
   let userUsdcBalancePromise = Promise.resolve(BigInt(0));
   let userUsdcAllowancePromise = Promise.resolve(BigInt(0));
+  let userCirBtcBalancePromise = Promise.resolve(BigInt(0));
+  let userCirBtcAllowancePromise = Promise.resolve(BigInt(0));
 
   if (userAddress && isArcTestnet) {
     userPositionPromise = safeArcReadContract<readonly [bigint, bigint]>({
@@ -321,6 +331,20 @@ async function fetchLendingOnChainData(
       functionName: "allowance",
       args: [userAddress, PAYGRIX_LENDING_ADDRESS],
     }, { cachePolicy: "wallet", forceRefresh });
+
+    userCirBtcBalancePromise = safeArcReadContract<bigint>({
+      address: CIRBTC_ADDRESS,
+      abi: USDC_ABI,
+      functionName: "balanceOf",
+      args: [userAddress],
+    }, { cachePolicy: "wallet", forceRefresh });
+
+    userCirBtcAllowancePromise = safeArcReadContract<bigint>({
+      address: CIRBTC_ADDRESS,
+      abi: USDC_ABI,
+      functionName: "allowance",
+      args: [userAddress, PAYGRIX_LENDING_ADDRESS],
+    }, { cachePolicy: "wallet", forceRefresh });
   }
 
   const [
@@ -339,6 +363,8 @@ async function fetchLendingOnChainData(
     availableCollateralRaw,
     userUsdcBalanceRaw,
     userUsdcAllowanceRaw,
+    userCirBtcBalanceRaw,
+    userCirBtcAllowanceRaw,
   ] = await Promise.all([
     poolLiquidityPromise,
     totalDebtPromise,
@@ -355,6 +381,8 @@ async function fetchLendingOnChainData(
     userAvailableCollateralPromise,
     userUsdcBalancePromise,
     userUsdcAllowancePromise,
+    userCirBtcBalancePromise,
+    userCirBtcAllowancePromise,
   ]);
 
   const [userCollateralRaw, userDebtRaw] = userPosition;
@@ -373,6 +401,8 @@ async function fetchLendingOnChainData(
   const userAvailableCollateralStr = formatUnits(availableCollateralRaw, 8);
   const userUsdcBalanceStr = formatUnits(userUsdcBalanceRaw, 6);
   const userUsdcAllowanceStr = formatUnits(userUsdcAllowanceRaw, 6);
+  const userCirBtcBalanceStr = formatUnits(userCirBtcBalanceRaw, 8);
+  const userCirBtcAllowanceStr = formatUnits(userCirBtcAllowanceRaw, 8);
 
   const isContractOwner = Boolean(
     userAddress && ownerAddress && userAddress.toLowerCase() === ownerAddress.toLowerCase()
@@ -428,6 +458,10 @@ async function fetchLendingOnChainData(
     userUsdcBalanceRaw,
     userUsdcAllowance: userUsdcAllowanceStr,
     userUsdcAllowanceRaw,
+    userCirBtcBalance: userCirBtcBalanceStr,
+    userCirBtcBalanceRaw,
+    userCirBtcAllowance: userCirBtcAllowanceStr,
+    userCirBtcAllowanceRaw,
   };
 }
 
