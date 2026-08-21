@@ -89,8 +89,30 @@ export const base = defineChain({
   },
 });
 
+export const genlayerBradbury = defineChain({
+  id: 4221,
+  name: "GenLayer Bradbury",
+  nativeCurrency: {
+    name: "GEN",
+    symbol: "GEN",
+    decimals: 18,
+  },
+  rpcUrls: {
+    default: {
+      http: ["https://rpc-bradbury.genlayer.com"],
+    },
+  },
+  blockExplorers: {
+    default: {
+      name: "GenLayer Explorer",
+      url: "https://explorer-bradbury.genlayer.com",
+    },
+  },
+  testnet: true,
+});
+
 export const wagmiConfig = createConfig({
-  chains: [arcTestnet, baseSepolia, arbitrumSepolia, mainnet, base],
+  chains: [arcTestnet, baseSepolia, arbitrumSepolia, mainnet, base, genlayerBradbury],
   connectors: [injected()],
   transports: {
     [arcTestnet.id]: http(arcTestnet.rpcUrls.default.http[0]),
@@ -98,6 +120,7 @@ export const wagmiConfig = createConfig({
     [arbitrumSepolia.id]: http(arbitrumSepolia.rpcUrls.default.http[0]),
     [mainnet.id]: http(mainnet.rpcUrls.default.http[0]),
     [base.id]: http(base.rpcUrls.default.http[0]),
+    [genlayerBradbury.id]: http(genlayerBradbury.rpcUrls.default.http[0]),
   },
   ssr: true,
 });
