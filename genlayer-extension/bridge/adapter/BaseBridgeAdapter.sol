@@ -16,7 +16,7 @@ import "../../contracts/base-sepolia/interfaces/IAdjudicationSource.sol";
  * - Peer contract verification pending deployment on GenLayer Bradbury.
  */
 contract BaseBridgeAdapter is IAdjudicationSource {
-    address public immutable vaultAddress;
+    address public vaultAddress;
     address public relayerAddress;
     address public owner;
 
@@ -26,18 +26,27 @@ contract BaseBridgeAdapter is IAdjudicationSource {
 
     event AdjudicationRequested(bytes32 indexed escrowId, uint256 timestamp, string evidenceURI);
     event VerdictReceived(bytes32 indexed escrowId, uint256 indexed adjudicationId, uint8 verdictCode);
+    event VaultConfigured(address indexed vaultAddress);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "BaseBridgeAdapter: Caller is not owner");
         _;
     }
 
-    constructor(address _vaultAddress, address _relayerAddress) {
-        require(_vaultAddress != address(0), "BaseBridgeAdapter: Invalid vault");
+    constructor(address _relayerAddress) {
         require(_relayerAddress != address(0), "BaseBridgeAdapter: Invalid relayer");
-        vaultAddress = _vaultAddress;
         relayerAddress = _relayerAddress;
         owner = msg.sender;
+    }
+
+    /**
+     * @notice One-time sealed initializer to bind the deployed PayGrixEscrowVault address.
+     */
+    function setVaultAddress(address _vaultAddress) external onlyOwner {
+        require(vaultAddress == address(0), "BaseBridgeAdapter: Vault already configured");
+        require(_vaultAddress != address(0), "BaseBridgeAdapter: Invalid vault address");
+        vaultAddress = _vaultAddress;
+        emit VaultConfigured(_vaultAddress);
     }
 
     /**

@@ -39,3 +39,14 @@ next-env.d.ts
 /cache/
 /typechain/
 /typechain-types/
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# scratch & local artifacts
+scratch/
+paygrix-contracts/scratch/
