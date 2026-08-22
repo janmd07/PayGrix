@@ -4,13 +4,17 @@ import { useState, useEffect, useCallback } from "react";
 import { createPublicClient, http, erc20Abi, formatUnits } from "viem";
 import { safeArcReadContract } from "@/lib/arc-read-infra";
 
-const CHAIN_CONFIGS: Record<string, { rpc: string; usdc: `0x${string}` }> = {
+const CHAIN_CONFIGS: Record<string, { rpc: string | string[]; usdc: `0x${string}` }> = {
   "Arc Testnet": {
     rpc: "https://rpc.testnet.arc.network",
     usdc: "0x3600000000000000000000000000000000000000",
   },
   "Base Sepolia": {
-    rpc: "https://sepolia.base.org",
+    rpc: [
+      "https://base-sepolia.drpc.org",
+      "https://base-sepolia-rpc.publicnode.com",
+      "https://sepolia.base.org",
+    ],
     usdc: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
   },
   "Arbitrum Sepolia": {
@@ -50,23 +54,40 @@ export function useBridgeBalance(chain: string, address?: `0x${string}`) {
           args: [address],
         }, { cachePolicy: "wallet", forceRefresh });
       } else {
-        const client = createPublicClient({
-          transport: http(config.rpc),
-        });
-        balanceWei = await client.readContract({
-          address: config.usdc,
-          abi: erc20Abi,
-          functionName: "balanceOf",
-          args: [address],
-        });
+        const rpcList = Array.isArray(config.rpc) ? config.rpc : [config.rpc];
+        let readSuccess = false;
+        let lastErr: unknown = null;
+
+        for (const rpcUrl of rpcList) {
+          try {
+            const client = createPublicClient({
+              transport: http(rpcUrl, { timeout: 10_000 }),
+            });
+            balanceWei = await client.readContract({
+              address: config.usdc,
+              abi: erc20Abi,
+              functionName: "balanceOf",
+              args: [address],
+            });
+            readSuccess = true;
+            break;
+          } catch (err) {
+            console.warn(`[useBridgeBalance] RPC read failed for ${chain} on ${rpcUrl}:`, err);
+            lastErr = err;
+          }
+        }
+
+        if (!readSuccess) {
+          throw lastErr || new Error(`All RPC endpoints failed for ${chain}`);
+        }
       }
 
       // USDC has 6 decimals on these chains
       const balanceStr = formatUnits(balanceWei, 6);
       setBalance(balanceStr);
     } catch (err) {
-      console.error("Error reading USDC balance:", err);
-      setBalance("0.00");
+      console.error("Error reading USDC balance across RPC endpoints:", err);
+      // Do not overwrite an existing valid balance with 0.00 when all RPCs fail
     } finally {
       setIsLoading(false);
     }

@@ -1,4 +1,4 @@
-import { http, createConfig } from "wagmi";
+import { http, createConfig, fallback } from "wagmi";
 import { injected } from "wagmi/connectors";
 import { defineChain } from "viem";
 
@@ -14,7 +14,11 @@ export const baseSepolia = defineChain({
   },
   rpcUrls: {
     default: {
-      http: ["https://sepolia.base.org"],
+      http: [
+        "https://base-sepolia.drpc.org",
+        "https://base-sepolia-rpc.publicnode.com",
+        "https://sepolia.base.org",
+      ],
     },
   },
   blockExplorers: {
@@ -116,7 +120,11 @@ export const wagmiConfig = createConfig({
   connectors: [injected()],
   transports: {
     [arcTestnet.id]: http(arcTestnet.rpcUrls.default.http[0]),
-    [baseSepolia.id]: http(baseSepolia.rpcUrls.default.http[0]),
+    [baseSepolia.id]: fallback([
+      http("https://base-sepolia.drpc.org"),
+      http("https://base-sepolia-rpc.publicnode.com"),
+      http("https://sepolia.base.org"),
+    ]),
     [arbitrumSepolia.id]: http(arbitrumSepolia.rpcUrls.default.http[0]),
     [mainnet.id]: http(mainnet.rpcUrls.default.http[0]),
     [base.id]: http(base.rpcUrls.default.http[0]),
