@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   CheckCircle2,
   Lock,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,8 @@ import { cn } from "@/lib/utils";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { useGenlayerEscrow } from "@/hooks/use-genlayer-escrow";
+import { isAddress } from "viem";
 
 const CHAINS = ["Arc Testnet", "Base Sepolia", "Arbitrum Sepolia", "Solana Devnet", "GenLayer Bradbury"];
 
@@ -120,8 +123,21 @@ export function BridgeForm({
   onRefresh,
 }: BridgeFormProps) {
   const [amount, setAmount] = useState<string>("");
-  const { availableConnector, connect } = useArcWallet();
+  const [beneficiaryAddress, setBeneficiaryAddress] = useState<string>("");
+  const { availableConnector, connect, address: userAddress, switchChainAsync } = useArcWallet();
   const { connected: isSolanaConnected, wallets, publicKey, disconnect } = useWallet();
+
+  const {
+    status: genlayerStatus,
+    approvalTxHash: genlayerApprovalTxHash,
+    createTxHash: genlayerCreateTxHash,
+    fundTxHash: genlayerFundTxHash,
+    escrowId: genlayerEscrowId,
+    error: genlayerError,
+    createAndFundEscrow,
+    resetState: resetGenlayerState,
+    isBaseSepolia,
+  } = useGenlayerEscrow();
 
   const [activeDropdown, setActiveDropdown] = useState<"source" | "destination" | null>(null);
   const [failedLogos, setFailedLogos] = useState<Record<string, boolean>>({});
@@ -156,6 +172,12 @@ export function BridgeForm({
   const isOverBalance = parseFloat(amount) > parseFloat(balance);
   const isValidAmount = amount !== "" && parseFloat(amount) > 0;
   const isFormInvalid = isSameChain || isOverBalance || !isValidAmount || (isSolanaRoute && !isHybridSolanaRoute);
+
+  const trimmedBeneficiary = beneficiaryAddress.trim();
+  const isBeneficiaryEmpty = trimmedBeneficiary === "";
+  const isBeneficiaryValid = !isBeneficiaryEmpty && isAddress(trimmedBeneficiary);
+  const isBeneficiarySelf = !!(isBeneficiaryValid && userAddress && trimmedBeneficiary.toLowerCase() === userAddress.toLowerCase());
+  const isGenLayerFormReady = isValidAmount && !isOverBalance && isBeneficiaryValid && !isBeneficiarySelf;
 
   const handleSwapChains = () => {
     if (isGenLayerRoute) {
@@ -533,18 +555,71 @@ export function BridgeForm({
                   </div>
                 </div>
 
+                {/* Beneficiary Address Input */}
+                <div className="rounded-xl border border-white/5 bg-[#070e1c]/40 p-3.5 space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <label htmlFor="beneficiary-input" className="font-semibold text-slate-200 flex items-center gap-1.5">
+                      <Wallet className="h-3.5 w-3.5 text-purple-400" />
+                      Beneficiary / Counterparty Address
+                    </label>
+                    <span className="text-[10px] text-slate-500 font-mono">Base Sepolia EOA</span>
+                  </div>
+                  <input
+                    id="beneficiary-input"
+                    type="text"
+                    value={beneficiaryAddress}
+                    onChange={(e) => setBeneficiaryAddress(e.target.value)}
+                    placeholder="0x..."
+                    disabled={genlayerStatus === "waiting-approval" || genlayerStatus === "creating-escrow" || genlayerStatus === "waiting-escrow" || genlayerStatus === "funding-escrow" || genlayerStatus === "waiting-funding"}
+                    className="w-full bg-[#040814]/80 border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-purple-500/50 transition-all"
+                  />
+                  {isBeneficiaryEmpty ? (
+                    <p className="text-[10.5px] text-slate-500">Enter recipient counterparty address to lock escrow collateral for.</p>
+                  ) : !isBeneficiaryValid ? (
+                    <p className="text-[10.5px] text-rose-400">Invalid Ethereum address format.</p>
+                  ) : isBeneficiarySelf ? (
+                    <p className="text-[10.5px] text-amber-400">Beneficiary cannot be your own depositor wallet address.</p>
+                  ) : (
+                    <p className="text-[10.5px] text-emerald-400 flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3" /> Valid beneficiary address.
+                    </p>
+                  )}
+                </div>
+
                 {/* Live Verified Contract Box */}
                 <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 space-y-2 text-xs font-mono">
                   <div className="flex justify-between items-center border-b border-white/5 pb-2 font-sans">
-                    <span className="font-semibold text-slate-300">Verified GenLayer Contract</span>
+                    <span className="font-semibold text-slate-300">Verified Contracts (Base Sepolia & GenLayer)</span>
                     <span className="text-purple-400 text-[10px] bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
-                      <CheckCircle2 className="h-3 w-3 text-purple-400" /> Live on Bradbury
+                      <CheckCircle2 className="h-3 w-3 text-purple-400" /> Live on-chain
                     </span>
                   </div>
                   
                   <div className="space-y-1.5 text-[11px] pt-1">
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-400 font-sans">Contract:</span>
+                      <span className="text-slate-400 font-sans">PayGrix Escrow Vault:</span>
+                      <a
+                        href="https://sepolia.basescan.org/address/0xDF14c0cCd803866A54202B83c44C98Ab496561B8"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-all"
+                      >
+                        0xDF14...61B8 <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                    <div className="flex justify-between items-center">
+                       <span className="text-slate-400 font-sans">Base Bridge Adapter:</span>
+                      <a
+                        href="https://sepolia.basescan.org/address/0xD9e1Cde11f6AF114e01726DA2cf007a27aB6314e"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-all"
+                      >
+                        0xD9e1...314e <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400 font-sans">GenLayer Resolver:</span>
                       <a
                         href="https://explorer-bradbury.genlayer.com/address/0xA314b6402477561d9a1650142724724F60f92534"
                         target="_blank"
@@ -553,27 +628,6 @@ export function BridgeForm({
                       >
                         0xA314...2534 <ExternalLink className="h-3 w-3" />
                       </a>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-400 font-sans">Deployment TX:</span>
-                      <a
-                        href="https://explorer-bradbury.genlayer.com/tx/0xab7007edb59b09407484666e929391595946db38cb9ea89c2bdab032889f1fff"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-all"
-                      >
-                        0xab70...1fff <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-400 font-sans">Chain ID:</span>
-                      <span className="text-slate-300">4221 (Bradbury)</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-400 font-sans">Runner:</span>
-                      <span className="text-slate-400 text-[10px] truncate max-w-[200px]" title="py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6">
-                        py-genlayer:1jb45...
-                      </span>
                     </div>
                   </div>
                 </div>
@@ -631,27 +685,199 @@ export function BridgeForm({
                   </div>
                 </div>
 
+                {/* Transaction Status Tracker */}
+                {genlayerStatus === "waiting-approval" && (
+                  <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-3.5 space-y-1.5 text-xs text-blue-300">
+                    <div className="flex items-center gap-2 font-semibold">
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
+                      <span>Waiting for USDC Approval Confirmation...</span>
+                    </div>
+                    {genlayerApprovalTxHash && (
+                      <a
+                        href={`https://sepolia.basescan.org/tx/${genlayerApprovalTxHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-blue-400 underline flex items-center gap-1"
+                      >
+                        View Approval TX on BaseScan <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                {(genlayerStatus === "creating-escrow" || genlayerStatus === "waiting-escrow") && (
+                  <div className="rounded-xl border border-purple-500/30 bg-purple-500/10 p-3.5 space-y-1.5 text-xs text-purple-300">
+                    <div className="flex items-center gap-2 font-semibold">
+                      <Loader2 className="h-4 w-4 animate-spin text-purple-400" />
+                      <span>Creating Escrow on Base Sepolia...</span>
+                    </div>
+                    {genlayerCreateTxHash && (
+                      <a
+                        href={`https://sepolia.basescan.org/tx/${genlayerCreateTxHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-purple-400 underline flex items-center gap-1"
+                      >
+                        View Create Escrow TX on BaseScan <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                {(genlayerStatus === "funding-escrow" || genlayerStatus === "waiting-funding") && (
+                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 space-y-1.5 text-xs text-emerald-300">
+                    <div className="flex items-center gap-2 font-semibold">
+                      <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
+                      <span>Securing USDC Collateral in Escrow Vault...</span>
+                    </div>
+                    {genlayerFundTxHash && (
+                      <a
+                        href={`https://sepolia.basescan.org/tx/${genlayerFundTxHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-emerald-400 underline flex items-center gap-1"
+                      >
+                        View Funding TX on BaseScan <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                )}
+
+                {genlayerStatus === "escrow-created" && (
+                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 space-y-2.5 text-xs text-slate-200">
+                    <div className="flex items-center gap-2 text-emerald-400 font-semibold">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                      <span>Escrow Successfully Created & Funded!</span>
+                    </div>
+                    {genlayerEscrowId && (
+                      <div className="bg-[#040814]/80 p-2.5 rounded-lg border border-white/5 space-y-1 font-mono text-[11px]">
+                        <span className="text-slate-400 block text-[10px]">Escrow ID (bytes32):</span>
+                        <span className="text-purple-300 break-all">{genlayerEscrowId}</span>
+                      </div>
+                    )}
+                    <div className="space-y-1 text-[11px]">
+                      {genlayerCreateTxHash && (
+                        <a
+                          href={`https://sepolia.basescan.org/tx/${genlayerCreateTxHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-emerald-400 underline flex items-center gap-1"
+                        >
+                          View Escrow Creation on BaseScan <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                      {genlayerFundTxHash && (
+                        <a
+                          href={`https://sepolia.basescan.org/tx/${genlayerFundTxHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-emerald-400 underline flex items-center gap-1"
+                        >
+                          View Collateral Lock on BaseScan <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {genlayerStatus === "error" && genlayerError && (
+                  <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3.5 space-y-1 text-xs text-rose-300">
+                    <div className="flex items-center gap-2 font-semibold text-rose-400">
+                      <AlertTriangle className="h-4 w-4 text-rose-400" />
+                      <span>Transaction Error</span>
+                    </div>
+                    <p className="text-[11.5px] leading-relaxed text-rose-200">{genlayerError}</p>
+                  </div>
+                )}
+
                 {/* GenLayer Action Button */}
                 <Button
                   type="button"
-                  disabled={isConnected}
-                  onClick={() => {
+                  disabled={
+                    !isConnected
+                      ? false
+                      : !isBaseSepolia
+                      ? false
+                      : genlayerStatus === "waiting-approval" ||
+                        genlayerStatus === "creating-escrow" ||
+                        genlayerStatus === "waiting-escrow" ||
+                        genlayerStatus === "funding-escrow" ||
+                        genlayerStatus === "waiting-funding"
+                      ? true
+                      : genlayerStatus === "escrow-created"
+                      ? false
+                      : !isGenLayerFormReady
+                  }
+                  onClick={async () => {
                     if (!isConnected) {
                       if (availableConnector) {
                         connect({ connector: availableConnector });
                       } else {
                         alert("Please connect your EVM wallet.");
                       }
+                      return;
                     }
+
+                    if (!isBaseSepolia) {
+                      try {
+                        await switchChainAsync({ chainId: 84532 });
+                      } catch (e) {
+                        console.error("Failed to switch network:", e);
+                      }
+                      return;
+                    }
+
+                    if (genlayerStatus === "escrow-created") {
+                      resetGenlayerState();
+                      return;
+                    }
+
+                    if (!isGenLayerFormReady) return;
+
+                    await createAndFundEscrow({
+                      amount,
+                      beneficiary: trimmedBeneficiary,
+                      durationSeconds: 3600,
+                    });
                   }}
                   className={cn(
                     "w-full h-12 text-sm font-bold text-white rounded-xl shadow-[0_4px_20px_rgba(168,85,247,0.25)] transition-all duration-300",
-                    isConnected
-                      ? "bg-[#111a33] border border-purple-500/30 text-purple-200 opacity-90 cursor-default"
-                      : "bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 cursor-pointer"
+                    !isConnected || !isBaseSepolia || isGenLayerFormReady || genlayerStatus === "escrow-created"
+                      ? "bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 cursor-pointer"
+                      : "bg-[#111a33] border border-purple-500/30 text-purple-200 opacity-60 cursor-not-allowed"
                   )}
                 >
-                  {!isConnected ? "Connect EVM Wallet (Base Sepolia)" : "GenLayer Adjudication Ready (Live Contract Verified)"}
+                  {!isConnected ? (
+                    "Connect EVM Wallet (Base Sepolia)"
+                  ) : !isBaseSepolia ? (
+                    "Switch Network to Base Sepolia (84532)"
+                  ) : genlayerStatus === "approval-required" || genlayerStatus === "waiting-approval" ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Approving USDC on Base Sepolia...
+                    </span>
+                  ) : genlayerStatus === "creating-escrow" || genlayerStatus === "waiting-escrow" ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Creating Escrow on Base Sepolia...
+                    </span>
+                  ) : genlayerStatus === "funding-escrow" || genlayerStatus === "waiting-funding" ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Locking Collateral in Vault...
+                    </span>
+                  ) : genlayerStatus === "escrow-created" ? (
+                    "Create Another Escrow"
+                  ) : !isValidAmount ? (
+                    "Enter USDC Amount"
+                  ) : isOverBalance ? (
+                    "Insufficient USDC Balance"
+                  ) : isBeneficiaryEmpty ? (
+                    "Enter Beneficiary Address"
+                  ) : !isBeneficiaryValid ? (
+                    "Invalid Beneficiary Address"
+                  ) : isBeneficiarySelf ? (
+                    "Beneficiary Cannot Be Depositor"
+                  ) : (
+                    `Lock ${amount} USDC & Create Escrow`
+                  )}
                 </Button>
 
                 <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-500">
