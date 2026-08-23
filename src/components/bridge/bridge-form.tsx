@@ -122,7 +122,7 @@ export function BridgeForm({
   isConnected,
   onRefresh,
 }: BridgeFormProps) {
-  const [amount, setAmount] = useState<string>("");
+  const [amount, setAmount] = useState<string>("1");
   const [beneficiaryAddress, setBeneficiaryAddress] = useState<string>("");
   const { availableConnector, connect, address: userAddress, switchChainAsync } = useArcWallet();
   const { connected: isSolanaConnected, wallets, publicKey, disconnect } = useWallet();
@@ -169,8 +169,10 @@ export function BridgeForm({
     (sourceChain === "Arc Testnet" && destinationChain === "Solana Devnet");
 
   const isSameChain = sourceChain === destinationChain;
-  const isOverBalance = parseFloat(amount) > parseFloat(balance);
-  const isValidAmount = amount !== "" && parseFloat(amount) > 0;
+  const parsedInputAmount = parseFloat(amount);
+  const parsedBalance = parseFloat(balance || "0");
+  const isValidAmount = amount !== "" && !isNaN(parsedInputAmount) && parsedInputAmount > 0;
+  const isOverBalance = isValidAmount && !isNaN(parsedBalance) && parsedInputAmount > parsedBalance;
   const isFormInvalid = isSameChain || isOverBalance || !isValidAmount || (isSolanaRoute && !isHybridSolanaRoute);
 
   const trimmedBeneficiary = beneficiaryAddress.trim();
@@ -437,15 +439,19 @@ export function BridgeForm({
                     <span className="text-slate-300 font-semibold">{parseFloat(balance).toFixed(2)}</span>
                   )}
                   <span>{symbol}</span>
-                  {!isGenLayerRoute && (
-                    <button
-                      onClick={handleMaxClick}
-                      disabled={isLoadingBalance || parseFloat(balance) <= 0 || isSelectDisabled}
-                      className="ml-1.5 text-[10px] font-bold text-primary hover:text-white hover:bg-primary/10 border border-primary/20 px-1.5 py-0.5 rounded transition-all disabled:opacity-40"
-                    >
-                      MAX
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={handleMaxClick}
+                    disabled={isLoadingBalance || parseFloat(balance || "0") <= 0 || isSelectDisabled}
+                    className={cn(
+                      "ml-1.5 text-[10px] font-bold border px-1.5 py-0.5 rounded transition-all disabled:opacity-40",
+                      isGenLayerRoute
+                        ? "text-purple-400 hover:text-white hover:bg-purple-500/20 border-purple-500/30"
+                        : "text-primary hover:text-white hover:bg-primary/10 border-primary/20"
+                    )}
+                  >
+                    MAX
+                  </button>
                 </div>
               </div>
 
@@ -460,7 +466,16 @@ export function BridgeForm({
                     placeholder="0.00"
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
-                    disabled={isSelectDisabled}
+                    disabled={
+                      isSelectDisabled ||
+                      genlayerStatus === "preparing" ||
+                      genlayerStatus === "approval-required" ||
+                      genlayerStatus === "waiting-approval" ||
+                      genlayerStatus === "creating-escrow" ||
+                      genlayerStatus === "waiting-escrow" ||
+                      genlayerStatus === "funding-escrow" ||
+                      genlayerStatus === "waiting-funding"
+                    }
                     className="bg-transparent text-2xl font-bold font-mono text-white placeholder-slate-600 focus:outline-none w-full text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
                   <div className="flex items-center gap-1.5 bg-white/5 border border-white/8 rounded-full px-2.5 py-1 select-none shrink-0">
@@ -780,6 +795,18 @@ export function BridgeForm({
                   </div>
                 )}
 
+                {isOverBalance && (
+                  <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3.5 space-y-1 text-xs text-rose-300">
+                    <div className="flex items-center gap-2 font-semibold text-rose-400">
+                      <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0" />
+                      <span>Insufficient USDC Balance</span>
+                    </div>
+                    <p className="text-[11.5px] leading-relaxed text-rose-200">
+                      Entered amount ({amount} USDC) exceeds your available Base Sepolia USDC balance ({parseFloat(balance || "0").toFixed(2)} USDC).
+                    </p>
+                  </div>
+                )}
+
                 {genlayerStatus === "error" && genlayerError && (
                   <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3.5 space-y-1 text-xs text-rose-300">
                     <div className="flex items-center gap-2 font-semibold text-rose-400">
@@ -798,7 +825,9 @@ export function BridgeForm({
                       ? false
                       : !isBaseSepolia
                       ? false
-                      : genlayerStatus === "waiting-approval" ||
+                      : genlayerStatus === "preparing" ||
+                        genlayerStatus === "approval-required" ||
+                        genlayerStatus === "waiting-approval" ||
                         genlayerStatus === "creating-escrow" ||
                         genlayerStatus === "waiting-escrow" ||
                         genlayerStatus === "funding-escrow" ||
@@ -851,6 +880,10 @@ export function BridgeForm({
                     "Connect EVM Wallet (Base Sepolia)"
                   ) : !isBaseSepolia ? (
                     "Switch Network to Base Sepolia (84532)"
+                  ) : genlayerStatus === "preparing" ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Preparing Transaction...
+                    </span>
                   ) : genlayerStatus === "approval-required" || genlayerStatus === "waiting-approval" ? (
                     <span className="flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin" /> Approving USDC on Base Sepolia...

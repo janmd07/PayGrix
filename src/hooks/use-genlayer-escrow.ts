@@ -163,6 +163,10 @@ export function useGenlayerEscrow() {
         if (isNaN(parsedAmount) || parsedAmount <= 0) {
           throw new Error("Please enter a valid positive USDC amount.");
         }
+        const decimalParts = amount.split(".");
+        if (decimalParts.length > 1 && decimalParts[1].length > 6) {
+          throw new Error("USDC amount cannot exceed 6 decimal places.");
+        }
         const rawAmount = parseUnits(amount, 6);
 
         // Validate Beneficiary Address
