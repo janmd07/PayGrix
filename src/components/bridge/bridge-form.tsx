@@ -24,7 +24,7 @@ import { cn } from "@/lib/utils";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
-import { useGenlayerEscrow } from "@/hooks/use-genlayer-escrow";
+import { useGenlayerBridge } from "@/hooks/use-genlayer-bridge";
 import { isAddress } from "viem";
 
 const CHAINS = ["Arc Testnet", "Base Sepolia", "Arbitrum Sepolia", "Solana Devnet", "GenLayer Bradbury"];
@@ -122,22 +122,21 @@ export function BridgeForm({
   isConnected,
   onRefresh,
 }: BridgeFormProps) {
-  const [amount, setAmount] = useState<string>("1");
-  const [beneficiaryAddress, setBeneficiaryAddress] = useState<string>("");
-  const { availableConnector, connect, address: userAddress, switchChainAsync } = useArcWallet();
+  const [amount, setAmount] = useState<string>("");
+  const [recipientAddress, setRecipientAddress] = useState<string>("");
+  const { availableConnector, connect, switchChainAsync } = useArcWallet();
   const { connected: isSolanaConnected, wallets, publicKey, disconnect } = useWallet();
 
   const {
-    status: genlayerStatus,
+    status: genlayerBridgeStatus,
     approvalTxHash: genlayerApprovalTxHash,
-    createTxHash: genlayerCreateTxHash,
-    fundTxHash: genlayerFundTxHash,
-    escrowId: genlayerEscrowId,
-    error: genlayerError,
-    createAndFundEscrow,
-    resetState: resetGenlayerState,
+    bridgeTxHash: genlayerBridgeTxHash,
+    bridgeId: genlayerBridgeId,
+    error: genlayerBridgeError,
+    bridgeUSDCToGenlayer,
+    resetState: resetGenlayerBridgeState,
     isBaseSepolia,
-  } = useGenlayerEscrow();
+  } = useGenlayerBridge();
 
   const [activeDropdown, setActiveDropdown] = useState<"source" | "destination" | null>(null);
   const [failedLogos, setFailedLogos] = useState<Record<string, boolean>>({});
@@ -175,11 +174,10 @@ export function BridgeForm({
   const isOverBalance = isValidAmount && !isNaN(parsedBalance) && parsedInputAmount > parsedBalance;
   const isFormInvalid = isSameChain || isOverBalance || !isValidAmount || (isSolanaRoute && !isHybridSolanaRoute);
 
-  const trimmedBeneficiary = beneficiaryAddress.trim();
-  const isBeneficiaryEmpty = trimmedBeneficiary === "";
-  const isBeneficiaryValid = !isBeneficiaryEmpty && isAddress(trimmedBeneficiary);
-  const isBeneficiarySelf = !!(isBeneficiaryValid && userAddress && trimmedBeneficiary.toLowerCase() === userAddress.toLowerCase());
-  const isGenLayerFormReady = isValidAmount && !isOverBalance && isBeneficiaryValid && !isBeneficiarySelf;
+  const trimmedRecipient = recipientAddress.trim();
+  const isRecipientEmpty = trimmedRecipient === "";
+  const isRecipientValid = !isRecipientEmpty && isAddress(trimmedRecipient);
+  const isGenLayerBridgeReady = isValidAmount && !isOverBalance && isRecipientValid;
 
   const handleSwapChains = () => {
     if (isGenLayerRoute) {
@@ -403,7 +401,7 @@ export function BridgeForm({
         <CardContent className="space-y-4">
           {/* Centered Compact Bridge Widget */}
           <div className="mx-auto w-full max-w-[500px] space-y-4">
-            
+
             {/* Top row: Refresh button (if available) */}
             {onRefresh && (
               <div className="flex justify-end items-center gap-2 pr-1">
@@ -468,13 +466,11 @@ export function BridgeForm({
                     onChange={(e) => setAmount(e.target.value)}
                     disabled={
                       isSelectDisabled ||
-                      genlayerStatus === "preparing" ||
-                      genlayerStatus === "approval-required" ||
-                      genlayerStatus === "waiting-approval" ||
-                      genlayerStatus === "creating-escrow" ||
-                      genlayerStatus === "waiting-escrow" ||
-                      genlayerStatus === "funding-escrow" ||
-                      genlayerStatus === "waiting-funding"
+                      genlayerBridgeStatus === "preparing" ||
+                      genlayerBridgeStatus === "approval-required" ||
+                      genlayerBridgeStatus === "waiting-approval" ||
+                      genlayerBridgeStatus === "bridging" ||
+                      genlayerBridgeStatus === "waiting-bridge-confirmation"
                     }
                     className="bg-transparent text-2xl font-bold font-mono text-white placeholder-slate-600 focus:outline-none w-full text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
@@ -546,95 +542,99 @@ export function BridgeForm({
               </div>
             </div>
 
-            {/* GenLayer-specific Adjudication UI */}
+            {/* GenLayer-specific Bridge UI */}
             {isGenLayerRoute ? (
               <div className="space-y-3.5 pt-1">
                 {/* Explanatory Callout Banner */}
                 <div className="rounded-xl border border-purple-500/20 bg-purple-500/[0.04] p-4 space-y-2.5 text-xs text-slate-300">
                   <div className="flex items-center gap-2 text-purple-300 font-semibold">
                     <ShieldCheck className="h-4 w-4 text-purple-400" />
-                    <span>GenLayer Adjudication Architecture</span>
+                    <span>PayGrix Cross-Chain Bridge Architecture</span>
                   </div>
                   <p className="text-slate-400 leading-relaxed text-[11.5px]">
-                    GenLayer evaluates dispute evidence through validator consensus while USDC remains secured on Base Sepolia.
+                    Bridge USDC from Base Sepolia directly to GenLayer Bradbury. Locked Base collateral mints 1:1 on-chain PayGrix Bridged USDC (pUSDC) to your GenLayer wallet.
                   </p>
                   <div className="grid grid-cols-2 gap-2 pt-1 font-mono text-[10.5px]">
                     <div className="bg-[#040814]/60 border border-white/5 rounded-lg p-2">
-                      <span className="text-slate-500 block">Settlement Layer:</span>
+                      <span className="text-slate-500 block">Source Layer:</span>
                       <span className="text-emerald-400 font-semibold">Base Sepolia</span>
                     </div>
                     <div className="bg-[#040814]/60 border border-white/5 rounded-lg p-2">
-                      <span className="text-slate-500 block">Consensus Layer:</span>
+                      <span className="text-slate-500 block">Destination Layer:</span>
                       <span className="text-purple-400 font-semibold">GenLayer Bradbury</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Beneficiary Address Input */}
+                {/* Destination Recipient Address Input */}
                 <div className="rounded-xl border border-white/5 bg-[#070e1c]/40 p-3.5 space-y-2">
                   <div className="flex justify-between items-center text-xs">
-                    <label htmlFor="beneficiary-input" className="font-semibold text-slate-200 flex items-center gap-1.5">
+                    <label htmlFor="recipient-input" className="font-semibold text-slate-200 flex items-center gap-1.5">
                       <Wallet className="h-3.5 w-3.5 text-purple-400" />
-                      Beneficiary / Counterparty Address
+                      Recipient GenLayer Address
                     </label>
-                    <span className="text-[10px] text-slate-500 font-mono">Base Sepolia EOA</span>
+                    <span className="text-[10px] text-slate-500 font-mono">GenLayer Bradbury EOA</span>
                   </div>
                   <input
-                    id="beneficiary-input"
+                    id="recipient-input"
                     type="text"
-                    value={beneficiaryAddress}
-                    onChange={(e) => setBeneficiaryAddress(e.target.value)}
+                    value={recipientAddress}
+                    onChange={(e) => setRecipientAddress(e.target.value)}
                     placeholder="0x..."
-                    disabled={genlayerStatus === "waiting-approval" || genlayerStatus === "creating-escrow" || genlayerStatus === "waiting-escrow" || genlayerStatus === "funding-escrow" || genlayerStatus === "waiting-funding"}
+                    disabled={
+                      genlayerBridgeStatus === "preparing" ||
+                      genlayerBridgeStatus === "approval-required" ||
+                      genlayerBridgeStatus === "waiting-approval" ||
+                      genlayerBridgeStatus === "bridging" ||
+                      genlayerBridgeStatus === "waiting-bridge-confirmation"
+                    }
                     className="w-full bg-[#040814]/80 border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-purple-500/50 transition-all"
                   />
-                  {isBeneficiaryEmpty ? (
-                    <p className="text-[10.5px] text-slate-500">Enter recipient counterparty address to lock escrow collateral for.</p>
-                  ) : !isBeneficiaryValid ? (
-                    <p className="text-[10.5px] text-rose-400">Invalid Ethereum address format.</p>
-                  ) : isBeneficiarySelf ? (
-                    <p className="text-[10.5px] text-amber-400">Beneficiary cannot be your own depositor wallet address.</p>
+                  {isRecipientEmpty ? (
+                    <p className="text-[10.5px] text-slate-500">Enter your destination 0x address on GenLayer Bradbury to receive pUSDC.</p>
+                  ) : !isRecipientValid ? (
+                    <p className="text-[10.5px] text-rose-400">Invalid Ethereum / GenLayer address format.</p>
                   ) : (
                     <p className="text-[10.5px] text-emerald-400 flex items-center gap-1">
-                      <CheckCircle2 className="h-3 w-3" /> Valid beneficiary address.
+                      <CheckCircle2 className="h-3 w-3" /> Valid GenLayer destination address.
                     </p>
                   )}
                 </div>
 
-                {/* Live Verified Contract Box */}
+                {/* Live Verified Bridge Infrastructure Box */}
                 <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4 space-y-2 text-xs font-mono">
                   <div className="flex justify-between items-center border-b border-white/5 pb-2 font-sans">
-                    <span className="font-semibold text-slate-300">Verified Contracts (Base Sepolia & GenLayer)</span>
+                    <span className="font-semibold text-slate-300">Bridge Infrastructure Contracts</span>
                     <span className="text-purple-400 text-[10px] bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded-full flex items-center gap-1">
                       <CheckCircle2 className="h-3 w-3 text-purple-400" /> Live on-chain
                     </span>
                   </div>
-                  
+
                   <div className="space-y-1.5 text-[11px] pt-1">
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-400 font-sans">PayGrix Escrow Vault:</span>
-                      <a
-                        href="https://sepolia.basescan.org/address/0xDF14c0cCd803866A54202B83c44C98Ab496561B8"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-all"
-                      >
-                        0xDF14...61B8 <ExternalLink className="h-3 w-3" />
-                      </a>
-                    </div>
-                    <div className="flex justify-between items-center">
-                       <span className="text-slate-400 font-sans">Base Bridge Adapter:</span>
+                      <span className="text-slate-400 font-sans">Base Bridge Router:</span>
                       <a
                         href="https://sepolia.basescan.org/address/0xD9e1Cde11f6AF114e01726DA2cf007a27aB6314e"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-all"
+                        className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-all"
                       >
                         0xD9e1...314e <ExternalLink className="h-3 w-3" />
                       </a>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-slate-400 font-sans">GenLayer Resolver:</span>
+                       <span className="text-slate-400 font-sans">Base Bridge Vault:</span>
+                      <a
+                        href="https://sepolia.basescan.org/address/0xDF14c0cCd803866A54202B83c44C98Ab496561B8"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-all"
+                      >
+                        0xDF14...61B8 <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400 font-sans">GenLayer Bridge Manager:</span>
                       <a
                         href="https://explorer-bradbury.genlayer.com/address/0xA314b6402477561d9a1650142724724F60f92534"
                         target="_blank"
@@ -647,12 +647,12 @@ export function BridgeForm({
                   </div>
                 </div>
 
-                {/* 4-Step Adjudication Progress Pipeline */}
+                {/* 4-Step Bridge Progress Pipeline */}
                 <div className="rounded-xl border border-white/5 bg-[#070e1c]/40 p-4 space-y-3">
                   <div className="text-xs font-semibold text-slate-300 flex items-center justify-between">
                     <span className="flex items-center gap-1.5">
                       <Cpu className="h-3.5 w-3.5 text-purple-400" />
-                      Adjudication Pipeline
+                      Cross-Chain Bridge Pipeline
                     </span>
                     <span className="text-[10px] text-slate-400 font-mono">4-Stage Workflow</span>
                   </div>
@@ -663,8 +663,8 @@ export function BridgeForm({
                         1
                       </div>
                       <div className="space-y-0.5">
-                        <p className="font-semibold text-slate-200">Base Sepolia — Request Initiated</p>
-                        <p className="text-[11px] text-slate-400">USDC collateral secured in PayGrix Escrow Vault on Base Sepolia</p>
+                        <p className="font-semibold text-slate-200">Base Sepolia — Lock USDC</p>
+                        <p className="text-[11px] text-slate-400">Exact user-selected USDC collateral locked in PayGrixBridgeVault</p>
                       </div>
                     </div>
 
@@ -673,8 +673,8 @@ export function BridgeForm({
                         2
                       </div>
                       <div className="space-y-0.5">
-                        <p className="font-semibold text-slate-200">Relaying — GenLayer Bradbury</p>
-                        <p className="text-[11px] text-slate-400">Dispute statements and IPFS evidence URI dispatched to Bradbury</p>
+                        <p className="font-semibold text-slate-200">Relaying — Cross-Chain Transport</p>
+                        <p className="text-[11px] text-slate-400">TokensBridged event verified and forwarded to GenLayer</p>
                       </div>
                     </div>
 
@@ -683,8 +683,8 @@ export function BridgeForm({
                         3
                       </div>
                       <div className="space-y-0.5">
-                        <p className="font-semibold text-slate-200">Validator Consensus — Pending / Verified</p>
-                        <p className="text-[11px] text-slate-400">Non-deterministic LLM evaluation & multi-validator consensus</p>
+                        <p className="font-semibold text-slate-200">GenLayer Bradbury — Authentication</p>
+                        <p className="text-[11px] text-slate-400">Bridge Manager verifies replay protection and source router origin</p>
                       </div>
                     </div>
 
@@ -693,15 +693,15 @@ export function BridgeForm({
                         4
                       </div>
                       <div className="space-y-0.5">
-                        <p className="font-semibold text-slate-200">Base Sepolia — Settlement</p>
-                        <p className="text-[11px] text-slate-400">Finalized verdict triggers automated collateral release or refund</p>
+                        <p className="font-semibold text-slate-200">GenLayer Bradbury — pUSDC Minted</p>
+                        <p className="text-[11px] text-slate-400">Exact equivalent pUSDC tokens minted directly to user&apos;s GenLayer wallet</p>
                       </div>
                     </div>
                   </div>
                 </div>
 
                 {/* Transaction Status Tracker */}
-                {genlayerStatus === "waiting-approval" && (
+                {genlayerBridgeStatus === "waiting-approval" && (
                   <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-3.5 space-y-1.5 text-xs text-blue-300">
                     <div className="flex items-center gap-2 font-semibold">
                       <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
@@ -720,75 +720,46 @@ export function BridgeForm({
                   </div>
                 )}
 
-                {(genlayerStatus === "creating-escrow" || genlayerStatus === "waiting-escrow") && (
+                {(genlayerBridgeStatus === "bridging" || genlayerBridgeStatus === "waiting-bridge-confirmation") && (
                   <div className="rounded-xl border border-purple-500/30 bg-purple-500/10 p-3.5 space-y-1.5 text-xs text-purple-300">
                     <div className="flex items-center gap-2 font-semibold">
                       <Loader2 className="h-4 w-4 animate-spin text-purple-400" />
-                      <span>Creating Escrow on Base Sepolia...</span>
+                      <span>Bridging USDC on Base Sepolia...</span>
                     </div>
-                    {genlayerCreateTxHash && (
+                    {genlayerBridgeTxHash && (
                       <a
-                        href={`https://sepolia.basescan.org/tx/${genlayerCreateTxHash}`}
+                        href={`https://sepolia.basescan.org/tx/${genlayerBridgeTxHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-[11px] text-purple-400 underline flex items-center gap-1"
                       >
-                        View Create Escrow TX on BaseScan <ExternalLink className="h-3 w-3" />
+                        View Bridge TX on BaseScan <ExternalLink className="h-3 w-3" />
                       </a>
                     )}
                   </div>
                 )}
 
-                {(genlayerStatus === "funding-escrow" || genlayerStatus === "waiting-funding") && (
-                  <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3.5 space-y-1.5 text-xs text-emerald-300">
-                    <div className="flex items-center gap-2 font-semibold">
-                      <Loader2 className="h-4 w-4 animate-spin text-emerald-400" />
-                      <span>Securing USDC Collateral in Escrow Vault...</span>
-                    </div>
-                    {genlayerFundTxHash && (
-                      <a
-                        href={`https://sepolia.basescan.org/tx/${genlayerFundTxHash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[11px] text-emerald-400 underline flex items-center gap-1"
-                      >
-                        View Funding TX on BaseScan <ExternalLink className="h-3 w-3" />
-                      </a>
-                    )}
-                  </div>
-                )}
-
-                {genlayerStatus === "escrow-created" && (
+                {genlayerBridgeStatus === "completed" && (
                   <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 space-y-2.5 text-xs text-slate-200">
                     <div className="flex items-center gap-2 text-emerald-400 font-semibold">
                       <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                      <span>Escrow Successfully Created & Funded!</span>
+                      <span>Bridge Successfully Completed!</span>
                     </div>
-                    {genlayerEscrowId && (
+                    {genlayerBridgeId && (
                       <div className="bg-[#040814]/80 p-2.5 rounded-lg border border-white/5 space-y-1 font-mono text-[11px]">
-                        <span className="text-slate-400 block text-[10px]">Escrow ID (bytes32):</span>
-                        <span className="text-purple-300 break-all">{genlayerEscrowId}</span>
+                        <span className="text-slate-400 block text-[10px]">Bridge ID:</span>
+                        <span className="text-purple-300 break-all">{genlayerBridgeId}</span>
                       </div>
                     )}
                     <div className="space-y-1 text-[11px]">
-                      {genlayerCreateTxHash && (
+                      {genlayerBridgeTxHash && (
                         <a
-                          href={`https://sepolia.basescan.org/tx/${genlayerCreateTxHash}`}
+                          href={`https://sepolia.basescan.org/tx/${genlayerBridgeTxHash}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-emerald-400 underline flex items-center gap-1"
                         >
-                          View Escrow Creation on BaseScan <ExternalLink className="h-3 w-3" />
-                        </a>
-                      )}
-                      {genlayerFundTxHash && (
-                        <a
-                          href={`https://sepolia.basescan.org/tx/${genlayerFundTxHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-emerald-400 underline flex items-center gap-1"
-                        >
-                          View Collateral Lock on BaseScan <ExternalLink className="h-3 w-3" />
+                          View Base Sepolia Lock on BaseScan <ExternalLink className="h-3 w-3" />
                         </a>
                       )}
                     </div>
@@ -807,13 +778,13 @@ export function BridgeForm({
                   </div>
                 )}
 
-                {genlayerStatus === "error" && genlayerError && (
+                {genlayerBridgeStatus === "error" && genlayerBridgeError && (
                   <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-3.5 space-y-1 text-xs text-rose-300">
                     <div className="flex items-center gap-2 font-semibold text-rose-400">
                       <AlertTriangle className="h-4 w-4 text-rose-400" />
-                      <span>Transaction Error</span>
+                      <span>Bridge Error</span>
                     </div>
-                    <p className="text-[11.5px] leading-relaxed text-rose-200">{genlayerError}</p>
+                    <p className="text-[11.5px] leading-relaxed text-rose-200">{genlayerBridgeError}</p>
                   </div>
                 )}
 
@@ -825,17 +796,15 @@ export function BridgeForm({
                       ? false
                       : !isBaseSepolia
                       ? false
-                      : genlayerStatus === "preparing" ||
-                        genlayerStatus === "approval-required" ||
-                        genlayerStatus === "waiting-approval" ||
-                        genlayerStatus === "creating-escrow" ||
-                        genlayerStatus === "waiting-escrow" ||
-                        genlayerStatus === "funding-escrow" ||
-                        genlayerStatus === "waiting-funding"
+                      : genlayerBridgeStatus === "preparing" ||
+                        genlayerBridgeStatus === "approval-required" ||
+                        genlayerBridgeStatus === "waiting-approval" ||
+                        genlayerBridgeStatus === "bridging" ||
+                        genlayerBridgeStatus === "waiting-bridge-confirmation"
                       ? true
-                      : genlayerStatus === "escrow-created"
+                      : genlayerBridgeStatus === "completed"
                       ? false
-                      : !isGenLayerFormReady
+                      : !isGenLayerBridgeReady
                   }
                   onClick={async () => {
                     if (!isConnected) {
@@ -856,22 +825,21 @@ export function BridgeForm({
                       return;
                     }
 
-                    if (genlayerStatus === "escrow-created") {
-                      resetGenlayerState();
+                    if (genlayerBridgeStatus === "completed") {
+                      resetGenlayerBridgeState();
                       return;
                     }
 
-                    if (!isGenLayerFormReady) return;
+                    if (!isGenLayerBridgeReady) return;
 
-                    await createAndFundEscrow({
+                    await bridgeUSDCToGenlayer({
                       amount,
-                      beneficiary: trimmedBeneficiary,
-                      durationSeconds: 3600,
+                      recipient: trimmedRecipient,
                     });
                   }}
                   className={cn(
                     "w-full h-12 text-sm font-bold text-white rounded-xl shadow-[0_4px_20px_rgba(168,85,247,0.25)] transition-all duration-300",
-                    !isConnected || !isBaseSepolia || isGenLayerFormReady || genlayerStatus === "escrow-created"
+                    !isConnected || !isBaseSepolia || isGenLayerBridgeReady || genlayerBridgeStatus === "completed"
                       ? "bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 cursor-pointer"
                       : "bg-[#111a33] border border-purple-500/30 text-purple-200 opacity-60 cursor-not-allowed"
                   )}
@@ -880,42 +848,36 @@ export function BridgeForm({
                     "Connect EVM Wallet (Base Sepolia)"
                   ) : !isBaseSepolia ? (
                     "Switch Network to Base Sepolia (84532)"
-                  ) : genlayerStatus === "preparing" ? (
+                  ) : genlayerBridgeStatus === "preparing" ? (
                     <span className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" /> Preparing Transaction...
+                      <Loader2 className="h-4 w-4 animate-spin" /> Preparing Bridge Transaction...
                     </span>
-                  ) : genlayerStatus === "approval-required" || genlayerStatus === "waiting-approval" ? (
+                  ) : genlayerBridgeStatus === "approval-required" || genlayerBridgeStatus === "waiting-approval" ? (
                     <span className="flex items-center gap-2">
                       <Loader2 className="h-4 w-4 animate-spin" /> Approving USDC on Base Sepolia...
                     </span>
-                  ) : genlayerStatus === "creating-escrow" || genlayerStatus === "waiting-escrow" ? (
+                  ) : genlayerBridgeStatus === "bridging" || genlayerBridgeStatus === "waiting-bridge-confirmation" ? (
                     <span className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" /> Creating Escrow on Base Sepolia...
+                      <Loader2 className="h-4 w-4 animate-spin" /> Bridging USDC on Base Sepolia...
                     </span>
-                  ) : genlayerStatus === "funding-escrow" || genlayerStatus === "waiting-funding" ? (
-                    <span className="flex items-center gap-2">
-                      <Loader2 className="h-4 w-4 animate-spin" /> Locking Collateral in Vault...
-                    </span>
-                  ) : genlayerStatus === "escrow-created" ? (
-                    "Create Another Escrow"
+                  ) : genlayerBridgeStatus === "completed" ? (
+                    "Bridge Another Amount"
                   ) : !isValidAmount ? (
                     "Enter USDC Amount"
                   ) : isOverBalance ? (
                     "Insufficient USDC Balance"
-                  ) : isBeneficiaryEmpty ? (
-                    "Enter Beneficiary Address"
-                  ) : !isBeneficiaryValid ? (
-                    "Invalid Beneficiary Address"
-                  ) : isBeneficiarySelf ? (
-                    "Beneficiary Cannot Be Depositor"
+                  ) : isRecipientEmpty ? (
+                    "Enter GenLayer Address"
+                  ) : !isRecipientValid ? (
+                    "Invalid GenLayer Address"
                   ) : (
-                    `Lock ${amount} USDC & Create Escrow`
+                    `Bridge ${amount} USDC to GenLayer`
                   )}
                 </Button>
 
                 <div className="flex items-center justify-center gap-1.5 text-[11px] text-slate-500">
                   <Lock className="h-3 w-3 text-slate-500" />
-                  <span>USDC remains non-custodial on Base Sepolia during dispute evaluation</span>
+                  <span>USDC remains non-custodial in PayGrixBridgeVault on Base Sepolia</span>
                 </div>
               </div>
             ) : (
@@ -983,14 +945,14 @@ export function BridgeForm({
                           </div>
                           <WalletMultiButton className="!h-[30px] !px-3.5 !text-[11px] !rounded-lg !bg-purple-600 hover:!bg-purple-500 !font-sans !font-bold !transition-all !duration-300" />
                         </div>
-                        
+
                         {isPhantomNotDetected && (
                           <div className="text-[10px] text-rose-400 bg-rose-500/5 border border-rose-500/20 rounded-xl p-3 flex items-start gap-2 leading-normal">
                             <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
                             <span>Phantom wallet extension was not detected. Install or enable Phantom and refresh the page.</span>
                           </div>
                         )}
-                        
+
                         {isPhantomInstalled && (
                           <div className="text-[10px] text-purple-400 bg-purple-500/5 border border-purple-500/20 rounded-xl p-3 flex items-start gap-2 leading-normal">
                             <Coins className="h-3.5 w-3.5 shrink-0 mt-0.5" />
@@ -1010,7 +972,7 @@ export function BridgeForm({
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping" /> CCTP Active
                     </span>
                   </div>
-                  
+
                   <div className="space-y-2 font-mono">
                     <div className="flex justify-between">
                       <span className="text-slate-400">Route:</span>
@@ -1072,49 +1034,49 @@ export function BridgeForm({
                       )}
                     </div>
                     <div className="space-y-2 bg-[#070e1c]/40 border border-white/5 rounded-xl p-3.5">
-                      <div className={cn("flex items-center gap-2 text-xs", 
+                      <div className={cn("flex items-center gap-2 text-xs",
                         ["preparing", "waiting-wallet", "bridging", "completed"].includes(status) ? "text-slate-300" : "text-slate-500 opacity-50"
                       )}>
-                        <div className={cn("h-2 w-2 rounded-full", 
-                          status === "preparing" ? "bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]" : 
+                        <div className={cn("h-2 w-2 rounded-full",
+                          status === "preparing" ? "bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]" :
                           ["waiting-wallet", "bridging", "completed"].includes(status) ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-slate-600"
                         )} />
                         <span>Preparing transaction</span>
                       </div>
 
-                      <div className={cn("flex items-center gap-2 text-xs", 
+                      <div className={cn("flex items-center gap-2 text-xs",
                         ["waiting-wallet", "bridging", "completed"].includes(status) ? "text-slate-300" : "text-slate-500 opacity-50"
                       )}>
-                        <div className={cn("h-2 w-2 rounded-full", 
-                          status === "waiting-wallet" ? "bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]" : 
+                        <div className={cn("h-2 w-2 rounded-full",
+                          status === "waiting-wallet" ? "bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]" :
                           ["bridging", "completed"].includes(status) ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-slate-600"
                         )} />
                         <span>Waiting for wallet confirmation</span>
                       </div>
 
-                      <div className={cn("flex items-center gap-2 text-xs", 
+                      <div className={cn("flex items-center gap-2 text-xs",
                         (sourceTxHash || status === "completed") ? "text-slate-300" : "text-slate-500 opacity-50"
                       )}>
-                        <div className={cn("h-2 w-2 rounded-full", 
+                        <div className={cn("h-2 w-2 rounded-full",
                           (sourceTxHash || status === "completed") ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-slate-600"
                         )} />
                         <span>Transaction submitted</span>
                       </div>
 
-                      <div className={cn("flex items-center gap-2 text-xs", 
+                      <div className={cn("flex items-center gap-2 text-xs",
                         ["bridging", "completed"].includes(status) ? "text-slate-300" : "text-slate-500 opacity-50"
                       )}>
-                        <div className={cn("h-2 w-2 rounded-full", 
-                          status === "bridging" ? "bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]" : 
+                        <div className={cn("h-2 w-2 rounded-full",
+                          status === "bridging" ? "bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]" :
                           status === "completed" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-slate-600"
                         )} />
                         <span>Bridging in progress</span>
                       </div>
 
-                      <div className={cn("flex items-center gap-2 text-xs", 
+                      <div className={cn("flex items-center gap-2 text-xs",
                         status === "completed" ? "text-slate-300" : "text-slate-500 opacity-50"
                       )}>
-                        <div className={cn("h-2 w-2 rounded-full", 
+                        <div className={cn("h-2 w-2 rounded-full",
                           status === "completed" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-slate-600"
                         )} />
                         <span>Bridge completed</span>
