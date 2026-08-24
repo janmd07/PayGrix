@@ -9,10 +9,10 @@ export const FORBIDDEN_CHAIN_ID = 8453; // Base Mainnet
 export const BASE_SEPOLIA_USDC = "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as const;
 
 // Configurable router & token targets for PayGrix Base <-> GenLayer Bridge
-export const PAYGRIX_BASE_ROUTER_ADDRESS = "0xD9e1Cde11f6AF114e01726DA2cf007a27aB6314e" as const;
-export const PAYGRIX_BRIDGE_VAULT_ADDRESS = "0xDF14c0cCd803866A54202B83c44C98Ab496561B8" as const;
-export const GENLAYER_BRADBURY_BRIDGE_MANAGER = "0xA314b6402477561d9a1650142724724F60f92534" as const;
-export const PAYGRIX_BRIDGED_USDC_GENLAYER = "0x51465691F605A7c030f2C5F406085a539c2794A6" as const;
+export const PAYGRIX_BASE_ROUTER_ADDRESS = "0x05c69956564c556fc303Cb74C5505D0E1e8EDF2D" as const;
+export const PAYGRIX_BRIDGE_VAULT_ADDRESS = "0x9e5807B3470AF8E5a316FEa847fd87EdB2DCFfF7" as const;
+export const GENLAYER_BRADBURY_BRIDGE_MANAGER = "0x70Fe1FbABb032B4F99FeEAbea3D26326321aF8e2" as const;
+export const PAYGRIX_BRIDGED_USDC_GENLAYER = "0x68da7D080094ddbf6B3fb4f57cC847D930452778" as const;
 
 export type GenlayerBridgeStatus =
   | "idle"
@@ -182,18 +182,18 @@ export function useGenlayerBridge() {
           address: BASE_SEPOLIA_USDC,
           abi: ERC20_ABI,
           functionName: "allowance",
-          args: [address, PAYGRIX_BASE_ROUTER_ADDRESS],
+          args: [address, PAYGRIX_BRIDGE_VAULT_ADDRESS],
         })) as bigint;
 
         if (currentAllowance < rawAmount) {
           setStatus("approval-required");
-          console.log(`[PayGrix Bridge] Requesting USDC approval of exact amount ${amount} (${rawAmount.toString()})...`);
+          console.log(`[PayGrix Bridge] Requesting USDC approval of exact amount ${amount} (${rawAmount.toString()}) for Bridge Vault...`);
 
           const approveHash = await walletClient.writeContract({
             address: BASE_SEPOLIA_USDC,
             abi: ERC20_ABI,
             functionName: "approve",
-            args: [PAYGRIX_BASE_ROUTER_ADDRESS, rawAmount],
+            args: [PAYGRIX_BRIDGE_VAULT_ADDRESS, rawAmount],
           });
 
           setApprovalTxHash(approveHash);
@@ -211,10 +211,26 @@ export function useGenlayerBridge() {
           console.log("[PayGrix Bridge] USDC approval confirmed successfully.");
         }
 
-        // 3. Execute Bridge Transaction on PayGrixBaseBridgeRouter
+        // 3. Pre-flight Static Simulation & Gas Estimation
         setStatus("bridging");
-        console.log(`[PayGrix Bridge] Initiating bridge of ${amount} USDC to ${trimmedRecipient}...`);
+        console.log(`[PayGrix Bridge] Simulating bridge of ${amount} USDC to ${trimmedRecipient}...`);
 
+        try {
+          await publicClient.simulateContract({
+            address: PAYGRIX_BASE_ROUTER_ADDRESS,
+            abi: PAYGRIX_BASE_ROUTER_ABI,
+            functionName: "bridgeUSDC",
+            args: [rawAmount, trimmedRecipient as `0x${string}`],
+            account: address,
+          });
+        } catch (simErr: unknown) {
+          const simMessage = simErr instanceof Error ? simErr.message : String(simErr);
+          console.error("[PayGrix Bridge Pre-flight Simulation Failed]:", simErr);
+          throw new Error(`Bridge transaction pre-flight simulation reverted: ${simMessage.split("\n")[0]}`);
+        }
+
+        // 4. Execute Bridge Transaction on PayGrixBaseBridgeRouter
+        console.log(`[PayGrix Bridge] Prompting wallet for bridgeUSDC(${amount} USDC)...`);
         const bridgeHash = await walletClient.writeContract({
           address: PAYGRIX_BASE_ROUTER_ADDRESS,
           abi: PAYGRIX_BASE_ROUTER_ABI,

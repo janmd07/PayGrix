@@ -112,7 +112,7 @@ class MockBridgeManager:
 class TestPayGrixBridgedUSDC(unittest.TestCase):
     def setUp(self):
         self.manager_addr = "0xBridgeManager"
-        self.router_addr = "0xD9e1Cde11f6AF114e01726DA2cf007a27aB6314e"
+        self.router_addr = "0x05c69956564c556fc303Cb74C5505D0E1e8EDF2D"
         self.user_gen_addr = "0x1234567890abcdef1234567890abcdef12345678"
         self.user_base_addr = "0x71C7656EC7ab88b098defB751B7401B5f6d8976F"
         self.attesters = ["0xattester100000000000000000000000000000001", "0xattester200000000000000000000000000000002"]

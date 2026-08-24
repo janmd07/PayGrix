@@ -27,9 +27,9 @@ except ImportError:
             "ALLOW_LIVE_TRANSACTIONS": False,
             "BASE_SEPOLIA_CHAIN_ID": 84532,
             "GENLAYER_CHAIN_ID": 4221, # Harmonized with wagmi.ts
-            "PAYGRIX_BASE_ROUTER_ADDRESS": "0xD9e1Cde11f6AF114e01726DA2cf007a27aB6314e",
-            "PAYGRIX_GENLAYER_BRIDGE_MANAGER": "0xA314b6402477561d9a1650142724724F60f92534",
-            "PAYGRIX_BRIDGED_USDC_GENLAYER": "0x51465691F605A7c030f2C5F406085a539c2794A6"
+            "PAYGRIX_BASE_ROUTER_ADDRESS": "0x05c69956564c556fc303Cb74C5505D0E1e8EDF2D",
+            "PAYGRIX_GENLAYER_BRIDGE_MANAGER": "0x70Fe1FbABb032B4F99FeEAbea3D26326321aF8e2",
+            "PAYGRIX_BRIDGED_USDC_GENLAYER": "0x68da7D080094ddbf6B3fb4f57cC847D930452778"
         }
 
 logging.basicConfig(level=logging.INFO, format="[BRIDGE RELAYER] %(asctime)s - %(levelname)s - %(message)s")
@@ -86,7 +86,7 @@ class BridgeRelayerService:
             "dest_chain_id": dest_chain_id,
             "source_router": self.config.get("PAYGRIX_BASE_ROUTER_ADDRESS", ""),
             "source_tx_hash": tx_hash,
-            "attester_signatures": ["0x71C7656EC7ab88b098defB751B7401B5f6d8976F"] # Authorized attester
+            "attester_signatures": ["0xf85085b73a4Ec4efE895B532Fe1560a06ff0d179"] # Authorized testnet attester
         }
 
         if self.dry_run:

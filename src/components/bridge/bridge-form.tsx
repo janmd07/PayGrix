@@ -614,34 +614,45 @@ export function BridgeForm({
                     <div className="flex justify-between items-center">
                       <span className="text-slate-400 font-sans">Base Bridge Router:</span>
                       <a
-                        href="https://sepolia.basescan.org/address/0xD9e1Cde11f6AF114e01726DA2cf007a27aB6314e"
+                        href="https://sepolia.basescan.org/address/0x05c69956564c556fc303Cb74C5505D0E1e8EDF2D"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1 transition-all"
                       >
-                        0xD9e1...314e <ExternalLink className="h-3 w-3" />
+                        0x05c6...DF2D <ExternalLink className="h-3 w-3" />
                       </a>
                     </div>
                     <div className="flex justify-between items-center">
                        <span className="text-slate-400 font-sans">Base Bridge Vault:</span>
                       <a
-                        href="https://sepolia.basescan.org/address/0xDF14c0cCd803866A54202B83c44C98Ab496561B8"
+                        href="https://sepolia.basescan.org/address/0x9e5807B3470AF8E5a316FEa847fd87EdB2DCFfF7"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-all"
                       >
-                        0xDF14...61B8 <ExternalLink className="h-3 w-3" />
+                        0x9e58...FfF7 <ExternalLink className="h-3 w-3" />
                       </a>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-slate-400 font-sans">GenLayer Bridge Manager:</span>
                       <a
-                        href="https://explorer-bradbury.genlayer.com/address/0xA314b6402477561d9a1650142724724F60f92534"
+                        href="https://explorer-bradbury.genlayer.com/address/0x70Fe1FbABb032B4F99FeEAbea3D26326321aF8e2"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-all"
                       >
-                        0xA314...2534 <ExternalLink className="h-3 w-3" />
+                        0x70Fe...F8e2 <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-slate-400 font-sans">GenLayer Bridged pUSDC:</span>
+                      <a
+                        href="https://explorer-bradbury.genlayer.com/address/0x68da7D080094ddbf6B3fb4f57cC847D930452778"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-all"
+                      >
+                        0x68da...2778 <ExternalLink className="h-3 w-3" />
                       </a>
                     </div>
                   </div>

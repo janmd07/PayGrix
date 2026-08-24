@@ -4,130 +4,75 @@ from genlayer import *
 
 class PayGrixBridgedUSDC(gl.Contract):
     """
-    PayGrix Bridged USDC (pUSDC) on GenLayer Bradbury.
-
-    This contract represents Base Sepolia USDC bridged through the PayGrix bridge.
-    Maintains 6 decimal precision matching Base Sepolia USDC.
-    Only the authorized GenLayerBridgeManager may mint tokens upon verified Base deposits.
+    PayGrix Bridged USDC (pUSDC) V2 on GenLayer Bradbury.
+    Represents 1:1 bridged USDC from Base Sepolia.
     """
+    name: str
+    symbol: str
+    decimals: u8
+    total_supply: u256
+    bridge_manager: Address
+    owner: Address
 
-    name: str = "PayGrix Bridged USDC"
-    symbol: str = "pUSDC"
-    decimals: int = 6
-    total_supply: int = 0
-    bridge_manager: str
-    owner: str
+    balances: TreeMap[Address, u256]
 
-    balances: TreeMap[str, int]
-    allowances: TreeMap[str, TreeMap[str, int]]
+    def __init__(self):
+        self.name = "PayGrix Bridged USDC"
+        self.symbol = "pUSDC"
+        self.decimals = u8(6)
+        self.total_supply = u256(0)
+        self.owner = gl.message.sender_address
+        self.bridge_manager = gl.message.sender_address
+        self.balances = TreeMap()
 
-    def __init__(self, bridge_manager_address: str):
-        assert bridge_manager_address != "", "Invalid bridge manager address"
-        self.bridge_manager = bridge_manager_address.lower()
-        self.owner = gl.message.sender.lower()
+    @gl.public.write
+    def set_bridge_manager(self, manager: str) -> bool:
+        assert gl.message.sender_address == self.owner, "Caller is not owner"
+        self.bridge_manager = Address(manager)
+        return True
 
     @gl.public.view
-    def balance_of(self, account: str) -> int:
-        """Returns the pUSDC token balance of the specified account."""
-        return self.balances.get(account.lower(), 0)
+    def balance_of(self, account: str) -> u256:
+        return self.balances.get(Address(account), u256(0))
 
     @gl.public.view
-    def get_total_supply(self) -> int:
-        """Returns the total circulating supply of pUSDC on GenLayer."""
+    def get_total_supply(self) -> u256:
         return self.total_supply
 
     @gl.public.view
     def get_bridge_manager(self) -> str:
-        """Returns the authorized bridge manager address."""
-        return self.bridge_manager
-
-    @gl.public.view
-    def allowance(self, owner: str, spender: str) -> int:
-        """Returns the remaining allowance granted by owner to spender."""
-        owner_clean = owner.lower()
-        spender_clean = spender.lower()
-        owner_allowances = self.allowances.get(owner_clean, None)
-        if owner_allowances is None:
-            return 0
-        return owner_allowances.get(spender_clean, 0)
-
-    @gl.public.write
-    def transfer(self, recipient: str, amount: int) -> bool:
-        """Standard ERC-20 style token transfer."""
-        sender = gl.message.sender.lower()
-        rec_clean = recipient.lower()
-        assert amount > 0, "Transfer amount must be positive"
-        sender_bal = self.balances.get(sender, 0)
-        assert sender_bal >= amount, "Insufficient pUSDC balance"
-
-        self.balances[sender] = sender_bal - amount
-        self.balances[rec_clean] = self.balances.get(rec_clean, 0) + amount
-        return True
-
-    @gl.public.write
-    def approve(self, spender: str, amount: int) -> bool:
-        """Approves spender to spend up to amount tokens on behalf of caller."""
-        sender = gl.message.sender.lower()
-        spender_clean = spender.lower()
-        assert amount >= 0, "Invalid approval amount"
-
-        owner_map = self.allowances.get(sender, TreeMap[str, int]())
-        owner_map[spender_clean] = amount
-        self.allowances[sender] = owner_map
-        return True
-
-    @gl.public.write
-    def transfer_from(self, sender: str, recipient: str, amount: int) -> bool:
-        """Transfers tokens from sender to recipient using allowance."""
-        caller = gl.message.sender.lower()
-        sender_clean = sender.lower()
-        rec_clean = recipient.lower()
-
-        assert amount > 0, "Transfer amount must be positive"
-        sender_bal = self.balances.get(sender_clean, 0)
-        assert sender_bal >= amount, "Insufficient balance"
-
-        owner_map = self.allowances.get(sender_clean, None)
-        assert owner_map is not None, "No allowance set"
-        current_allowance = owner_map.get(caller, 0)
-        assert current_allowance >= amount, "Allowance exceeded"
-
-        owner_map[caller] = current_allowance - amount
-        self.allowances[sender_clean] = owner_map
-
-        self.balances[sender_clean] = sender_bal - amount
-        self.balances[rec_clean] = self.balances.get(rec_clean, 0) + amount
-        return True
+        return self.bridge_manager.as_hex
 
     @gl.public.write
     def mint_from_bridge(self, recipient: str, amount: int) -> bool:
-        """
-        Mints exactly the verified bridged amount of pUSDC to the recipient on GenLayer.
-        Callable ONLY by the authorized bridge manager.
-        """
-        caller = gl.message.sender.lower()
-        assert caller == self.bridge_manager, "Unauthorized caller: only bridge manager can mint"
-        assert amount > 0, "Mint amount must be positive"
-        assert recipient != "", "Invalid recipient address"
-
-        rec_clean = recipient.lower()
-        self.balances[rec_clean] = self.balances.get(rec_clean, 0) + amount
-        self.total_supply += amount
+        assert gl.message.sender_address == self.bridge_manager or gl.message.sender_address == self.owner, "Unauthorized"
+        rec_addr = Address(recipient)
+        amt_u256 = u256(amount)
+        assert amt_u256 > u256(0), "Amount must be positive"
+        current_bal = self.balances.get(rec_addr, u256(0))
+        self.balances[rec_addr] = current_bal + amt_u256
+        self.total_supply = self.total_supply + amt_u256
         return True
 
     @gl.public.write
-    def burn_to_bridge(self, amount: int, base_recipient: str) -> str:
-        """
-        Burns pUSDC on GenLayer to initiate reverse bridge back to Base Sepolia.
-        """
-        caller = gl.message.sender.lower()
-        assert amount > 0, "Burn amount must be positive"
-        assert len(base_recipient) == 42 and base_recipient.startswith("0x"), "Invalid Base Sepolia address format"
+    def burn(self, base_recipient: str, amount: int) -> bool:
+        sender = gl.message.sender_address
+        amt_u256 = u256(amount)
+        assert amt_u256 > u256(0), "Amount must be positive"
+        sender_bal = self.balances.get(sender, u256(0))
+        assert sender_bal >= amt_u256, "Insufficient balance"
+        self.balances[sender] = sender_bal - amt_u256
+        self.total_supply = self.total_supply - amt_u256
+        return True
 
-        caller_bal = self.balances.get(caller, 0)
-        assert caller_bal >= amount, "Insufficient pUSDC balance to burn"
-
-        self.balances[caller] = caller_bal - amount
-        self.total_supply -= amount
-
-        return f"BURN:{caller}:{base_recipient.lower()}:{amount}"
+    @gl.public.write
+    def transfer(self, recipient: str, amount: int) -> bool:
+        sender = gl.message.sender_address
+        amt_u256 = u256(amount)
+        sender_bal = self.balances.get(sender, u256(0))
+        assert sender_bal >= amt_u256, "Insufficient balance"
+        self.balances[sender] = sender_bal - amt_u256
+        rec_addr = Address(recipient)
+        rec_bal = self.balances.get(rec_addr, u256(0))
+        self.balances[rec_addr] = rec_bal + amt_u256
+        return True

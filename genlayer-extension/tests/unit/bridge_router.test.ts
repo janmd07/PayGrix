@@ -7,8 +7,8 @@ import { describe, it, expect } from "vitest";
 const BASE_SEPOLIA_CHAIN_ID = 84532;
 const FORBIDDEN_BASE_MAINNET_ID = 8453;
 const GENLAYER_BRADBURY_CHAIN_ID = 4221;
-const AUTHORIZED_ROUTER = "0xD9e1Cde11f6AF114e01726DA2cf007a27aB6314e".toLowerCase();
-const AUTHORIZED_MANAGER = "0xA314b6402477561d9a1650142724724F60f92534".toLowerCase();
+const AUTHORIZED_ROUTER = "0x05c69956564c556fc303Cb74C5505D0E1e8EDF2D".toLowerCase();
+const AUTHORIZED_MANAGER = "0x764e9e46e8595D80E7C2000e446CeF2B6848B2Ac".toLowerCase();
 
 function validateBridgeAmount(amountStr: string, walletBalance: number): { valid: boolean; rawAmount?: bigint; error?: string } {
   if (!amountStr || amountStr.trim() === "") {
