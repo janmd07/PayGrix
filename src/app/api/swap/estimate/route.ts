@@ -22,8 +22,6 @@ function isValidEvmAddress(address: string): boolean {
 }
 
 export async function GET(request: Request) {
-  const apiKey = process.env.STABLECOIN_KIT_API_KEY;
-
   const { searchParams } = new URL(request.url);
   const tokenInAddress = searchParams.get("tokenInAddress") || "";
   const tokenInChain = searchParams.get("tokenInChain") || "";
@@ -72,39 +70,7 @@ export async function GET(request: Request) {
     );
   }
 
-  // 1. Try Circle API if key is available
-  if (apiKey) {
-    const targetUrl = new URL("https://api.circle.com/v1/stablecoinKits/quote");
-    targetUrl.searchParams.set("tokenInAddress", tokenInAddress);
-    targetUrl.searchParams.set("tokenInChain", tokenInChain);
-    targetUrl.searchParams.set("tokenOutAddress", tokenOutAddress);
-    targetUrl.searchParams.set("tokenOutChain", tokenOutChain);
-    targetUrl.searchParams.set("fromAddress", fromAddress);
-    targetUrl.searchParams.set("toAddress", toAddress);
-    targetUrl.searchParams.set("amount", amount);
-    if (slippageBps) {
-      targetUrl.searchParams.set("slippageBps", slippageBps);
-    }
-
-    try {
-      const res = await fetch(targetUrl.toString(), {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        return NextResponse.json(data);
-      }
-    } catch {
-      // Fallthrough to on-chain DEX router quote fallback
-    }
-  }
-
-  // 2. Fallback: On-Chain DEX Router Quote on Arc Testnet (PayGrixArcRouter)
+  // On-Chain DEX Router Quote on Arc Testnet (PayGrixArcRouter)
   try {
     const rawAmountIn = BigInt(amount);
     const path = [tokenInAddress as `0x${string}`, tokenOutAddress as `0x${string}`];

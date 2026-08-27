@@ -349,7 +349,16 @@ export function useSwap() {
         setTxHash(swapTx);
 
         // Wait for on-chain receipt confirmation on Arc Testnet
-        await client.waitForTransactionReceipt({ hash: swapTx as `0x${string}` });
+        const receipt = await client.waitForTransactionReceipt({ hash: swapTx as `0x${string}` });
+        if (receipt.status === "reverted") {
+          throw new Error("On-chain swap transaction reverted.");
+        }
+
+        setStatus("completed");
+        return {
+          txHash: swapTx,
+          amountOut: (parseFloat(buildData.estimatedAmount) / Math.pow(10, decimalsOut)).toString(),
+        };
       } else {
         // Fallback: Circle SDK path for Circle relayer swaps
         interface InstructionItem {

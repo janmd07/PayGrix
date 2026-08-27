@@ -23,8 +23,6 @@ function isValidEvmAddress(address: string): boolean {
 }
 
 export async function POST(request: Request) {
-  const apiKey = process.env.STABLECOIN_KIT_API_KEY;
-
   let body: Record<string, unknown>;
   try {
     body = (await request.json()) as Record<string, unknown>;
@@ -79,37 +77,7 @@ export async function POST(request: Request) {
     );
   }
 
-  // 1. Try Circle API if key is set
-  if (apiKey) {
-    try {
-      const res = await fetch("https://api.circle.com/v1/stablecoinKits/swap", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          tokenInAddress,
-          tokenInChain,
-          tokenOutAddress,
-          tokenOutChain,
-          fromAddress,
-          toAddress,
-          amount,
-          slippageBps,
-        }),
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        return NextResponse.json(data);
-      }
-    } catch {
-      // Fallthrough to on-chain PayGrixArcRouter build
-    }
-  }
-
-  // 2. Fallback: On-Chain DEX Swap Execution Params for PayGrixArcRouter
+  // On-Chain DEX Swap Execution Params for PayGrixArcRouter on Arc Testnet
   try {
     const rawAmountIn = BigInt(amount);
     const path = [tokenInAddress as `0x${string}`, tokenOutAddress as `0x${string}`];

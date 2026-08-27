@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { arcPublicClient } from "@/lib/arc-client";
 
 const ARC_TESTNET_CHAIN = "Arc_Testnet";
 
@@ -7,8 +8,6 @@ function isValidTxHash(hash: string): boolean {
 }
 
 export async function GET(request: Request) {
-  const apiKey = process.env.STABLECOIN_KIT_API_KEY;
-
   const { searchParams } = new URL(request.url);
   const txHash = searchParams.get("txHash") || "";
   const chain = searchParams.get("chain") || "";
@@ -28,35 +27,22 @@ export async function GET(request: Request) {
     );
   }
 
-  const targetUrl = new URL("https://api.circle.com/v1/stablecoinKits/swap/status");
-  targetUrl.searchParams.set("txHash", txHash);
-  targetUrl.searchParams.set("chain", chain);
-
   try {
-    const reqHeaders: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-    if (apiKey) {
-      reqHeaders["Authorization"] = `Bearer ${apiKey}`;
-    }
-
-    const res = await fetch(targetUrl.toString(), {
-      method: "GET",
-      headers: reqHeaders,
+    const receipt = await arcPublicClient.getTransactionReceipt({
+      hash: txHash as `0x${string}`,
     });
 
-    if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      // Redact any raw error messages containing secrets or headers
-      const displayMsg = errorData?.message || "Error polling swap status from Circle.";
-      return NextResponse.json({ error: displayMsg }, { status: res.status });
+    if (!receipt) {
+      return NextResponse.json({ status: "PENDING" });
     }
 
-    const data = await res.json();
-    return NextResponse.json(data);
-  } catch (err) {
-    console.error("Error in swap status proxy:", err);
-    // Redact internal server logs/errors
-    return NextResponse.json({ error: "An unexpected server error occurred." }, { status: 500 });
+    if (receipt.status === "success") {
+      return NextResponse.json({ status: "DONE" });
+    } else {
+      return NextResponse.json({ status: "FAILED" });
+    }
+  } catch {
+    // Transaction not mined yet or pending
+    return NextResponse.json({ status: "PENDING" });
   }
 }
