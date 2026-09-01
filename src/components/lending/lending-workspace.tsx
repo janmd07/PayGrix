@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
 import { LendingOnChainData, PAYGRIX_LENDING_ADDRESS, USDC_ADDRESS, CIRBTC_ADDRESS } from "@/hooks/use-lending-data";
 import { clearArcReadCache } from "@/lib/arc-read-infra";
-import { useWriteContract, usePublicClient } from "wagmi";
+import { useWriteContract, usePublicClient, useAccount } from "wagmi";
 import { parseUnits, formatUnits } from "viem";
 
 const LENDING_WRITE_ABI = [
@@ -108,6 +108,7 @@ export function LendingWorkspace({
 
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient();
+  const { address: userAddress } = useAccount();
   const [isPending, setIsPending] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -175,13 +176,14 @@ export function LendingWorkspace({
       const amountRaw = parseUnits(borrowInput, 6);
 
       // Pre-flight simulation to verify contract will accept transaction
-      if (publicClient) {
+      if (publicClient && userAddress) {
         try {
           await publicClient.simulateContract({
             address: PAYGRIX_LENDING_ADDRESS,
             abi: LENDING_WRITE_ABI,
             functionName: "borrow",
             args: [amountRaw],
+            account: userAddress,
           });
         } catch (simErr: unknown) {
           console.error("Borrow pre-flight simulation error:", simErr);
@@ -277,13 +279,14 @@ export function LendingWorkspace({
       setStatusMsg("Validating withdrawal...");
       const amountRaw = parseUnits(withdrawInput, 8);
 
-      if (publicClient) {
+      if (publicClient && userAddress) {
         try {
           await publicClient.simulateContract({
             address: PAYGRIX_LENDING_ADDRESS,
             abi: LENDING_WRITE_ABI,
             functionName: "withdrawCollateral",
             args: [amountRaw],
+            account: userAddress,
           });
         } catch (simErr: unknown) {
           console.error("Withdraw simulation error:", simErr);
