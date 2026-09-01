@@ -41,6 +41,21 @@ const LENDING_WRITE_ABI = [
     stateMutability: "nonpayable",
     type: "function",
   },
+  { inputs: [], name: "ZeroAddress", type: "error" },
+  { inputs: [], name: "ZeroAmount", type: "error" },
+  { inputs: [], name: "InvalidRiskParameters", type: "error" },
+  { inputs: [], name: "InsufficientCollateral", type: "error" },
+  { inputs: [], name: "ExceedsMaxLtv", type: "error" },
+  { inputs: [], name: "InsufficientPoolLiquidity", type: "error" },
+  { inputs: [], name: "InsufficientDebt", type: "error" },
+  { inputs: [], name: "OverRepayment", type: "error" },
+  { inputs: [], name: "InsolventAdminWithdrawal", type: "error" },
+  { inputs: [], name: "InvalidOraclePrice", type: "error" },
+  { inputs: [], name: "OraclePriceStale", type: "error" },
+  { inputs: [], name: "OraclePriceOutOfBounds", type: "error" },
+  { inputs: [], name: "UnsafePosition", type: "error" },
+  { inputs: [], name: "PositionNotLiquidatable", type: "error" },
+  { inputs: [], name: "ExcessiveLiquidationAmount", type: "error" },
 ] as const;
 
 const ERC20_WRITE_ABI = [
@@ -55,6 +70,20 @@ const ERC20_WRITE_ABI = [
     type: "function",
   },
 ] as const;
+
+function parseContractError(err: unknown): string {
+  if (!err) return "Transaction failed. Please try again.";
+  const msg = err instanceof Error ? err.message : String(err);
+  if (msg.includes("OraclePriceStale")) return "Price oracle is temporarily stale. Please try again shortly.";
+  if (msg.includes("ExceedsMaxLtv")) return "Borrow amount exceeds maximum allowed LTV (50%).";
+  if (msg.includes("InsufficientPoolLiquidity")) return "Insufficient USDC pool liquidity available for borrow.";
+  if (msg.includes("InsufficientCollateral")) return "Insufficient collateral deposited for withdrawal.";
+  if (msg.includes("UnsafePosition")) return "Withdrawal would make position unsafe under liquidation threshold.";
+  if (msg.includes("InsufficientDebt")) return "No active debt to repay.";
+  if (msg.includes("OverRepayment")) return "Repayment amount exceeds active debt.";
+  if (msg.includes("user rejected") || msg.includes("User rejected") || msg.includes("rejected")) return "Transaction rejected by user.";
+  return "Transaction failed on-chain. Please verify parameters and try again.";
+}
 
 interface LendingWorkspaceProps {
   isConnected: boolean;
@@ -81,9 +110,16 @@ export function LendingWorkspace({
   const publicClient = usePublicClient();
   const [isPending, setIsPending] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  const handleTabChange = (tab: "supply" | "borrow" | "repay" | "withdraw") => {
+    setActiveTab(tab);
+    setActionError(null);
+  };
 
   const handleSupply = async () => {
     if (!supplyInput || parseFloat(supplyInput) <= 0) return;
+    setActionError(null);
     try {
       setIsPending(true);
       setStatusMsg("Approving cirBTC...");
@@ -124,6 +160,7 @@ export function LendingWorkspace({
       }
     } catch (err: unknown) {
       console.error("Supply error:", err);
+      setActionError(parseContractError(err));
     } finally {
       setIsPending(false);
     }
@@ -131,11 +168,30 @@ export function LendingWorkspace({
 
   const handleBorrow = async () => {
     if (!borrowInput || parseFloat(borrowInput) <= 0) return;
+    setActionError(null);
     try {
       setIsPending(true);
-      setStatusMsg("Borrowing USDC...");
+      setStatusMsg("Validating borrow parameters...");
       const amountRaw = parseUnits(borrowInput, 6);
 
+      // Pre-flight simulation to verify contract will accept transaction
+      if (publicClient) {
+        try {
+          await publicClient.simulateContract({
+            address: PAYGRIX_LENDING_ADDRESS,
+            abi: LENDING_WRITE_ABI,
+            functionName: "borrow",
+            args: [amountRaw],
+          });
+        } catch (simErr: unknown) {
+          console.error("Borrow pre-flight simulation error:", simErr);
+          setActionError(parseContractError(simErr));
+          setIsPending(false);
+          return;
+        }
+      }
+
+      setStatusMsg("Confirming borrow in wallet...");
       const txHash = await writeContractAsync({
         address: PAYGRIX_LENDING_ADDRESS,
         abi: LENDING_WRITE_ABI,
@@ -158,6 +214,7 @@ export function LendingWorkspace({
       }
     } catch (err: unknown) {
       console.error("Borrow error:", err);
+      setActionError(parseContractError(err));
     } finally {
       setIsPending(false);
     }
@@ -165,6 +222,7 @@ export function LendingWorkspace({
 
   const handleRepay = async () => {
     if (!repayInput || parseFloat(repayInput) <= 0) return;
+    setActionError(null);
     try {
       setIsPending(true);
       setStatusMsg("Approving USDC...");
@@ -205,6 +263,7 @@ export function LendingWorkspace({
       }
     } catch (err: unknown) {
       console.error("Repay error:", err);
+      setActionError(parseContractError(err));
     } finally {
       setIsPending(false);
     }
@@ -212,11 +271,29 @@ export function LendingWorkspace({
 
   const handleWithdraw = async () => {
     if (!withdrawInput || parseFloat(withdrawInput) <= 0) return;
+    setActionError(null);
     try {
       setIsPending(true);
-      setStatusMsg("Withdrawing cirBTC collateral...");
+      setStatusMsg("Validating withdrawal...");
       const amountRaw = parseUnits(withdrawInput, 8);
 
+      if (publicClient) {
+        try {
+          await publicClient.simulateContract({
+            address: PAYGRIX_LENDING_ADDRESS,
+            abi: LENDING_WRITE_ABI,
+            functionName: "withdrawCollateral",
+            args: [amountRaw],
+          });
+        } catch (simErr: unknown) {
+          console.error("Withdraw simulation error:", simErr);
+          setActionError(parseContractError(simErr));
+          setIsPending(false);
+          return;
+        }
+      }
+
+      setStatusMsg("Confirming withdrawal in wallet...");
       const txHash = await writeContractAsync({
         address: PAYGRIX_LENDING_ADDRESS,
         abi: LENDING_WRITE_ABI,
@@ -239,6 +316,7 @@ export function LendingWorkspace({
       }
     } catch (err: unknown) {
       console.error("Withdraw error:", err);
+      setActionError(parseContractError(err));
     } finally {
       setIsPending(false);
     }
@@ -295,7 +373,7 @@ export function LendingWorkspace({
         <div className="grid grid-cols-4 rounded-lg bg-[#070e1c]/80 p-1 border border-white/5">
           <button
             type="button"
-            onClick={() => setActiveTab("supply")}
+            onClick={() => handleTabChange("supply")}
             className={cn(
               "py-2 text-xs font-bold rounded-md transition-all duration-200 flex items-center justify-center gap-1 cursor-pointer",
               activeTab === "supply"
@@ -309,7 +387,7 @@ export function LendingWorkspace({
 
           <button
             type="button"
-            onClick={() => setActiveTab("borrow")}
+            onClick={() => handleTabChange("borrow")}
             className={cn(
               "py-2 text-xs font-bold rounded-md transition-all duration-200 flex items-center justify-center gap-1 cursor-pointer",
               activeTab === "borrow"
@@ -323,7 +401,7 @@ export function LendingWorkspace({
 
           <button
             type="button"
-            onClick={() => setActiveTab("repay")}
+            onClick={() => handleTabChange("repay")}
             className={cn(
               "py-2 text-xs font-bold rounded-md transition-all duration-200 flex items-center justify-center gap-1 cursor-pointer",
               activeTab === "repay"
@@ -337,7 +415,7 @@ export function LendingWorkspace({
 
           <button
             type="button"
-            onClick={() => setActiveTab("withdraw")}
+            onClick={() => handleTabChange("withdraw")}
             className={cn(
               "py-2 text-xs font-bold rounded-md transition-all duration-200 flex items-center justify-center gap-1 cursor-pointer",
               activeTab === "withdraw"
@@ -403,6 +481,14 @@ export function LendingWorkspace({
                 </div>
               </div>
             </div>
+
+            {/* Error notice */}
+            {actionError && activeTab === "supply" && (
+              <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-2.5 text-xs text-red-300 flex items-center gap-2 font-mono">
+                <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                <span>{actionError}</span>
+              </div>
+            )}
 
             {/* Info notice */}
             <div className="rounded-lg border border-white/5 bg-[#070e1c] p-2.5 text-xs text-slate-400 flex items-center gap-2">
@@ -508,10 +594,10 @@ export function LendingWorkspace({
             </div>
 
             {/* Validation error notice */}
-            {borrowError && (
+            {(borrowError || (actionError && activeTab === "borrow")) && (
               <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-2.5 text-xs text-red-300 flex items-center gap-2 font-mono">
                 <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
-                <span>{borrowError}</span>
+                <span>{borrowError || actionError}</span>
               </div>
             )}
 
@@ -596,6 +682,14 @@ export function LendingWorkspace({
               </div>
             </div>
 
+            {/* Error notice */}
+            {actionError && activeTab === "repay" && (
+              <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-2.5 text-xs text-red-300 flex items-center gap-2 font-mono">
+                <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                <span>{actionError}</span>
+              </div>
+            )}
+
             <div className="rounded-lg border border-white/5 bg-[#070e1c] p-2.5 text-xs text-slate-400 flex items-center gap-2">
               <Lock className="h-3.5 w-3.5 text-purple-400 shrink-0" />
               <span>
@@ -675,6 +769,14 @@ export function LendingWorkspace({
                 </div>
               </div>
             </div>
+
+            {/* Error notice */}
+            {actionError && activeTab === "withdraw" && (
+              <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-2.5 text-xs text-red-300 flex items-center gap-2 font-mono">
+                <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                <span>{actionError}</span>
+              </div>
+            )}
 
             <div className="rounded-lg border border-white/5 bg-[#070e1c] p-2.5 text-xs text-slate-400 flex items-center gap-2">
               <Lock className="h-3.5 w-3.5 text-purple-400 shrink-0" />
