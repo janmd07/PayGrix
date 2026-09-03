@@ -26,9 +26,11 @@ import { SwapBalanceCard } from "@/components/bridge/swap-balance-card";
 import { SwapHistory } from "@/components/bridge/swap-history";
 import { useTokenBalance } from "@/hooks/use-token-balance";
 import { SwapHistoryItem } from "@/hooks/use-swap";
+import { SupportedSwapChain } from "@/config/swap-config";
 
 export default function BridgePage() {
   const [activeTab, setActiveTab] = useState<"bridge" | "swap">("bridge");
+  const [selectedSwapNetwork, setSelectedSwapNetwork] = useState<SupportedSwapChain>("Arc");
   
   // Bridge-specific states and hooks
   const [sourceChain, setSourceChain] = useState<string>("Arc Testnet");
@@ -80,17 +82,17 @@ export default function BridgePage() {
     balance: swapUsdcBalance,
     isLoading: isLoadingUsdc,
     refreshBalance: refreshUsdc,
-  } = useTokenBalance("USDC", address);
+  } = useTokenBalance("USDC", address, selectedSwapNetwork);
   const {
     balance: swapEurcBalance,
     isLoading: isLoadingEurc,
     refreshBalance: refreshEurc,
-  } = useTokenBalance("EURC", address);
+  } = useTokenBalance("EURC", address, selectedSwapNetwork);
   const {
     balance: swapCirBtcBalance,
     isLoading: isLoadingCirBtc,
     refreshBalance: refreshCirBtc,
-  } = useTokenBalance("cirBTC", address);
+  } = useTokenBalance("cirBTC", address, selectedSwapNetwork);
 
   const handleRefreshSwapBalances = async () => {
     await Promise.all([refreshUsdc(), refreshEurc(), refreshCirBtc()]);
@@ -167,7 +169,8 @@ export default function BridgePage() {
     amountOut: string,
     tokenIn: "USDC" | "EURC" | "cirBTC",
     tokenOut: "USDC" | "EURC" | "cirBTC",
-    hash: string
+    hash: string,
+    network?: SupportedSwapChain
   ) => {
     const newSwap: SwapHistoryItem = {
       id: Math.random().toString(36).substring(2, 9),
@@ -177,6 +180,7 @@ export default function BridgePage() {
       amountOut,
       txHash: hash,
       timestamp: new Date().toLocaleString(),
+      network: network || selectedSwapNetwork,
     };
 
     const updated = [newSwap, ...swaps];
@@ -213,7 +217,7 @@ export default function BridgePage() {
       <PageHeader
         eyebrow="Liquidity & Bridge"
         title="Liquidity Management"
-        description="Bridge USDC tokens between networks or swap stablecoins locally on the Arc Testnet."
+        description="Bridge USDC tokens between networks or swap stablecoins locally on Arc Testnet and Base."
       />
 
       {/* Tab Switcher */}
@@ -238,7 +242,7 @@ export default function BridgePage() {
               : "text-slate-400 hover:text-white hover:bg-white/5"
           )}
         >
-          Swap on Arc
+          Swap
         </button>
       </div>
 
@@ -268,6 +272,8 @@ export default function BridgePage() {
               balanceEURC={swapEurcBalance}
               balanceCirBTC={swapCirBtcBalance}
               isLoadingBalance={isLoadingUsdc || isLoadingEurc || isLoadingCirBtc}
+              selectedNetwork={selectedSwapNetwork}
+              onNetworkChange={setSelectedSwapNetwork}
               onSwapSuccess={handleSwapSuccess}
             />
           )}
@@ -347,6 +353,7 @@ export default function BridgePage() {
                 cirbtcBalance={swapCirBtcBalance}
                 isLoading={isLoadingUsdc || isLoadingEurc || isLoadingCirBtc}
                 onRefresh={handleRefreshSwapBalances}
+                network={selectedSwapNetwork}
               />
 
               <Card className="border border-white/10 bg-[#060f24]/50 backdrop-blur-md">

@@ -4,6 +4,7 @@ import { History, ExternalLink } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SwapHistoryItem } from "@/hooks/use-swap";
+import { cn } from "@/lib/utils";
 
 interface SwapHistoryProps {
   swaps: SwapHistoryItem[];
@@ -31,14 +32,14 @@ export function SwapHistory({ swaps }: SwapHistoryProps) {
             </div>
             <h4 className="text-sm font-semibold text-white">No swap transactions yet</h4>
             <p className="mt-1 text-xs text-slate-400 max-w-xs leading-5">
-              Your swap transactions will appear here once executed on Arc Testnet.
+              Your swap transactions will appear here once executed on Arc Testnet or Base.
             </p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <div className="min-w-[600px] p-4 space-y-2">
-              {/* Header */}
-              <div className="grid grid-cols-[1.5fr_1.5fr_1.5fr_1.5fr] px-4 mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <div className="grid grid-cols-[1fr_1.5fr_1.5fr_1.5fr_1.2fr] px-4 mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <span>Chain</span>
                 <span>From (Swapped)</span>
                 <span>To (Received)</span>
                 <span>Transaction Hash</span>
@@ -46,56 +47,74 @@ export function SwapHistory({ swaps }: SwapHistoryProps) {
               </div>
 
               {/* Rows */}
-              {swaps.map((tx) => (
-                <div
-                  key={tx.id}
-                  className="grid grid-cols-[1.5fr_1.5fr_1.5fr_1.5fr] items-center border border-white/5 px-4 py-3 text-xs text-white hover:bg-white/[0.02] rounded-xl transition-all"
-                >
-                  <div className="font-semibold text-white">
-                    {parseFloat(tx.amountIn).toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 6,
-                    })}{" "}
-                    <span className={
-                      tx.tokenIn === "USDC" ? "text-[#4f8cff]" :
-                      tx.tokenIn === "EURC" ? "text-purple-400" :
-                      "text-amber-500"
-                    }>
-                      {tx.tokenIn}
-                    </span>
-                  </div>
+              {swaps.map((tx) => {
+                const isBaseTx = tx.network === "Base";
+                const explorerUrl = isBaseTx
+                  ? `https://basescan.org/tx/${tx.txHash}`
+                  : `https://testnet.arcscan.app/tx/${tx.txHash}`;
 
-                  <div className="font-semibold text-white">
-                    {parseFloat(tx.amountOut).toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 6,
-                    })}{" "}
-                    <span className={
-                      tx.tokenOut === "USDC" ? "text-[#4f8cff]" :
-                      tx.tokenOut === "EURC" ? "text-purple-400" :
-                      "text-amber-500"
-                    }>
-                      {tx.tokenOut}
-                    </span>
-                  </div>
+                return (
+                  <div
+                    key={tx.id}
+                    className="grid grid-cols-[1fr_1.5fr_1.5fr_1.5fr_1.2fr] items-center border border-white/5 px-4 py-3 text-xs text-white hover:bg-white/[0.02] rounded-xl transition-all"
+                  >
+                    <div>
+                      <span className={cn(
+                        "text-[10px] font-semibold px-2 py-0.5 rounded-full border",
+                        isBaseTx
+                          ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                          : "bg-purple-500/10 text-purple-400 border-purple-500/20"
+                      )}>
+                        {tx.network || "Arc"}
+                      </span>
+                    </div>
 
-                  <div>
-                    {tx.txHash && (
-                      <a
-                        href={`https://testnet.arcscan.app/tx/${tx.txHash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-purple-400 hover:text-white flex items-center gap-1 transition-all font-mono"
-                      >
-                        {tx.txHash.slice(0, 10)}...{tx.txHash.slice(-8)}{" "}
-                        <ExternalLink className="h-3 w-3 shrink-0" />
-                      </a>
-                    )}
-                  </div>
+                    <div className="font-semibold text-white">
+                      {parseFloat(tx.amountIn).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 6,
+                      })}{" "}
+                      <span className={
+                        tx.tokenIn === "USDC" ? "text-[#4f8cff]" :
+                        tx.tokenIn === "EURC" ? "text-purple-400" :
+                        "text-amber-500"
+                      }>
+                        {tx.tokenIn}
+                      </span>
+                    </div>
 
-                  <div className="text-slate-400">{tx.timestamp}</div>
-                </div>
-              ))}
+                    <div className="font-semibold text-white">
+                      {parseFloat(tx.amountOut).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 6,
+                      })}{" "}
+                      <span className={
+                        tx.tokenOut === "USDC" ? "text-[#4f8cff]" :
+                        tx.tokenOut === "EURC" ? "text-purple-400" :
+                        "text-amber-500"
+                      }>
+                        {tx.tokenOut}
+                      </span>
+                    </div>
+
+                    <div>
+                      {tx.txHash && (
+                        <a
+                          href={explorerUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-purple-400 hover:text-white flex items-center gap-1 transition-all font-mono"
+                        >
+                          {tx.txHash.slice(0, 8)}...{tx.txHash.slice(-6)}{" "}
+                          <ExternalLink className="h-3 w-3 shrink-0" />
+                        </a>
+                      )}
+                    </div>
+
+                    <div className="text-slate-400">{tx.timestamp}</div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -103,3 +122,4 @@ export function SwapHistory({ swaps }: SwapHistoryProps) {
     </Card>
   );
 }
+

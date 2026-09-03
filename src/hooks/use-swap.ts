@@ -4,9 +4,11 @@ import { useState, useCallback } from "react";
 import { useAccount } from "wagmi";
 import { createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2";
 import { ArcTestnet } from "@circle-fin/app-kit/chains";
-import { EIP1193Provider, erc20Abi, parseUnits, createPublicClient, http } from "viem";
+import { EIP1193Provider, erc20Abi, parseUnits, createPublicClient, http, encodeFunctionData } from "viem";
 import { arcPublicClient, clearBalanceCache } from "@/lib/arc-client";
+import { basePublicClient, clearBaseBalanceCache } from "@/lib/base-client";
 import { sanitizeExecutionError } from "@/lib/arc-read-infra";
+import { SWAP_CHAINS, SupportedSwapChain } from "@/config/swap-config";
 
 export type SwapStatus =
   | "idle"
@@ -25,15 +27,10 @@ export interface SwapHistoryItem {
   amountOut: string;
   txHash: string;
   timestamp: string;
+  network?: SupportedSwapChain;
 }
 
-const TOKEN_ADDRESSES = {
-  USDC: "0x3600000000000000000000000000000000000000" as const,
-  EURC: "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a" as const,
-  cirBTC: "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF" as const,
-};
-
-export function useSwap() {
+export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
   const [status, setStatus] = useState<SwapStatus>("idle");
   const [estimate, setEstimate] = useState<{
     estimatedOutput: string;
@@ -49,7 +46,12 @@ export function useSwap() {
 
   const { address, connector, isConnected } = useAccount();
 
-  const getSwapEstimate = useCallback(async (amountIn: string, tokenIn: "USDC" | "EURC" | "cirBTC", tokenOut: "USDC" | "EURC" | "cirBTC") => {
+  const getSwapEstimate = useCallback(async (
+    amountIn: string,
+    tokenIn: "USDC" | "EURC" | "cirBTC",
+    tokenOut: "USDC" | "EURC" | "cirBTC",
+    networkOverride?: SupportedSwapChain
+  ) => {
     if (!amountIn || parseFloat(amountIn) <= 0) return null;
     setError(null);
     setEstimate(null);
@@ -61,19 +63,29 @@ export function useSwap() {
       return null;
     }
 
+    const network = networkOverride || selectedNetwork;
+    const chainConfig = SWAP_CHAINS[network];
+
     try {
-      const tokenInAddress = TOKEN_ADDRESSES[tokenIn];
-      const tokenOutAddress = TOKEN_ADDRESSES[tokenOut];
-      const decimalsIn = tokenIn === "cirBTC" ? 8 : 6;
-      const decimalsOut = tokenOut === "cirBTC" ? 8 : 6;
+      const tokenInConfig = chainConfig.tokens[tokenIn];
+      const tokenOutConfig = chainConfig.tokens[tokenOut];
+
+      if (!tokenInConfig || !tokenOutConfig) {
+        throw new Error(`Token pair ${tokenIn} -> ${tokenOut} not supported on ${network}`);
+      }
+
+      const tokenInAddress = tokenInConfig.address;
+      const tokenOutAddress = tokenOutConfig.address;
+      const decimalsIn = tokenInConfig.decimals;
+      const decimalsOut = tokenOutConfig.decimals;
       const rawAmount = parseUnits(amountIn, decimalsIn).toString();
 
       // Query server-side proxy endpoint
       const queryParams = new URLSearchParams({
         tokenInAddress,
-        tokenInChain: "Arc_Testnet",
+        tokenInChain: chainConfig.chainKey,
         tokenOutAddress,
-        tokenOutChain: "Arc_Testnet",
+        tokenOutChain: chainConfig.chainKey,
         fromAddress: address,
         toAddress: address,
         amount: rawAmount,
@@ -91,7 +103,6 @@ export function useSwap() {
       const estOutputStr = (parseFloat(data.quote.estimatedAmount) / Math.pow(10, decimalsOut)).toString();
       const minOutputStr = (parseFloat(data.quote.minAmount) / Math.pow(10, decimalsOut)).toString();
 
-      // Transform raw service fees response
       interface FeeItem {
         token: string;
         amount: string | null;
@@ -120,9 +131,14 @@ export function useSwap() {
       setStatus("failed");
       return null;
     }
-  }, [address, connector, isConnected]);
+  }, [address, connector, isConnected, selectedNetwork]);
 
-  const executeSwap = useCallback(async (amountIn: string, tokenIn: "USDC" | "EURC" | "cirBTC", tokenOut: "USDC" | "EURC" | "cirBTC") => {
+  const executeSwap = useCallback(async (
+    amountIn: string,
+    tokenIn: "USDC" | "EURC" | "cirBTC",
+    tokenOut: "USDC" | "EURC" | "cirBTC",
+    networkOverride?: SupportedSwapChain
+  ) => {
     if (!amountIn || parseFloat(amountIn) <= 0) return null;
     setError(null);
     setTxHash("");
@@ -134,103 +150,185 @@ export function useSwap() {
       return null;
     }
 
-    // Spender address: PayGrixArcRouter on Arc Testnet
-    const adapterAddress = "0xB2A97BAABaB64B389948bebB58D639a654ABac89" as const;
-    if (!adapterAddress) {
-      setError("Adapter contract address configuration is missing on Arc Testnet.");
-      setStatus("failed");
-      return null;
-    }
+    const network = networkOverride || selectedNetwork;
+    const chainConfig = SWAP_CHAINS[network];
 
     try {
-      const tokenInAddress = TOKEN_ADDRESSES[tokenIn];
-      const tokenOutAddress = TOKEN_ADDRESSES[tokenOut];
-      const decimalsIn = tokenIn === "cirBTC" ? 8 : 6;
-      const decimalsOut = tokenOut === "cirBTC" ? 8 : 6;
+      const tokenInConfig = chainConfig.tokens[tokenIn];
+      const tokenOutConfig = chainConfig.tokens[tokenOut];
+      if (!tokenInConfig || !tokenOutConfig) {
+        throw new Error(`Token pair ${tokenIn} -> ${tokenOut} not supported on ${network}`);
+      }
+
+      const tokenInAddress = tokenInConfig.address;
+      const tokenOutAddress = tokenOutConfig.address;
+      const decimalsIn = tokenInConfig.decimals;
+      const decimalsOut = tokenOutConfig.decimals;
       const rawAmount = parseUnits(amountIn, decimalsIn);
 
       const provider = (await connector.getProvider()) as EIP1193Provider;
 
-      // Safe diagnostic logging & pre-execution network verification
       let providerChainId: number | null = null;
-
-      console.log('[SWAP DIAGNOSTIC] provider.request START method="eth_chainId"', {
-        stage: "provider-request-eth_chainId-start",
-      });
       try {
         const hexChainId = (await provider.request({ method: "eth_chainId" })) as string;
         providerChainId = parseInt(hexChainId, 16);
-        console.log('[SWAP DIAGNOSTIC] provider.request SUCCESS method="eth_chainId"', {
-          stage: "provider-request-eth_chainId-success",
-          chainId: providerChainId,
-        });
       } catch (err) {
-        const errObj = err as { name?: string; message?: string; code?: number; cause?: unknown };
-        console.error('[SWAP DIAGNOSTIC] provider.request ERROR method="eth_chainId"', {
-          stage: "provider-request-eth_chainId-error",
-          errorName: errObj.name || "ProviderError",
-          errorMessage: errObj.message || String(err),
-          errorCode: errObj.code,
-          sanitizedCause: errObj.cause ? (typeof errObj.cause === "object" ? JSON.stringify(errObj.cause) : String(errObj.cause)) : undefined,
-        });
+        console.error("[SWAP] Failed to read provider chain ID:", err);
       }
 
-      console.log("[SWAP DIAGNOSTIC] Pre-execution info:", {
-        walletAddress: address,
-        connectorName: connector.name,
-        providerChainId,
-        arcAdapterAddress: adapterAddress,
-        stage: "verifying-network",
-      });
+      // ==========================================
+      // BRANCH 1: BASE MAINNET SWAP
+      // ==========================================
+      if (network === "Base") {
+        const targetChainId = chainConfig.id; // 8453
+        const routerAddress = chainConfig.routerAddress; // SwapRouter02
+
+        // Switch wallet to Base if needed
+        if (providerChainId !== targetChainId) {
+          try {
+            await provider.request({
+              method: "wallet_switchEthereumChain",
+              params: [{ chainId: "0x2105" }],
+            });
+          } catch (switchErr: unknown) {
+            const errObj = switchErr as { code?: number; message?: string };
+            if (errObj.code === 4902 || errObj.message?.includes("Unrecognized chain")) {
+              await provider.request({
+                method: "wallet_addEthereumChain",
+                params: [
+                  {
+                    chainId: "0x2105",
+                    chainName: "Base",
+                    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+                    rpcUrls: ["https://mainnet.base.org"],
+                    blockExplorerUrls: ["https://basescan.org"],
+                  },
+                ],
+              });
+            } else {
+              throw switchErr;
+            }
+          }
+        }
+
+        // Step 1: Check Allowance & Approve for SwapRouter02 if necessary
+        setStatus("approving");
+        const currentAllowance = await basePublicClient.readContract({
+          address: tokenInAddress,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [address, routerAddress],
+        });
+
+        if (currentAllowance < rawAmount) {
+          console.log("[SWAP BASE] Requesting token approval for SwapRouter02...");
+          const approveData = encodeFunctionData({
+            abi: erc20Abi,
+            functionName: "approve",
+            args: [routerAddress, rawAmount],
+          });
+
+          const approveTx = (await provider.request({
+            method: "eth_sendTransaction",
+            params: [
+              {
+                from: address,
+                to: tokenInAddress,
+                data: approveData,
+                value: "0x0",
+              },
+            ],
+          })) as string;
+
+          console.log("[SWAP BASE] Approval submitted:", approveTx);
+          await basePublicClient.waitForTransactionReceipt({ hash: approveTx as `0x${string}` });
+        }
+
+        // Step 2: Build transaction parameters from server route
+        setStatus("waiting-wallet");
+        const buildRes = await fetch("/api/swap/build", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tokenInAddress,
+            tokenInChain: "Base",
+            tokenOutAddress,
+            tokenOutChain: "Base",
+            fromAddress: address,
+            toAddress: address,
+            amount: rawAmount.toString(),
+            slippageBps: 100, // 1%
+          }),
+        });
+
+        const buildData = await buildRes.json();
+        if (!buildRes.ok) {
+          throw new Error(buildData.error || "Failed to build transaction parameters for Base.");
+        }
+
+        const targetAddress = buildData?.transaction?.to || routerAddress;
+        const swapCalldata = buildData?.transaction?.data;
+
+        if (!swapCalldata) {
+          throw new Error("Invalid transaction payload received from server for Base swap.");
+        }
+
+        // Step 3: Execute Swap
+        setStatus("swapping");
+        console.log("[SWAP BASE] Executing swap on SwapRouter02:", { to: targetAddress, from: address });
+        const txHashResult = (await provider.request({
+          method: "eth_sendTransaction",
+          params: [
+            {
+              from: address,
+              to: targetAddress,
+              data: swapCalldata,
+              value: "0x0",
+            },
+          ],
+        })) as string;
+
+        setTxHash(txHashResult);
+
+        // Step 4: Await Receipt
+        const receipt = await basePublicClient.waitForTransactionReceipt({ hash: txHashResult as `0x${string}` });
+        if (receipt.status === "reverted") {
+          throw new Error("Swap transaction reverted on Base.");
+        }
+
+        setStatus("completed");
+        return {
+          txHash: txHashResult,
+          amountOut: (parseFloat(buildData.estimatedAmount) / Math.pow(10, decimalsOut)).toString(),
+        };
+      }
+
+      // ==========================================
+      // BRANCH 2: ARC TESTNET SWAP (ORIGINAL LOGIC PRESERVED)
+      // ==========================================
+      const adapterAddress = chainConfig.routerAddress; // PayGrixArcRouter (0xB2A97BAABaB64B389948bebB58D639a654ABac89)
 
       // Ensure connected wallet provider is on Arc Testnet (5042002)
       if (providerChainId !== 5042002) {
-        console.log('[SWAP DIAGNOSTIC] provider.request START method="wallet_switchEthereumChain"', {
-          stage: "provider-request-wallet_switchEthereumChain-start",
-          chainId: providerChainId,
-        });
         try {
           await provider.request({
             method: "wallet_switchEthereumChain",
             params: [{ chainId: "0x4cef52" }],
           });
-          console.log('[SWAP DIAGNOSTIC] provider.request SUCCESS method="wallet_switchEthereumChain"', {
-            stage: "provider-request-wallet_switchEthereumChain-success",
-            chainId: 5042002,
-          });
         } catch (switchErr: unknown) {
-          const errObj = switchErr as { code?: number; message?: string; name?: string; cause?: unknown };
-          console.error('[SWAP DIAGNOSTIC] provider.request ERROR method="wallet_switchEthereumChain"', {
-            stage: "provider-request-wallet_switchEthereumChain-error",
-            chainId: providerChainId,
-            errorName: errObj.name || "SwitchChainError",
-            errorMessage: errObj.message || String(switchErr),
-            errorCode: errObj.code,
-            sanitizedCause: errObj.cause ? (typeof errObj.cause === "object" ? JSON.stringify(errObj.cause) : String(errObj.cause)) : undefined,
-          });
-
+          const errObj = switchErr as { code?: number; message?: string };
           if (errObj.code === 4902 || errObj.message?.includes("Unrecognized chain")) {
-            console.log('[SWAP DIAGNOSTIC] provider.request START method="wallet_addEthereumChain"', {
-              stage: "provider-request-wallet_addEthereumChain-start",
-            });
             await provider.request({
               method: "wallet_addEthereumChain",
               params: [
                 {
                   chainId: "0x4cef52",
                   chainName: "Arc Testnet",
-                  nativeCurrency: {
-                    name: "Arc Testnet Ether",
-                    symbol: "ETH",
-                    decimals: 18,
-                  },
+                  nativeCurrency: { name: "Arc Testnet Ether", symbol: "ETH", decimals: 18 },
                   rpcUrls: ["https://rpc.testnet.arc.network"],
                   blockExplorerUrls: ["https://testnet.arcscan.app"],
                 },
               ],
-            });
-            console.log('[SWAP DIAGNOSTIC] provider.request SUCCESS method="wallet_addEthereumChain"', {
-              stage: "provider-request-wallet_addEthereumChain-success",
             });
           } else {
             throw switchErr;
@@ -238,7 +336,6 @@ export function useSwap() {
         }
       }
 
-      console.log("[SWAP DIAGNOSTIC] Creating Viem adapter from provider...");
       const adapter = await createViemAdapterFromProvider({
         provider,
         getPublicClient: ({ chain }) => {
@@ -254,7 +351,6 @@ export function useSwap() {
 
       // Step 1: Check Allowance & Approve if necessary
       setStatus("approving");
-      console.log("[SWAP DIAGNOSTIC] Stage: checking allowance");
       const client = arcPublicClient;
 
       const currentAllowance = await client.readContract({
@@ -265,7 +361,6 @@ export function useSwap() {
       });
 
       if (currentAllowance < rawAmount) {
-        console.log("[SWAP DIAGNOSTIC] Stage: preparing token approval");
         const preparedApprove = await adapter.prepareAction(
           "token.approve",
           {
@@ -275,17 +370,12 @@ export function useSwap() {
           },
           { chain: ArcTestnet }
         );
-        console.log("[SWAP DIAGNOSTIC] Stage: executing token approval");
         const approveTx = await preparedApprove.execute();
-        console.log("[SWAP DIAGNOSTIC] Token approval submitted:", approveTx);
-
-        // Wait for approval confirmation with Arc Testnet public client
         await client.waitForTransactionReceipt({ hash: approveTx as `0x${string}` });
       }
 
       // Step 2: Build transaction details from server proxy
       setStatus("waiting-wallet");
-      console.log("[SWAP DIAGNOSTIC] Stage: building swap transaction parameters");
       const buildRes = await fetch("/api/swap/build", {
         method: "POST",
         headers: {
@@ -310,16 +400,11 @@ export function useSwap() {
 
       const rawExecParams = buildData?.transaction?.executionParams || buildData?.transaction?.executeParams;
       if (!rawExecParams || !buildData?.transaction?.signature) {
-        console.error("[SWAP DIAGNOSTIC] Build API returned invalid response shape:", {
-          stage: "build-response-validation",
-          keys: buildData?.transaction ? Object.keys(buildData.transaction) : [],
-        });
         throw new Error("Invalid build response structure received from server proxy.");
       }
 
       // Step 3: Parse and execute swap action
       setStatus("swapping");
-      console.log("[SWAP DIAGNOSTIC] Stage: preparing swap action");
 
       const targetAddress = buildData?.transaction?.to || buildData?.transaction?.routerAddress || adapterAddress;
       const swapCalldata = buildData?.transaction?.data || buildData?.transaction?.executionParams?.instructions?.[0]?.data;
@@ -328,11 +413,6 @@ export function useSwap() {
       let swapTx: string;
 
       if (isDirectRouterSwap && swapCalldata) {
-        console.log("[SWAP DIAGNOSTIC] Executing direct EVM swap transaction on PayGrixArcRouter:", {
-          to: targetAddress,
-          from: address,
-        });
-
         const txHashResult = (await provider.request({
           method: "eth_sendTransaction",
           params: [
@@ -392,43 +472,30 @@ export function useSwap() {
 
         const tokenInputs = [
           {
-            permitType: 0, // PermitType.NONE
+            permitType: 0,
             token: tokenInAddress as `0x${string}`,
             amount: inputAmount,
             permitCalldata: "0x" as `0x${string}`,
           },
         ];
 
-        console.log("[SWAP DIAGNOSTIC] Stage: adapter.prepareAction('swap.execute') - START", {
-          stage: "prepareAction-swap.execute-start",
-          chainId: providerChainId,
-          adapterAddress,
-        });
-
-        let preparedSwap;
-        try {
-          preparedSwap = await adapter.prepareAction(
-            "swap.execute",
-            {
-              executeParams,
-              tokenInputs,
-              signature,
-              inputAmount,
-              tokenInAddress,
-            },
-            { chain: ArcTestnet }
-          );
-        } catch (prepErr: unknown) {
-          console.error("[SWAP DIAGNOSTIC] Stage: adapter.prepareAction('swap.execute') - ERROR", prepErr);
-          throw prepErr;
-        }
+        const preparedSwap = await adapter.prepareAction(
+          "swap.execute",
+          {
+            executeParams,
+            tokenInputs,
+            signature,
+            inputAmount,
+            tokenInAddress,
+          },
+          { chain: ArcTestnet }
+        );
 
         swapTx = (await preparedSwap.execute()) as string;
         setTxHash(swapTx);
       }
 
       // Step 4: Poll status proxy route until completed
-      console.log("[SWAP DIAGNOSTIC] Stage: polling swap status");
       let isDone = false;
       const startTime = Date.now();
       const timeout = 60000; // 60s
@@ -460,26 +527,16 @@ export function useSwap() {
         amountOut: (parseFloat(buildData.estimatedAmount) / Math.pow(10, decimalsOut)).toString(),
       };
     } catch (err) {
-      const sanitizedError = {
-        name: err instanceof Error ? err.name : "UnknownError",
-        message: err instanceof Error ? err.message : String(err),
-        cause: err instanceof Error && err.cause ? (typeof err.cause === "object" ? JSON.stringify(err.cause) : String(err.cause)) : undefined,
-      };
-
-      console.error("[SWAP DIAGNOSTIC] Execute swap error details:", {
-        walletAddress: address,
-        connectorName: connector?.name,
-        arcAdapterAddress: ArcTestnet.kitContracts?.adapter,
-        error: sanitizedError,
-      });
-
+      console.error("[SWAP] Execute swap error details:", err);
       setError(sanitizeExecutionError(err));
       setStatus("failed");
       return null;
     } finally {
       clearBalanceCache();
+      clearBaseBalanceCache();
     }
-  }, [address, connector, isConnected]);
+  }, [address, connector, isConnected, selectedNetwork]);
+
 
   const resetSwapState = useCallback(() => {
     setStatus("idle");

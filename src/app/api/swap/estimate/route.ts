@@ -1,18 +1,32 @@
 import { NextResponse } from "next/server";
 import { createPublicClient, http, parseAbi } from "viem";
 import { arcTestnet } from "@/config/arc-testnet";
+import { SWAP_CHAINS } from "@/config/swap-config";
+import { basePublicClient } from "@/lib/base-client";
 
-const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
-const EURC_ADDRESS = "0x89b50855aa3be2f677cd6303cec089b5f319d72a";
-const CIRBTC_ADDRESS = "0xf0c4a4ce82a5746abaad9425360ab04fbba432bf";
+// Arc Testnet Configuration
+const ARC_USDC_ADDRESS = SWAP_CHAINS.Arc.tokens.USDC.address.toLowerCase();
+const ARC_EURC_ADDRESS = SWAP_CHAINS.Arc.tokens.EURC.address.toLowerCase();
+const ARC_CIRBTC_ADDRESS = SWAP_CHAINS.Arc.tokens.cirBTC.address.toLowerCase();
 const ARC_TESTNET_CHAIN = "Arc_Testnet";
-const ROUTER_ADDRESS = "0xB2A97BAABaB64B389948bebB58D639a654ABac89" as const;
+const ARC_ROUTER_ADDRESS = SWAP_CHAINS.Arc.routerAddress;
 
-const routerAbi = parseAbi([
+// Base Mainnet Configuration
+const BASE_USDC_ADDRESS = SWAP_CHAINS.Base.tokens.USDC.address.toLowerCase();
+const BASE_EURC_ADDRESS = SWAP_CHAINS.Base.tokens.EURC.address.toLowerCase();
+const BASE_CHAIN = "Base";
+const BASE_QUOTER_ADDRESS = SWAP_CHAINS.Base.quoterAddress!;
+const BASE_POOL_FEE = SWAP_CHAINS.Base.feeTier || 500;
+
+const arcRouterAbi = parseAbi([
   "function getAmountsOut(uint256 amountIn, address[] memory path) public view returns (uint256[] memory amounts)",
 ]);
 
-const publicClient = createPublicClient({
+const baseQuoterAbi = parseAbi([
+  "function quoteExactInputSingle((address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96)) external returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)",
+]);
+
+const arcPublicClient = createPublicClient({
   chain: arcTestnet,
   transport: http("https://rpc.testnet.arc.network"),
 });
@@ -36,22 +50,9 @@ export async function GET(request: Request) {
   const tokenInLower = tokenInAddress.toLowerCase();
   const tokenOutLower = tokenOutAddress.toLowerCase();
 
-  const SUPPORTED_TOKENS = [USDC_ADDRESS, EURC_ADDRESS, CIRBTC_ADDRESS];
-  const isSupportedPair =
-    SUPPORTED_TOKENS.includes(tokenInLower) &&
-    SUPPORTED_TOKENS.includes(tokenOutLower) &&
-    tokenInLower !== tokenOutLower;
-
-  if (!isSupportedPair) {
+  if (tokenInLower === tokenOutLower) {
     return NextResponse.json(
-      { error: "Unsupported token pair. Only USDC, EURC, and cirBTC swaps are supported." },
-      { status: 400 }
-    );
-  }
-
-  if (tokenInChain !== ARC_TESTNET_CHAIN || tokenOutChain !== ARC_TESTNET_CHAIN) {
-    return NextResponse.json(
-      { error: "Unsupported chain. Only Arc Testnet is supported." },
+      { error: "Input and output tokens must be different." },
       { status: 400 }
     );
   }
@@ -70,40 +71,116 @@ export async function GET(request: Request) {
     );
   }
 
-  // On-Chain DEX Router Quote on Arc Testnet (PayGrixArcRouter)
-  try {
-    const rawAmountIn = BigInt(amount);
-    const path = [tokenInAddress as `0x${string}`, tokenOutAddress as `0x${string}`];
+  // ROUTE 1: BASE MAINNET (Uniswap v3 QuoterV2)
+  if (tokenInChain === BASE_CHAIN && tokenOutChain === BASE_CHAIN) {
+    const isBaseSupportedPair =
+      (tokenInLower === BASE_USDC_ADDRESS && tokenOutLower === BASE_EURC_ADDRESS) ||
+      (tokenInLower === BASE_EURC_ADDRESS && tokenOutLower === BASE_USDC_ADDRESS);
 
-    const amounts = await publicClient.readContract({
-      address: ROUTER_ADDRESS,
-      abi: routerAbi,
-      functionName: "getAmountsOut",
-      args: [rawAmountIn, path],
-    });
+    if (!isBaseSupportedPair) {
+      return NextResponse.json(
+        { error: "Unsupported token pair on Base. Supported pair is USDC <-> EURC." },
+        { status: 400 }
+      );
+    }
 
-    const estOut = amounts[amounts.length - 1];
-    const slipBps = BigInt(slippageBps);
-    const minOut = (estOut * (BigInt(10000) - slipBps)) / BigInt(10000);
+    try {
+      const rawAmountIn = BigInt(amount);
+      const res = await basePublicClient.simulateContract({
+        address: BASE_QUOTER_ADDRESS,
+        abi: baseQuoterAbi,
+        functionName: "quoteExactInputSingle",
+        args: [
+          {
+            tokenIn: tokenInAddress as `0x${string}`,
+            tokenOut: tokenOutAddress as `0x${string}`,
+            amountIn: rawAmountIn,
+            fee: BASE_POOL_FEE,
+            sqrtPriceLimitX96: BigInt(0),
+          },
+        ],
+      });
 
-    return NextResponse.json({
-      quote: {
-        estimatedAmount: estOut.toString(),
-        minAmount: minOut.toString(),
-      },
-      fees: [
-        {
-          token: "USDC",
-          amount: "0.00",
-          type: "swap",
+      const estOut = res.result[0];
+      const slipBps = BigInt(slippageBps);
+      const minOut = (estOut * (BigInt(10000) - slipBps)) / BigInt(10000);
+
+      return NextResponse.json({
+        quote: {
+          estimatedAmount: estOut.toString(),
+          minAmount: minOut.toString(),
         },
-      ],
-    });
-  } catch (err) {
-    console.error("Error fetching on-chain DEX quote from PayGrixArcRouter:", err);
-    return NextResponse.json(
-      { error: "No route available for selected pair and amount on Arc Testnet." },
-      { status: 404 }
-    );
+        fees: [
+          {
+            token: "USDC",
+            amount: "0.00",
+            type: "swap",
+          },
+        ],
+      });
+    } catch (err) {
+      console.error("Error fetching on-chain DEX quote from Uniswap v3 QuoterV2 on Base:", err);
+      return NextResponse.json(
+        { error: "No route or insufficient liquidity for selected pair and amount on Base." },
+        { status: 404 }
+      );
+    }
   }
+
+  // ROUTE 2: ARC TESTNET (PayGrixArcRouter)
+  if (tokenInChain === ARC_TESTNET_CHAIN && tokenOutChain === ARC_TESTNET_CHAIN) {
+    const ARC_SUPPORTED_TOKENS = [ARC_USDC_ADDRESS, ARC_EURC_ADDRESS, ARC_CIRBTC_ADDRESS];
+    const isArcSupportedPair =
+      ARC_SUPPORTED_TOKENS.includes(tokenInLower) &&
+      ARC_SUPPORTED_TOKENS.includes(tokenOutLower);
+
+    if (!isArcSupportedPair) {
+      return NextResponse.json(
+        { error: "Unsupported token pair. Only USDC, EURC, and cirBTC swaps are supported on Arc Testnet." },
+        { status: 400 }
+      );
+    }
+
+    try {
+      const rawAmountIn = BigInt(amount);
+      const path = [tokenInAddress as `0x${string}`, tokenOutAddress as `0x${string}`];
+
+      const amounts = await arcPublicClient.readContract({
+        address: ARC_ROUTER_ADDRESS,
+        abi: arcRouterAbi,
+        functionName: "getAmountsOut",
+        args: [rawAmountIn, path],
+      });
+
+      const estOut = amounts[amounts.length - 1];
+      const slipBps = BigInt(slippageBps);
+      const minOut = (estOut * (BigInt(10000) - slipBps)) / BigInt(10000);
+
+      return NextResponse.json({
+        quote: {
+          estimatedAmount: estOut.toString(),
+          minAmount: minOut.toString(),
+        },
+        fees: [
+          {
+            token: "USDC",
+            amount: "0.00",
+            type: "swap",
+          },
+        ],
+      });
+    } catch (err) {
+      console.error("Error fetching on-chain DEX quote from PayGrixArcRouter:", err);
+      return NextResponse.json(
+        { error: "No route available for selected pair and amount on Arc Testnet." },
+        { status: 404 }
+      );
+    }
+  }
+
+  return NextResponse.json(
+    { error: "Unsupported chain. Supported chains are Arc_Testnet and Base." },
+    { status: 400 }
+  );
 }
+

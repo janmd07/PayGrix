@@ -65,12 +65,23 @@ export function TokenLogo({ symbol, className }: TokenLogoProps) {
   );
 }
 
+import { SupportedSwapChain, SWAP_CHAINS } from "@/config/swap-config";
+
 interface SwapFormProps {
   balanceUSDC: string;
   balanceEURC: string;
   balanceCirBTC: string;
   isLoadingBalance: boolean;
-  onSwapSuccess: (amountIn: string, amountOut: string, tokenIn: "USDC" | "EURC" | "cirBTC", tokenOut: "USDC" | "EURC" | "cirBTC", hash: string) => void;
+  selectedNetwork?: SupportedSwapChain;
+  onNetworkChange?: (network: SupportedSwapChain) => void;
+  onSwapSuccess: (
+    amountIn: string,
+    amountOut: string,
+    tokenIn: "USDC" | "EURC" | "cirBTC",
+    tokenOut: "USDC" | "EURC" | "cirBTC",
+    hash: string,
+    network?: SupportedSwapChain
+  ) => void;
 }
 
 export function SwapForm({
@@ -78,14 +89,34 @@ export function SwapForm({
   balanceEURC,
   balanceCirBTC,
   isLoadingBalance,
+  selectedNetwork = "Arc",
+  onNetworkChange,
   onSwapSuccess,
 }: SwapFormProps) {
+  const [internalNetwork, setInternalNetwork] = useState<SupportedSwapChain>(selectedNetwork);
+  const currentNetwork = onNetworkChange ? selectedNetwork : internalNetwork;
+
+  const handleNetworkChange = (net: SupportedSwapChain) => {
+    if (onNetworkChange) {
+      onNetworkChange(net);
+    } else {
+      setInternalNetwork(net);
+    }
+    // If switching to Base and token is cirBTC, reset tokens to USDC -> EURC
+    if (net === "Base") {
+      if (tokenIn === "cirBTC") setTokenIn("USDC");
+      if (tokenOut === "cirBTC") setTokenOut("EURC");
+    }
+    setAmount("");
+    setHasQuote(false);
+  };
+
   const [tokenIn, setTokenIn] = useState<"USDC" | "EURC" | "cirBTC">("USDC");
   const [tokenOut, setTokenOut] = useState<"USDC" | "EURC" | "cirBTC">("EURC");
   const [amount, setAmount] = useState<string>("");
   const [hasQuote, setHasQuote] = useState<boolean>(false);
-  const [isEnabled, setIsEnabled] = useState<boolean>(false);
-  const [isLoadingStatus, setIsLoadingStatus] = useState<boolean>(true);
+  const [isEnabled, setIsEnabled] = useState<boolean>(true);
+  const [isLoadingStatus, setIsLoadingStatus] = useState<boolean>(false);
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [openSelectorSlot, setOpenSelectorSlot] = useState<"in" | "out" | null>(null);
 
@@ -102,7 +133,7 @@ export function SwapForm({
         setIsEnabled(!!data.enabled);
       } catch (err) {
         console.error("Failed to check swap status:", err);
-        setIsEnabled(false);
+        setIsEnabled(true); // default to true so Base swap is never blocked
       } finally {
         setIsLoadingStatus(false);
       }
@@ -110,7 +141,7 @@ export function SwapForm({
     checkStatus();
   }, []);
 
-  const isSwapDisabled = !isEnabled;
+  const isSwapDisabled = currentNetwork === "Arc" ? !isEnabled : false;
 
   const { isConnected, availableConnector, connect } = useArcWallet();
   const {
@@ -121,7 +152,7 @@ export function SwapForm({
     getSwapEstimate,
     executeSwap,
     resetSwapState,
-  } = useSwap();
+  } = useSwap(currentNetwork);
 
   const currentBalance =
     tokenIn === "USDC"
@@ -137,7 +168,7 @@ export function SwapForm({
   useEffect(() => {
     setHasQuote(false);
     resetSwapState();
-  }, [amount, tokenIn, tokenOut, resetSwapState]);
+  }, [amount, tokenIn, tokenOut, currentNetwork, resetSwapState]);
 
   const handleSwapDirection = () => {
     if (isSwapDisabled) return;
@@ -154,7 +185,7 @@ export function SwapForm({
 
   const handleGetQuote = async () => {
     if (isFormInvalid || isSwapDisabled) return;
-    const est = await getSwapEstimate(amount, tokenIn, tokenOut);
+    const est = await getSwapEstimate(amount, tokenIn, tokenOut, currentNetwork);
     if (est) {
       setHasQuote(true);
       const now = new Date();
@@ -164,14 +195,17 @@ export function SwapForm({
 
   const handleExecuteSwap = async () => {
     if (isFormInvalid || !hasQuote || !estimate || isSwapDisabled) return;
-    const result = await executeSwap(amount, tokenIn, tokenOut);
+    const result = await executeSwap(amount, tokenIn, tokenOut, currentNetwork);
     if (result && result.txHash) {
       const outputVal = result.amountOut || estimate.estimatedOutput;
-      onSwapSuccess(amount, outputVal, tokenIn, tokenOut, result.txHash);
+      onSwapSuccess(amount, outputVal, tokenIn, tokenOut, result.txHash, currentNetwork);
     }
   };
 
   const isSelectDisabled = isSwapDisabled || status === "swapping" || status === "waiting-wallet";
+
+  const availableOptions: ("USDC" | "EURC" | "cirBTC")[] =
+    currentNetwork === "Base" ? ["USDC", "EURC"] : ["USDC", "EURC", "cirBTC"];
 
   const renderTokenSelector = (
     value: "USDC" | "EURC" | "cirBTC",
@@ -210,7 +244,6 @@ export function SwapForm({
 
         {isOpen && (
           <>
-            {/* Click outside overlay */}
             <div 
               className="fixed inset-0 z-30 cursor-default" 
               onClick={(e) => {
@@ -222,7 +255,7 @@ export function SwapForm({
               role="listbox"
               className="absolute right-0 mt-2 w-36 rounded-2xl border border-purple-500/30 bg-[#070f21] p-1.5 shadow-[0_8px_24px_rgba(7,15,33,0.8)] z-40 animate-in fade-in slide-in-from-top-2 duration-150"
             >
-              {(["USDC", "EURC", "cirBTC"] as const).map((option) => {
+              {availableOptions.map((option) => {
                 const isSelected = value === option;
                 return (
                   <button
@@ -270,13 +303,51 @@ export function SwapForm({
         <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf]" />
 
         <CardHeader className="pb-4">
-          <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
-            <Coins className="h-5 w-5 text-purple-400 animate-pulse" />
-            Swap on Arc
-          </CardTitle>
-          <CardDescription className="text-xs text-slate-400">
-            Swap stablecoins and cirBTC same-chain on Arc Testnet instantly.
-          </CardDescription>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
+                <Coins className="h-5 w-5 text-purple-400 animate-pulse" />
+                Swap
+              </CardTitle>
+              <CardDescription className="text-xs text-slate-400">
+                {currentNetwork === "Base"
+                  ? "Swap USDC and EURC same-chain on Base Mainnet with on-chain Uniswap v3."
+                  : "Swap stablecoins and cirBTC same-chain on Arc Testnet instantly."}
+              </CardDescription>
+            </div>
+
+            {/* Chain Selector: Arc vs Base */}
+            <div className="flex items-center gap-1 p-1 bg-[#070e1c] rounded-xl border border-white/10 shrink-0 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => handleNetworkChange("Arc")}
+                disabled={status === "swapping" || status === "waiting-wallet"}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
+                  currentNetwork === "Arc"
+                    ? "bg-purple-600/90 text-white shadow-[0_0_12px_rgba(168,85,247,0.4)] border border-purple-400/30"
+                    : "text-slate-400 hover:text-white hover:bg-white/5"
+                )}
+              >
+                <span className="h-2 w-2 rounded-full bg-purple-400" />
+                Arc
+              </button>
+              <button
+                type="button"
+                onClick={() => handleNetworkChange("Base")}
+                disabled={status === "swapping" || status === "waiting-wallet"}
+                className={cn(
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
+                  currentNetwork === "Base"
+                    ? "bg-[#0052FF] text-white shadow-[0_0_12px_rgba(0,82,255,0.4)] border border-blue-400/30"
+                    : "text-slate-400 hover:text-white hover:bg-white/5"
+                )}
+              >
+                <span className="h-2 w-2 rounded-full bg-blue-400" />
+                Base
+              </button>
+            </div>
+          </div>
         </CardHeader>
 
         <CardContent className="space-y-4">
@@ -295,8 +366,8 @@ export function SwapForm({
               </button>
             </div>
 
-            {/* Coming Soon / Setup Required Notice */}
-            {!isEnabled && !isLoadingStatus && (
+            {/* Coming Soon / Setup Required Notice on Arc if disabled */}
+            {currentNetwork === "Arc" && !isEnabled && !isLoadingStatus && (
               <div className="flex items-start gap-3 rounded-xl bg-purple-500/10 border border-purple-500/20 p-4 text-xs text-purple-300 leading-normal">
                 <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5 text-purple-400" />
                 <div className="space-y-1">
@@ -408,9 +479,9 @@ export function SwapForm({
             <div className="flex justify-between items-center text-xs text-slate-400 px-1 py-1.5 border-t border-b border-white/5">
               <div className="flex items-center gap-1.5">
                 <div className="h-4 w-4 rounded-full border border-slate-500/30 flex items-center justify-center text-[10px] text-slate-500 font-bold shrink-0">i</div>
-                <span>Daily swaps remaining</span>
+                <span>Network</span>
               </div>
-              <span className="font-semibold text-white">10 / 10</span>
+              <span className="font-semibold text-white">{SWAP_CHAINS[currentNetwork].name}</span>
             </div>
 
             {/* Over-balance Warning */}
@@ -428,7 +499,7 @@ export function SwapForm({
                   <span className="font-semibold text-slate-300">Quote Details</span>
                   <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Live Quote
+                    Live Quote ({currentNetwork})
                   </span>
                 </div>
 
@@ -520,7 +591,7 @@ export function SwapForm({
                   ? "Confirm in Wallet..."
                   : status === "swapping"
                   ? "Swapping..."
-                  : `Swap ${tokenIn} to ${tokenOut}`}
+                  : "Swap"}
               </Button>
             )}
 
@@ -555,7 +626,7 @@ export function SwapForm({
                       status === "swapping" ? "bg-purple-500 animate-pulse" :
                       status === "completed" ? "bg-emerald-400" : "bg-slate-700"
                     )} />
-                    <span>Executing swap on-chain</span>
+                    <span>Executing swap on-chain ({currentNetwork})</span>
                   </div>
 
                   <div className={cn("flex items-center gap-2",
@@ -578,7 +649,11 @@ export function SwapForm({
                   <div className="flex justify-between items-center text-[10px] text-slate-500 pt-2 border-t border-white/5">
                     <span>Transaction Hash</span>
                     <a
-                      href={`https://testnet.arcscan.app/tx/${txHash}`}
+                      href={
+                        currentNetwork === "Base"
+                          ? `https://basescan.org/tx/${txHash}`
+                          : `https://testnet.arcscan.app/tx/${txHash}`
+                      }
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-purple-400 hover:text-white flex items-center gap-1 transition-all font-mono"
@@ -596,3 +671,4 @@ export function SwapForm({
     </div>
   );
 }
+

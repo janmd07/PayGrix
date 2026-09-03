@@ -1,19 +1,38 @@
 import { NextResponse } from "next/server";
 import { createPublicClient, http, encodeFunctionData, parseAbi } from "viem";
 import { arcTestnet } from "@/config/arc-testnet";
+import { SWAP_CHAINS } from "@/config/swap-config";
+import { basePublicClient } from "@/lib/base-client";
 
-const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
-const EURC_ADDRESS = "0x89b50855aa3be2f677cd6303cec089b5f319d72a";
-const CIRBTC_ADDRESS = "0xf0c4a4ce82a5746abaad9425360ab04fbBA432BF";
+// Arc Testnet Configuration
+const ARC_USDC_ADDRESS = SWAP_CHAINS.Arc.tokens.USDC.address.toLowerCase();
+const ARC_EURC_ADDRESS = SWAP_CHAINS.Arc.tokens.EURC.address.toLowerCase();
+const ARC_CIRBTC_ADDRESS = SWAP_CHAINS.Arc.tokens.cirBTC.address.toLowerCase();
 const ARC_TESTNET_CHAIN = "Arc_Testnet";
-const ROUTER_ADDRESS = "0xB2A97BAABaB64B389948bebB58D639a654ABac89" as const;
+const ARC_ROUTER_ADDRESS = SWAP_CHAINS.Arc.routerAddress;
 
-const routerAbi = parseAbi([
+// Base Mainnet Configuration
+const BASE_USDC_ADDRESS = SWAP_CHAINS.Base.tokens.USDC.address.toLowerCase();
+const BASE_EURC_ADDRESS = SWAP_CHAINS.Base.tokens.EURC.address.toLowerCase();
+const BASE_CHAIN = "Base";
+const BASE_ROUTER_ADDRESS = SWAP_CHAINS.Base.routerAddress; // SwapRouter02
+const BASE_QUOTER_ADDRESS = SWAP_CHAINS.Base.quoterAddress!;
+const BASE_POOL_FEE = SWAP_CHAINS.Base.feeTier || 500;
+
+const arcRouterAbi = parseAbi([
   "function getAmountsOut(uint256 amountIn, address[] memory path) public view returns (uint256[] memory amounts)",
   "function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] calldata path, address to, uint256 deadline) external returns (uint256[] memory amounts)",
 ]);
 
-const publicClient = createPublicClient({
+const baseQuoterAbi = parseAbi([
+  "function quoteExactInputSingle((address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96)) external returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)",
+]);
+
+const baseSwapRouterAbi = parseAbi([
+  "function exactInputSingle((address tokenIn, address tokenOut, uint24 fee, address recipient, uint256 amountIn, uint256 amountOutMinimum, uint160 sqrtPriceLimitX96)) external payable returns (uint256 amountOut)",
+]);
+
+const arcPublicClient = createPublicClient({
   chain: arcTestnet,
   transport: http("https://rpc.testnet.arc.network"),
 });
@@ -43,22 +62,9 @@ export async function POST(request: Request) {
   const tokenInLower = tokenInAddress.toLowerCase();
   const tokenOutLower = tokenOutAddress.toLowerCase();
 
-  const SUPPORTED_TOKENS = [USDC_ADDRESS.toLowerCase(), EURC_ADDRESS.toLowerCase(), CIRBTC_ADDRESS.toLowerCase()];
-  const isSupportedPair =
-    SUPPORTED_TOKENS.includes(tokenInLower) &&
-    SUPPORTED_TOKENS.includes(tokenOutLower) &&
-    tokenInLower !== tokenOutLower;
-
-  if (!isSupportedPair) {
+  if (tokenInLower === tokenOutLower) {
     return NextResponse.json(
-      { error: "Unsupported token pair. Only USDC, EURC, and cirBTC swaps are supported." },
-      { status: 400 }
-    );
-  }
-
-  if (tokenInChain !== ARC_TESTNET_CHAIN || tokenOutChain !== ARC_TESTNET_CHAIN) {
-    return NextResponse.json(
-      { error: "Unsupported chain. Only Arc Testnet is supported." },
+      { error: "Input and output tokens must be different." },
       { status: 400 }
     );
   }
@@ -77,69 +83,185 @@ export async function POST(request: Request) {
     );
   }
 
-  // On-Chain DEX Swap Execution Params for PayGrixArcRouter on Arc Testnet
-  try {
-    const rawAmountIn = BigInt(amount);
-    const path = [tokenInAddress as `0x${string}`, tokenOutAddress as `0x${string}`];
+  // ROUTE 1: BASE MAINNET (Uniswap v3 SwapRouter02)
+  if (tokenInChain === BASE_CHAIN && tokenOutChain === BASE_CHAIN) {
+    const isBaseSupportedPair =
+      (tokenInLower === BASE_USDC_ADDRESS && tokenOutLower === BASE_EURC_ADDRESS) ||
+      (tokenInLower === BASE_EURC_ADDRESS && tokenOutLower === BASE_USDC_ADDRESS);
 
-    const amounts = await publicClient.readContract({
-      address: ROUTER_ADDRESS,
-      abi: routerAbi,
-      functionName: "getAmountsOut",
-      args: [rawAmountIn, path],
-    });
+    if (!isBaseSupportedPair) {
+      return NextResponse.json(
+        { error: "Unsupported token pair on Base. Supported pair is USDC <-> EURC." },
+        { status: 400 }
+      );
+    }
 
-    const estOut = amounts[amounts.length - 1];
-    const slipBps = BigInt(slippageBps);
-    const minOut = (estOut * (BigInt(10000) - slipBps)) / BigInt(10000);
+    try {
+      const rawAmountIn = BigInt(amount);
 
-    const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200); // 20 mins
+      // Pre-flight quote verification
+      const quoteRes = await basePublicClient.simulateContract({
+        address: BASE_QUOTER_ADDRESS,
+        abi: baseQuoterAbi,
+        functionName: "quoteExactInputSingle",
+        args: [
+          {
+            tokenIn: tokenInAddress as `0x${string}`,
+            tokenOut: tokenOutAddress as `0x${string}`,
+            amountIn: rawAmountIn,
+            fee: BASE_POOL_FEE,
+            sqrtPriceLimitX96: BigInt(0),
+          },
+        ],
+      });
 
-    const swapData = encodeFunctionData({
-      abi: routerAbi,
-      functionName: "swapExactTokensForTokens",
-      args: [rawAmountIn, minOut, path, toAddress as `0x${string}`, deadline],
-    });
+      const estOut = quoteRes.result[0];
+      const slipBps = BigInt(slippageBps);
+      const minOut = (estOut * (BigInt(10000) - slipBps)) / BigInt(10000);
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200); // 20 mins
 
-    return NextResponse.json({
-      transaction: {
-        routerAddress: ROUTER_ADDRESS,
-        to: ROUTER_ADDRESS,
-        data: swapData,
-        value: "0x0",
-        chainId: 5042002,
-        executionParams: {
-          instructions: [
-            {
-              target: ROUTER_ADDRESS,
-              data: swapData,
-              value: "0",
-              tokenIn: tokenInAddress,
-              amountToApprove: amount,
-              tokenOut: tokenOutAddress,
-              minTokenOut: minOut.toString(),
-            },
-          ],
-          tokens: [
-            {
-              token: tokenInAddress,
-              beneficiary: toAddress,
-            },
-          ],
-          execId: "1",
-          deadline: deadline.toString(),
-          metadata: "0x",
+      const swapData = encodeFunctionData({
+        abi: baseSwapRouterAbi,
+        functionName: "exactInputSingle",
+        args: [
+          {
+            tokenIn: tokenInAddress as `0x${string}`,
+            tokenOut: tokenOutAddress as `0x${string}`,
+            fee: BASE_POOL_FEE,
+            recipient: toAddress as `0x${string}`,
+            amountIn: rawAmountIn,
+            amountOutMinimum: minOut,
+            sqrtPriceLimitX96: BigInt(0),
+          },
+        ],
+      });
+
+      return NextResponse.json({
+        transaction: {
+          routerAddress: BASE_ROUTER_ADDRESS,
+          to: BASE_ROUTER_ADDRESS,
+          data: swapData,
+          value: "0x0",
+          chainId: 8453,
+          executionParams: {
+            instructions: [
+              {
+                target: BASE_ROUTER_ADDRESS,
+                data: swapData,
+                value: "0",
+                tokenIn: tokenInAddress,
+                amountToApprove: amount,
+                tokenOut: tokenOutAddress,
+                minTokenOut: minOut.toString(),
+              },
+            ],
+            tokens: [
+              {
+                token: tokenInAddress,
+                beneficiary: toAddress,
+              },
+            ],
+            execId: "1",
+            deadline: deadline.toString(),
+            metadata: "0x",
+          },
+          signature: "0x",
         },
-        signature: "0x",
-      },
-      amount: amount,
-      estimatedAmount: estOut.toString(),
-    });
-  } catch (err) {
-    console.error("Error building on-chain swap transaction for PayGrixArcRouter:", err);
-    return NextResponse.json(
-      { error: "Failed to build transaction for selected pair and amount on Arc Testnet." },
-      { status: 404 }
-    );
+        amount: amount,
+        estimatedAmount: estOut.toString(),
+      });
+    } catch (err) {
+      console.error("Error building on-chain swap transaction for Base SwapRouter02:", err);
+      return NextResponse.json(
+        { error: "Failed to build transaction for selected pair and amount on Base." },
+        { status: 404 }
+      );
+    }
   }
+
+  // ROUTE 2: ARC TESTNET (PayGrixArcRouter)
+  if (tokenInChain === ARC_TESTNET_CHAIN && tokenOutChain === ARC_TESTNET_CHAIN) {
+    const ARC_SUPPORTED_TOKENS = [ARC_USDC_ADDRESS, ARC_EURC_ADDRESS, ARC_CIRBTC_ADDRESS];
+    const isArcSupportedPair =
+      ARC_SUPPORTED_TOKENS.includes(tokenInLower) &&
+      ARC_SUPPORTED_TOKENS.includes(tokenOutLower);
+
+    if (!isArcSupportedPair) {
+      return NextResponse.json(
+        { error: "Unsupported token pair. Only USDC, EURC, and cirBTC swaps are supported on Arc Testnet." },
+        { status: 400 }
+      );
+    }
+
+    try {
+      const rawAmountIn = BigInt(amount);
+      const path = [tokenInAddress as `0x${string}`, tokenOutAddress as `0x${string}`];
+
+      const amounts = await arcPublicClient.readContract({
+        address: ARC_ROUTER_ADDRESS,
+        abi: arcRouterAbi,
+        functionName: "getAmountsOut",
+        args: [rawAmountIn, path],
+      });
+
+      const estOut = amounts[amounts.length - 1];
+      const slipBps = BigInt(slippageBps);
+      const minOut = (estOut * (BigInt(10000) - slipBps)) / BigInt(10000);
+
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200); // 20 mins
+
+      const swapData = encodeFunctionData({
+        abi: arcRouterAbi,
+        functionName: "swapExactTokensForTokens",
+        args: [rawAmountIn, minOut, path, toAddress as `0x${string}`, deadline],
+      });
+
+      return NextResponse.json({
+        transaction: {
+          routerAddress: ARC_ROUTER_ADDRESS,
+          to: ARC_ROUTER_ADDRESS,
+          data: swapData,
+          value: "0x0",
+          chainId: 5042002,
+          executionParams: {
+            instructions: [
+              {
+                target: ARC_ROUTER_ADDRESS,
+                data: swapData,
+                value: "0",
+                tokenIn: tokenInAddress,
+                amountToApprove: amount,
+                tokenOut: tokenOutAddress,
+                minTokenOut: minOut.toString(),
+              },
+            ],
+            tokens: [
+              {
+                token: tokenInAddress,
+                beneficiary: toAddress,
+              },
+            ],
+            execId: "1",
+            deadline: deadline.toString(),
+            metadata: "0x",
+          },
+          signature: "0x",
+        },
+        amount: amount,
+        estimatedAmount: estOut.toString(),
+      });
+    } catch (err) {
+      console.error("Error building on-chain swap transaction for PayGrixArcRouter:", err);
+      return NextResponse.json(
+        { error: "Failed to build transaction for selected pair and amount on Arc Testnet." },
+        { status: 404 }
+      );
+    }
+  }
+
+  return NextResponse.json(
+    { error: "Unsupported chain. Supported chains are Arc_Testnet and Base." },
+    { status: 400 }
+  );
 }
+

@@ -3,6 +3,7 @@
 import { Wallet, RefreshCw } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
+import { SupportedSwapChain } from "@/config/swap-config";
 
 interface SwapBalanceCardProps {
   usdcBalance: string;
@@ -10,6 +11,7 @@ interface SwapBalanceCardProps {
   cirbtcBalance: string;
   isLoading: boolean;
   onRefresh: () => void;
+  network?: SupportedSwapChain;
 }
 
 export function SwapBalanceCard({
@@ -18,7 +20,10 @@ export function SwapBalanceCard({
   cirbtcBalance,
   isLoading,
   onRefresh,
+  network = "Arc",
 }: SwapBalanceCardProps) {
+  const isBase = network === "Base";
+
   return (
     <Card className="relative overflow-hidden border border-white/10 bg-[#060f24]/50 backdrop-blur-md">
       {/* Decorative accent gradient background */}
@@ -31,7 +36,9 @@ export function SwapBalanceCard({
               <Wallet className="h-5 w-5" />
             </div>
             <div>
-              <p className="text-xs font-medium text-slate-400">Arc Testnet Balances</p>
+              <p className="text-xs font-medium text-slate-400">
+                {isBase ? "Base Mainnet Balances" : "Arc Testnet Balances"}
+              </p>
               <p className="text-[10px] text-slate-500 font-semibold">Available for Swap</p>
             </div>
           </div>
@@ -46,7 +53,7 @@ export function SwapBalanceCard({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className={cn("grid grid-cols-1 gap-4", isBase ? "sm:grid-cols-2" : "sm:grid-cols-3")}>
           <div className="space-y-1">
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">USDC Balance</span>
             <div className="flex items-baseline gap-1.5">
@@ -81,24 +88,27 @@ export function SwapBalanceCard({
             </div>
           </div>
 
-          <div className="space-y-1 border-t sm:border-t-0 sm:border-l border-white/5 pt-3 sm:pt-0 sm:pl-4">
-            <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">cirBTC Balance</span>
-            <div className="flex items-baseline gap-1.5">
-              {isLoading ? (
-                <div className="h-7 w-20 animate-pulse rounded bg-white/10" />
-              ) : (
-                <span className="text-xl font-bold tracking-tight text-white font-mono">
-                  {parseFloat(cirbtcBalance).toLocaleString(undefined, {
-                    minimumFractionDigits: 4,
-                    maximumFractionDigits: 6,
-                  })}
-                </span>
-              )}
-              <span className="text-[10px] font-semibold text-amber-500">cirBTC</span>
+          {!isBase && (
+            <div className="space-y-1 border-t sm:border-t-0 sm:border-l border-white/5 pt-3 sm:pt-0 sm:pl-4">
+              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">cirBTC Balance</span>
+              <div className="flex items-baseline gap-1.5">
+                {isLoading ? (
+                  <div className="h-7 w-20 animate-pulse rounded bg-white/10" />
+                ) : (
+                  <span className="text-xl font-bold tracking-tight text-white font-mono">
+                    {parseFloat(cirbtcBalance).toLocaleString(undefined, {
+                      minimumFractionDigits: 4,
+                      maximumFractionDigits: 6,
+                    })}
+                  </span>
+                )}
+                <span className="text-[10px] font-semibold text-amber-500">cirBTC</span>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </CardContent>
     </Card>
   );
 }
+
