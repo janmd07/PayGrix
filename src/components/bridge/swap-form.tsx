@@ -311,12 +311,12 @@ export function SwapForm({
               </CardTitle>
               <CardDescription className="text-xs text-slate-400">
                 {currentNetwork === "Base"
-                  ? "Swap USDC and EURC same-chain on Base Mainnet with on-chain Uniswap v3."
+                  ? "Swap USDC and EURC same-chain on Base Sepolia with on-chain Uniswap v3."
                   : "Swap stablecoins and cirBTC same-chain on Arc Testnet instantly."}
               </CardDescription>
             </div>
 
-            {/* Chain Selector: Arc vs Base */}
+            {/* Chain Selector: Arc vs Base Sepolia */}
             <div className="flex items-center gap-1 p-1 bg-[#070e1c] rounded-xl border border-white/10 shrink-0 self-start sm:self-auto">
               <button
                 type="button"
@@ -344,7 +344,7 @@ export function SwapForm({
                 )}
               >
                 <span className="h-2 w-2 rounded-full bg-blue-400" />
-                Base
+                Base Sepolia
               </button>
             </div>
           </div>
@@ -651,7 +651,7 @@ export function SwapForm({
                     <a
                       href={
                         currentNetwork === "Base"
-                          ? `https://basescan.org/tx/${txHash}`
+                          ? `https://sepolia.basescan.org/tx/${txHash}`
                           : `https://testnet.arcscan.app/tx/${txHash}`
                       }
                       target="_blank"

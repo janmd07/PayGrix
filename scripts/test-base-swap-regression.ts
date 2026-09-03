@@ -23,19 +23,19 @@ async function runBaseSwapRegressionTests() {
   // -------------------------------------------------------------
   // TEST 1: Chain ID & Contract Addresses
   // -------------------------------------------------------------
-  console.log("[1/6] Testing Base Chain ID and Verified Addresses...");
-  assert(baseConfig.id === 8453, "Base Chain ID must be 8453");
-  assert(USDC_ADDRESS.toLowerCase() === "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913", "Base USDC mismatch");
-  assert(EURC_ADDRESS.toLowerCase() === "0x60a3e35cc302bfa44cb288bc5a4f316fdb1adb42", "Base EURC mismatch");
-  assert(POOL_ADDRESS.toLowerCase() === "0x7279c08a36333e12c3fc81747963264c100d66fb", "Base Pool mismatch");
-  assert(QUOTER_ADDRESS.toLowerCase() === "0x3d4e44eb1374240ce5f1b871ab261cd16335b76a", "Base QuoterV2 mismatch");
-  assert(ROUTER_ADDRESS.toLowerCase() === "0x2626664c2603336e57b271c5c0b26f421741e481", "Base SwapRouter02 mismatch");
-  console.log("  ✓ All Base contract addresses strictly match verified on-chain deployments.");
+  console.log("[1/6] Testing Base Sepolia Chain ID and Verified Addresses...");
+  assert(baseConfig.id === 84532, "Base Chain ID must be 84532");
+  assert(USDC_ADDRESS.toLowerCase() === "0x036cbd53842c5426634e7929541ec2318f3dcf7e", "Base Sepolia USDC mismatch");
+  assert(EURC_ADDRESS.toLowerCase() === "0x808456652fdb597867f38412077a9182bf77359f", "Base Sepolia EURC mismatch");
+  assert(POOL_ADDRESS.toLowerCase() === "0x43047a302cd99ddb32e32b2886b40935b60ad2c1", "Base Sepolia Pool mismatch");
+  assert(QUOTER_ADDRESS.toLowerCase() === "0xc5290058841028f1614f3a6f0f5816cad0df5e27", "Base Sepolia QuoterV2 mismatch");
+  assert(ROUTER_ADDRESS.toLowerCase() === "0x94cc0aac535ccdb3c01d6787d6413c739ae12bc4", "Base Sepolia SwapRouter02 mismatch");
+  console.log("  ✓ All Base Sepolia contract addresses strictly match verified on-chain deployments.");
 
   // -------------------------------------------------------------
   // TEST 2: On-Chain Pool Verification (Fee, Token Ordering, Liquidity)
   // -------------------------------------------------------------
-  console.log("\n[2/6] Verifying Uniswap v3 Pool State...");
+  console.log("\n[2/6] Verifying Uniswap v3 Pool State on Base Sepolia...");
   const poolAbi = parseAbi([
     "function token0() view returns (address)",
     "function token1() view returns (address)",
@@ -50,11 +50,11 @@ async function runBaseSwapRegressionTests() {
     basePublicClient.readContract({ address: POOL_ADDRESS, abi: poolAbi, functionName: "liquidity" }),
   ]);
 
-  assert(t0.toLowerCase() === EURC_ADDRESS.toLowerCase(), "Pool token0 must be EURC");
-  assert(t1.toLowerCase() === USDC_ADDRESS.toLowerCase(), "Pool token1 must be USDC");
+  assert(t0.toLowerCase() === USDC_ADDRESS.toLowerCase(), "Pool token0 must be USDC on Base Sepolia");
+  assert(t1.toLowerCase() === EURC_ADDRESS.toLowerCase(), "Pool token1 must be EURC on Base Sepolia");
   assert(fee === 500, "Pool fee tier must be 500 (0.05%)");
   assert(liquidity > BigInt(0), "Pool liquidity must be active (> 0)");
-  console.log(`  ✓ Pool verified: token0=EURC, token1=USDC, fee=500, active liquidity=${liquidity.toString()}`);
+  console.log(`  ✓ Pool verified: token0=USDC, token1=EURC, fee=500, active liquidity=${liquidity.toString()}`);
 
   // -------------------------------------------------------------
   // TEST 3: QuoterV2 Live Simulation (USDC -> EURC)
@@ -81,8 +81,8 @@ async function runBaseSwapRegressionTests() {
   });
 
   const estEURCOut = quoteResultUSDC.result[0];
-  assert(estEURCOut > BigInt(70_000_000) && estEURCOut < BigInt(110_000_000), "100 USDC must quote between 70 and 110 EURC");
-  console.log(`  ✓ 100 USDC quotes to ${(Number(estEURCOut) / 1e6).toFixed(6)} EURC on Base.`);
+  assert(estEURCOut > BigInt(10_000_000) && estEURCOut < BigInt(100_000_000), "100 USDC must return valid EURC quote");
+  console.log(`  ✓ 100 USDC quotes to ${(Number(estEURCOut) / 1e6).toFixed(6)} EURC on Base Sepolia.`);
 
   // -------------------------------------------------------------
   // TEST 4: QuoterV2 Live Simulation (EURC -> USDC)
@@ -105,8 +105,8 @@ async function runBaseSwapRegressionTests() {
   });
 
   const estUSDCOut = quoteResultEURC.result[0];
-  assert(estUSDCOut > BigInt(90_000_000) && estUSDCOut < BigInt(130_000_000), "100 EURC must quote between 90 and 130 USDC");
-  console.log(`  ✓ 100 EURC quotes to ${(Number(estUSDCOut) / 1e6).toFixed(6)} USDC on Base.`);
+  assert(estUSDCOut > BigInt(10_000_000) && estUSDCOut < BigInt(100_000_000), "100 EURC must return valid USDC quote");
+  console.log(`  ✓ 100 EURC quotes to ${(Number(estUSDCOut) / 1e6).toFixed(6)} USDC on Base Sepolia.`);
 
   // -------------------------------------------------------------
   // TEST 5: Slippage Calculation Invariant

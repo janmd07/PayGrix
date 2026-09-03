@@ -50,7 +50,7 @@ export function SwapHistory({ swaps }: SwapHistoryProps) {
               {swaps.map((tx) => {
                 const isBaseTx = tx.network === "Base";
                 const explorerUrl = isBaseTx
-                  ? `https://basescan.org/tx/${tx.txHash}`
+                  ? `https://sepolia.basescan.org/tx/${tx.txHash}`
                   : `https://testnet.arcscan.app/tx/${tx.txHash}`;
 
                 return (
@@ -65,7 +65,7 @@ export function SwapHistory({ swaps }: SwapHistoryProps) {
                           ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
                           : "bg-purple-500/10 text-purple-400 border-purple-500/20"
                       )}>
-                        {tx.network || "Arc"}
+                        {isBaseTx ? "Base Sepolia" : "Arc"}
                       </span>
                     </div>
 

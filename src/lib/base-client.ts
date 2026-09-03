@@ -1,12 +1,25 @@
 import { createPublicClient, http, fallback, erc20Abi } from "viem";
-import { base } from "../config/wagmi";
 
-// 1. Single shared Base Mainnet public client at module scope with fallback transport
+export const baseSepolia = {
+  id: 84532,
+  name: "Base Sepolia",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: {
+    default: {
+      http: ["https://sepolia.base.org", "https://base-sepolia-rpc.publicnode.com"],
+    },
+  },
+  blockExplorers: {
+    default: { name: "Basescan", url: "https://sepolia.basescan.org" },
+  },
+} as const;
+
+// 1. Single shared Base Sepolia public client at module scope with fallback transport
 export const basePublicClient = createPublicClient({
-  chain: base,
+  chain: baseSepolia,
   transport: fallback([
-    http("https://base-rpc.publicnode.com"),
-    http("https://mainnet.base.org"),
+    http("https://sepolia.base.org"),
+    http("https://base-sepolia-rpc.publicnode.com"),
   ]),
 });
 

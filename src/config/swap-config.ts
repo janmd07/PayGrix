@@ -46,23 +46,23 @@ export const SWAP_CHAINS: Record<SupportedSwapChain, SwapChainConfig> = {
     },
   },
   Base: {
-    id: 8453,
-    name: "Base",
+    id: 84532,
+    name: "Base Sepolia",
     chainKey: "Base",
-    rpcUrls: ["https://base-rpc.publicnode.com", "https://mainnet.base.org"],
-    blockExplorerUrl: "https://basescan.org",
-    routerAddress: "0x2626664c2603336E57B271c5C0b26F421741e481", // SwapRouter02
-    quoterAddress: "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a", // QuoterV2
-    poolAddress: "0x7279c08A36333e12c3Fc81747963264c100D66fB", // USDC/EURC 0.05%
+    rpcUrls: ["https://sepolia.base.org", "https://base-sepolia-rpc.publicnode.com"],
+    blockExplorerUrl: "https://sepolia.basescan.org",
+    routerAddress: "0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4", // SwapRouter02
+    quoterAddress: "0xC5290058841028F1614F3A6F0F5816cAd0df5E27", // QuoterV2
+    poolAddress: "0x43047A302cD99DDb32E32B2886B40935b60aD2C1", // USDC/EURC 0.05%
     feeTier: 500, // 0.05% Uniswap v3 pool
     tokens: {
       USDC: {
-        address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
         decimals: 6,
         symbol: "USDC",
       },
       EURC: {
-        address: "0x60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42",
+        address: "0x808456652fdb597867f38412077A9182bf77359F",
         decimals: 6,
         symbol: "EURC",
       },

@@ -37,7 +37,7 @@ export function SwapBalanceCard({
             </div>
             <div>
               <p className="text-xs font-medium text-slate-400">
-                {isBase ? "Base Mainnet Balances" : "Arc Testnet Balances"}
+                {isBase ? "Base Sepolia Balances" : "Arc Testnet Balances"}
               </p>
               <p className="text-[10px] text-slate-500 font-semibold">Available for Swap</p>
             </div>

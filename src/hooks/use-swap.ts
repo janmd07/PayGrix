@@ -177,18 +177,18 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
       }
 
       // ==========================================
-      // BRANCH 1: BASE MAINNET SWAP
+      // BRANCH 1: BASE SEPOLIA SWAP
       // ==========================================
       if (network === "Base") {
-        const targetChainId = chainConfig.id; // 8453
-        const routerAddress = chainConfig.routerAddress; // SwapRouter02
+        const targetChainId = chainConfig.id; // 84532
+        const routerAddress = chainConfig.routerAddress; // SwapRouter02 (Base Sepolia)
 
-        // Switch wallet to Base if needed
+        // Switch wallet to Base Sepolia if needed
         if (providerChainId !== targetChainId) {
           try {
             await provider.request({
               method: "wallet_switchEthereumChain",
-              params: [{ chainId: "0x2105" }],
+              params: [{ chainId: "0x14a34" }],
             });
           } catch (switchErr: unknown) {
             const errObj = switchErr as { code?: number; message?: string };
@@ -197,11 +197,11 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
                 method: "wallet_addEthereumChain",
                 params: [
                   {
-                    chainId: "0x2105",
-                    chainName: "Base",
+                    chainId: "0x14a34",
+                    chainName: "Base Sepolia",
                     nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-                    rpcUrls: ["https://mainnet.base.org"],
-                    blockExplorerUrls: ["https://basescan.org"],
+                    rpcUrls: ["https://sepolia.base.org", "https://base-sepolia-rpc.publicnode.com"],
+                    blockExplorerUrls: ["https://sepolia.basescan.org"],
                   },
                 ],
               });

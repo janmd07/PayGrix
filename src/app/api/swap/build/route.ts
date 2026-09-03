@@ -11,7 +11,7 @@ const ARC_CIRBTC_ADDRESS = SWAP_CHAINS.Arc.tokens.cirBTC.address.toLowerCase();
 const ARC_TESTNET_CHAIN = "Arc_Testnet";
 const ARC_ROUTER_ADDRESS = SWAP_CHAINS.Arc.routerAddress;
 
-// Base Mainnet Configuration
+// Base Sepolia Configuration
 const BASE_USDC_ADDRESS = SWAP_CHAINS.Base.tokens.USDC.address.toLowerCase();
 const BASE_EURC_ADDRESS = SWAP_CHAINS.Base.tokens.EURC.address.toLowerCase();
 const BASE_CHAIN = "Base";
@@ -142,7 +142,7 @@ export async function POST(request: Request) {
           to: BASE_ROUTER_ADDRESS,
           data: swapData,
           value: "0x0",
-          chainId: 8453,
+          chainId: 84532,
           executionParams: {
             instructions: [
               {

@@ -11,7 +11,7 @@ const ARC_CIRBTC_ADDRESS = SWAP_CHAINS.Arc.tokens.cirBTC.address.toLowerCase();
 const ARC_TESTNET_CHAIN = "Arc_Testnet";
 const ARC_ROUTER_ADDRESS = SWAP_CHAINS.Arc.routerAddress;
 
-// Base Mainnet Configuration
+// Base Sepolia Configuration
 const BASE_USDC_ADDRESS = SWAP_CHAINS.Base.tokens.USDC.address.toLowerCase();
 const BASE_EURC_ADDRESS = SWAP_CHAINS.Base.tokens.EURC.address.toLowerCase();
 const BASE_CHAIN = "Base";
