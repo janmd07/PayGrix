@@ -88,10 +88,26 @@ function parseContractError(err: unknown): string {
 }
 
 function LendingTokenLogo({ symbol, className }: { symbol: string; className?: string }) {
+  const [hasError, setHasError] = useState(false);
+
   if (symbol === "WETH" || symbol === "ETH") {
+    if (hasError) {
+      return (
+        <div className={cn("h-6 w-6 rounded-full bg-[#627EEA]/20 border border-[#627EEA]/40 flex items-center justify-center text-[#627EEA] shrink-0 font-bold text-xs select-none shadow-[0_0_8px_rgba(98,126,234,0.3)]", className)}>
+          Ξ
+        </div>
+      );
+    }
     return (
-      <div className={cn("h-6 w-6 rounded-full bg-[#627EEA]/20 border border-[#627EEA]/40 flex items-center justify-center text-[#627EEA] shrink-0 font-bold text-xs select-none shadow-[0_0_8px_rgba(98,126,234,0.3)]", className)}>
-        Ξ
+      <div className={cn("relative h-6 w-6 rounded-full overflow-hidden flex items-center justify-center shrink-0 bg-transparent", className)}>
+        <Image
+          src="/tokens/weth.png"
+          alt={symbol}
+          width={24}
+          height={24}
+          className="h-full w-full object-contain"
+          onError={() => setHasError(true)}
+        />
       </div>
     );
   }
