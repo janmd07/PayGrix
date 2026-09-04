@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { Layers, Lock, AlertCircle, ArrowUpRight, ArrowDownLeft, RotateCcw, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -104,6 +105,36 @@ function LendingTokenLogo({ symbol, className }: { symbol: string; className?: s
   return (
     <div className={cn("h-6 w-6 rounded-full bg-[#2775CA]/20 border border-[#2775CA]/40 flex items-center justify-center text-[#2775CA] shrink-0 font-bold text-xs select-none shadow-[0_0_8px_rgba(39,117,202,0.3)]", className)}>
       $
+    </div>
+  );
+}
+
+function LendingChainLogo({ chain }: { chain: SupportedLendingChain }) {
+  const [hasFailed, setHasFailed] = useState(false);
+  const logoUrl = chain === "Arc" ? "/chains/arc.png" : "/chains/base.png";
+  const alt = chain === "Arc" ? "Arc Testnet" : "Base Sepolia";
+
+  if (hasFailed) {
+    return (
+      <span
+        className={cn(
+          "h-2 w-2 rounded-full shrink-0",
+          chain === "Arc" ? "bg-purple-400" : "bg-blue-400"
+        )}
+      />
+    );
+  }
+
+  return (
+    <div className="relative flex items-center justify-center h-4 w-4 rounded-full bg-[#030712] border border-white/10 overflow-hidden shrink-0">
+      <Image
+        src={logoUrl}
+        alt={alt}
+        width={16}
+        height={16}
+        className="h-full w-full object-contain"
+        onError={() => setHasFailed(true)}
+      />
     </div>
   );
 }
@@ -497,7 +528,7 @@ export function LendingWorkspace({
                   : "text-slate-400 hover:text-white hover:bg-white/5"
               )}
             >
-              <span className="h-2 w-2 rounded-full bg-purple-400" />
+              <LendingChainLogo chain="Arc" />
               Arc
             </button>
             <button
@@ -511,7 +542,7 @@ export function LendingWorkspace({
                   : "text-slate-400 hover:text-white hover:bg-white/5"
               )}
             >
-              <span className="h-2 w-2 rounded-full bg-blue-400" />
+              <LendingChainLogo chain="Base" />
               Base Sepolia
             </button>
           </div>
