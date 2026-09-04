@@ -15,6 +15,13 @@ interface PositionOverviewProps {
 
 export function PositionOverview({ isConnected, lendingData, isLoading }: PositionOverviewProps) {
   const hasActivePosition = lendingData && (lendingData.userCollateralRaw > BigInt(0) || lendingData.userDebtRaw > BigInt(0));
+  const isBase = lendingData?.selectedChain === "Base";
+  const collateralSymbol = lendingData?.collateralSymbol || (isBase ? "WETH" : "cirBTC");
+  const chainBadge = isBase ? "Base Sepolia (84532)" : "Arc Testnet (5042002)";
+  const oracleLabel = isBase 
+    ? `Oracle: $${lendingData?.collateralPrice || "2,500.00"}/ETH`
+    : `Oracle: $${lendingData?.collateralPrice || "60,000.00"}/BTC`;
+  const walletBalance = lendingData?.userCollateralBalance || lendingData?.userCirBtcBalance || "0.00";
 
   return (
     <Card className="border border-white/10 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_4px_24px_rgba(6,15,36,0.4)]">
@@ -42,8 +49,8 @@ export function PositionOverview({ isConnected, lendingData, isLoading }: Positi
             </Badge>
           )}
         </div>
-        <span className="text-[11px] text-slate-400 hidden sm:inline-block">
-          Arc Testnet (5042002)
+        <span className="text-[11px] text-slate-400 hidden sm:inline-block font-mono">
+          {chainBadge}
         </span>
       </CardHeader>
 
@@ -76,10 +83,10 @@ export function PositionOverview({ isConnected, lendingData, isLoading }: Positi
                 <span className="text-lg sm:text-xl font-bold text-white font-mono">
                   {isLoading ? "Loading..." : lendingData?.userCollateral || "0.00"}
                 </span>
-                <span className="text-[11px] font-semibold text-[#4f8cff]">cirBTC</span>
+                <span className="text-[11px] font-semibold text-[#4f8cff]">{collateralSymbol}</span>
               </div>
               <span className="text-[10px] text-slate-400 block font-mono">
-                Wallet: {isLoading ? "Loading..." : lendingData?.userCirBtcBalance || "0.00"} cirBTC
+                Wallet: {isLoading ? "Loading..." : walletBalance} {collateralSymbol}
               </span>
             </div>
 
@@ -93,7 +100,7 @@ export function PositionOverview({ isConnected, lendingData, isLoading }: Positi
                   {isLoading ? "Loading..." : lendingData?.userCollateralValueUsdc || "$0.00"}
                 </span>
               </div>
-              <span className="text-[10px] text-slate-500 block">Oracle: $60,000/BTC</span>
+              <span className="text-[10px] text-slate-500 block">{oracleLabel}</span>
             </div>
 
             {/* Metric 3: Current Debt */}

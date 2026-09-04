@@ -41,7 +41,7 @@ export function CompactLendingMarket({ lendingData, isLoading }: CompactLendingM
               )}
             </div>
             <p className="text-[11px] text-slate-400">
-              Live protocol reserves and Oracle state on Arc Testnet (5042002).
+              Live protocol reserves and Oracle state on {lendingData?.selectedChain === "Base" ? "Base Sepolia (84532)" : "Arc Testnet (5042002)"}.
             </p>
           </div>
         </div>

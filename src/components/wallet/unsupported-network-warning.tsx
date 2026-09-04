@@ -20,7 +20,12 @@ export function UnsupportedNetworkWarning() {
   const { currentNetwork, isSwitching, isConnected, chainId, switchToArcTestnet } = useArcWallet();
 
   const isBridgePage = pathname === "/bridge";
-  const allowedChainIds = isBridgePage ? [5042002, 84532, 421614] : [5042002];
+  const isLendingPage = pathname === "/lending";
+  const allowedChainIds = isBridgePage
+    ? [5042002, 84532, 421614]
+    : isLendingPage
+    ? [5042002, 84532]
+    : [5042002];
   const isUnsupported = isConnected && !allowedChainIds.includes(chainId);
 
   if (!mounted || !isUnsupported) {
@@ -38,6 +43,8 @@ export function UnsupportedNetworkWarning() {
               Current network: {currentNetwork?.name ?? "Unknown network"}.{" "}
               {isBridgePage
                 ? "The bridge supports Arc Testnet, Base Sepolia, and Arbitrum Sepolia. Please switch to one of these networks to bridge."
+                : isLendingPage
+                ? "Lending supports Arc Testnet and Base Sepolia. Please switch to one of these networks to access lending."
                 : `PayGrix only supports ${arcTestnet.name}. Payroll features are disabled until you switch.`}
             </p>
           </div>

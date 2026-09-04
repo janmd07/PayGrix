@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { HandCoins, BookOpen } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Badge } from "@/components/ui/badge";
@@ -11,10 +12,22 @@ import { LendingWorkspace } from "@/components/lending/lending-workspace";
 import { CompactLendingMarket } from "@/components/lending/compact-lending-market";
 import { HowItWorks } from "@/components/lending/how-it-works";
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
+import { SupportedLendingChain } from "@/config/lending-config";
 
 export default function LendingPage() {
-  const { isConnected, isArcTestnet, address } = useArcWallet();
-  const { lendingData, isLoading, refreshLendingData } = useLendingData(address, isArcTestnet);
+  const { isConnected, isArcTestnet, address, chainId } = useArcWallet();
+  const [selectedChain, setSelectedChain] = useState<SupportedLendingChain>("Arc");
+
+  // Sync selected chain with wallet network when user switches chain in their wallet
+  useEffect(() => {
+    if (chainId === 84532) {
+      setSelectedChain("Base");
+    } else if (chainId === 5042002) {
+      setSelectedChain("Arc");
+    }
+  }, [chainId]);
+
+  const { lendingData, isLoading, refreshLendingData } = useLendingData(address, selectedChain, isArcTestnet);
 
   const handleStartBorrowing = () => {
     const el = document.getElementById("manage-position");
@@ -55,7 +68,7 @@ export default function LendingPage() {
                   Connect your wallet to access Lending
                 </h1>
                 <p className="text-xs text-slate-300 leading-relaxed max-w-sm mx-auto">
-                  Connect your wallet to view your collateral, borrowing power, debt, and lending actions on Arc Testnet.
+                  Connect your wallet to view your collateral, borrowing power, debt, and lending actions on Arc Testnet and Base Sepolia.
                 </p>
               </div>
 
@@ -64,16 +77,23 @@ export default function LendingPage() {
                 <ConnectWalletButton />
               </div>
 
-              {/* Optional small Arc Testnet network badge */}
-              <Badge variant="outline" className="text-[10px] text-slate-400 border-white/10 bg-white/5 font-mono px-2.5 py-0.5">
-                Arc Testnet
-              </Badge>
+              {/* Network badges */}
+              <div className="flex items-center gap-1.5">
+                <Badge variant="outline" className="text-[10px] text-slate-400 border-white/10 bg-white/5 font-mono px-2 py-0.5">
+                  Arc Testnet
+                </Badge>
+                <Badge variant="outline" className="text-[10px] text-slate-400 border-white/10 bg-white/5 font-mono px-2 py-0.5">
+                  Base Sepolia
+                </Badge>
+              </div>
             </div>
           </div>
         </div>
       </AppShell>
     );
   }
+
+  const isBase = selectedChain === "Base";
 
   return (
     <AppShell>
@@ -84,10 +104,12 @@ export default function LendingPage() {
             <div className="space-y-1.5 max-w-2xl">
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="text-[10px] text-[#4f8cff] border-[#4f8cff]/30 bg-[#4f8cff]/10 font-semibold px-2 py-0.5">
-                  Arc Testnet • Security Staging
+                  {isBase ? "Base Sepolia • Chain ID 84532" : "Arc Testnet • Security Staging"}
                 </Badge>
                 <Badge variant="outline" className="text-[10px] text-purple-300 border-purple-500/20 bg-purple-500/10 px-2 py-0.5">
-                  Simulation Oracle ($60,000/BTC)
+                  {isBase 
+                    ? `Chainlink Oracle ($${lendingData?.collateralPrice || "2,500.00"}/ETH)`
+                    : `Simulation Oracle ($${lendingData?.collateralPrice || "60,000.00"}/BTC)`}
                 </Badge>
               </div>
 
@@ -98,7 +120,9 @@ export default function LendingPage() {
                 </span>
               </h1>
               <p className="text-xs text-slate-300 leading-relaxed">
-                Supply cirBTC collateral, borrow USDC up to 50% LTV, repay debt, and manage your position on PayGrixLending.
+                {isBase
+                  ? "Supply WETH collateral, borrow USDC up to 50% LTV, repay debt, and manage your position on Base Sepolia."
+                  : "Supply cirBTC collateral, borrow USDC up to 50% LTV, repay debt, and manage your position on PayGrixLending."}
               </p>
             </div>
 
@@ -142,6 +166,8 @@ export default function LendingPage() {
             lendingData={lendingData}
             isLoading={isLoading}
             refreshLendingData={refreshLendingData}
+            selectedChain={selectedChain}
+            onChainChange={setSelectedChain}
           />
         </div>
 

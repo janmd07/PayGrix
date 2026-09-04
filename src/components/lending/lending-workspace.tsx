@@ -4,12 +4,13 @@ import { useState } from "react";
 import { Layers, Lock, AlertCircle, ArrowUpRight, ArrowDownLeft, RotateCcw, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { TokenLogo } from "@/components/bridge/swap-form";
 import { cn } from "@/lib/utils";
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
-import { LendingOnChainData, PAYGRIX_LENDING_ADDRESS, USDC_ADDRESS, CIRBTC_ADDRESS } from "@/hooks/use-lending-data";
+import { LendingOnChainData } from "@/hooks/use-lending-data";
 import { clearArcReadCache } from "@/lib/arc-read-infra";
-import { useWriteContract, usePublicClient, useAccount } from "wagmi";
+import { clearBaseBalanceCache } from "@/lib/base-client";
+import { LENDING_CHAINS, SupportedLendingChain } from "@/config/lending-config";
+import { useWriteContract, usePublicClient, useAccount, useSwitchChain } from "wagmi";
 import { parseUnits, formatUnits } from "viem";
 
 const LENDING_WRITE_ABI = [
@@ -85,6 +86,28 @@ function parseContractError(err: unknown): string {
   return "Transaction failed on-chain. Please verify parameters and try again.";
 }
 
+function LendingTokenLogo({ symbol, className }: { symbol: string; className?: string }) {
+  if (symbol === "WETH" || symbol === "ETH") {
+    return (
+      <div className={cn("h-6 w-6 rounded-full bg-[#627EEA]/20 border border-[#627EEA]/40 flex items-center justify-center text-[#627EEA] shrink-0 font-bold text-xs select-none shadow-[0_0_8px_rgba(98,126,234,0.3)]", className)}>
+        Ξ
+      </div>
+    );
+  }
+  if (symbol === "cirBTC") {
+    return (
+      <div className={cn("h-6 w-6 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 font-bold text-xs select-none shadow-[0_0_8px_rgba(245,158,11,0.3)]", className)}>
+        ₿
+      </div>
+    );
+  }
+  return (
+    <div className={cn("h-6 w-6 rounded-full bg-[#2775CA]/20 border border-[#2775CA]/40 flex items-center justify-center text-[#2775CA] shrink-0 font-bold text-xs select-none shadow-[0_0_8px_rgba(39,117,202,0.3)]", className)}>
+      $
+    </div>
+  );
+}
+
 interface LendingWorkspaceProps {
   isConnected: boolean;
   isArcTestnet?: boolean;
@@ -92,6 +115,8 @@ interface LendingWorkspaceProps {
   lendingData?: LendingOnChainData;
   isLoading?: boolean;
   refreshLendingData?: () => Promise<void>;
+  selectedChain?: SupportedLendingChain;
+  onChainChange?: (chain: SupportedLendingChain) => void;
 }
 
 export function LendingWorkspace({
@@ -99,6 +124,8 @@ export function LendingWorkspace({
   lendingData,
   isLoading,
   refreshLendingData,
+  selectedChain = "Arc",
+  onChainChange,
 }: LendingWorkspaceProps) {
   const [activeTab, setActiveTab] = useState<"supply" | "borrow" | "repay" | "withdraw">("supply");
   const [supplyInput, setSupplyInput] = useState<string>("");
@@ -108,14 +135,63 @@ export function LendingWorkspace({
 
   const { writeContractAsync } = useWriteContract();
   const publicClient = usePublicClient();
-  const { address: userAddress } = useAccount();
+  const { address: userAddress, chainId } = useAccount();
+  const { switchChainAsync } = useSwitchChain();
+
   const [isPending, setIsPending] = useState(false);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  const currentChain = selectedChain;
+  const activeChainConfig = LENDING_CHAINS[currentChain];
+  const lendingAddress = activeChainConfig.lendingAddress;
+  const collateralToken = activeChainConfig.collateral;
+  const debtToken = activeChainConfig.debt;
+
   const handleTabChange = (tab: "supply" | "borrow" | "repay" | "withdraw") => {
     setActiveTab(tab);
     setActionError(null);
+  };
+
+  const handleChainChange = async (chain: SupportedLendingChain) => {
+    if (onChainChange) {
+      onChainChange(chain);
+    }
+    setSupplyInput("");
+    setBorrowInput("");
+    setRepayInput("");
+    setWithdrawInput("");
+    setActionError(null);
+    setStatusMsg(null);
+
+    const targetConfig = LENDING_CHAINS[chain];
+    if (isConnected && chainId !== targetConfig.id && switchChainAsync) {
+      try {
+        await switchChainAsync({ chainId: targetConfig.id });
+      } catch (err) {
+        console.warn("User dismissed chain switch:", err);
+      }
+    }
+  };
+
+  const ensureCorrectNetwork = async (): Promise<boolean> => {
+    if (!isConnected) return false;
+    if (chainId !== activeChainConfig.id) {
+      if (switchChainAsync) {
+        try {
+          setStatusMsg(`Switching network to ${activeChainConfig.name}...`);
+          await switchChainAsync({ chainId: activeChainConfig.id });
+          return true;
+        } catch {
+          setActionError(`Please switch your wallet network to ${activeChainConfig.name}.`);
+          return false;
+        }
+      } else {
+        setActionError(`Please switch your wallet network to ${activeChainConfig.name}.`);
+        return false;
+      }
+    }
+    return true;
   };
 
   const handleSupply = async () => {
@@ -123,14 +199,20 @@ export function LendingWorkspace({
     setActionError(null);
     try {
       setIsPending(true);
-      setStatusMsg("Approving cirBTC...");
-      const amountRaw = parseUnits(supplyInput, 8);
+      const isNetworkOk = await ensureCorrectNetwork();
+      if (!isNetworkOk) {
+        setIsPending(false);
+        return;
+      }
+
+      setStatusMsg(`Approving ${collateralToken.symbol}...`);
+      const amountRaw = parseUnits(supplyInput, collateralToken.decimals);
 
       const approveHash = await writeContractAsync({
-        address: CIRBTC_ADDRESS,
+        address: collateralToken.address,
         abi: ERC20_WRITE_ABI,
         functionName: "approve",
-        args: [PAYGRIX_LENDING_ADDRESS, amountRaw],
+        args: [lendingAddress, amountRaw],
       });
 
       if (publicClient) {
@@ -138,9 +220,9 @@ export function LendingWorkspace({
         await publicClient.waitForTransactionReceipt({ hash: approveHash });
       }
 
-      setStatusMsg("Depositing cirBTC collateral...");
+      setStatusMsg(`Depositing ${collateralToken.symbol} collateral...`);
       const depositHash = await writeContractAsync({
-        address: PAYGRIX_LENDING_ADDRESS,
+        address: lendingAddress,
         abi: LENDING_WRITE_ABI,
         functionName: "depositCollateral",
         args: [amountRaw],
@@ -154,8 +236,12 @@ export function LendingWorkspace({
       setStatusMsg("Collateral supplied successfully!");
       setSupplyInput("");
 
-      // Generic post-transaction cache invalidation & state refresh after block confirmation
-      clearArcReadCache();
+      if (currentChain === "Base") {
+        clearBaseBalanceCache();
+      } else {
+        clearArcReadCache();
+      }
+
       if (refreshLendingData) {
         await refreshLendingData();
       }
@@ -172,14 +258,20 @@ export function LendingWorkspace({
     setActionError(null);
     try {
       setIsPending(true);
-      setStatusMsg("Validating borrow parameters...");
-      const amountRaw = parseUnits(borrowInput, 6);
+      const isNetworkOk = await ensureCorrectNetwork();
+      if (!isNetworkOk) {
+        setIsPending(false);
+        return;
+      }
 
-      // Pre-flight simulation to verify contract will accept transaction
+      setStatusMsg("Validating borrow parameters...");
+      const amountRaw = parseUnits(borrowInput, debtToken.decimals);
+
+      // Pre-flight simulation with connected wallet address as simulation account
       if (publicClient && userAddress) {
         try {
           await publicClient.simulateContract({
-            address: PAYGRIX_LENDING_ADDRESS,
+            address: lendingAddress,
             abi: LENDING_WRITE_ABI,
             functionName: "borrow",
             args: [amountRaw],
@@ -195,7 +287,7 @@ export function LendingWorkspace({
 
       setStatusMsg("Confirming borrow in wallet...");
       const txHash = await writeContractAsync({
-        address: PAYGRIX_LENDING_ADDRESS,
+        address: lendingAddress,
         abi: LENDING_WRITE_ABI,
         functionName: "borrow",
         args: [amountRaw],
@@ -209,8 +301,12 @@ export function LendingWorkspace({
       setStatusMsg("USDC borrowed successfully!");
       setBorrowInput("");
 
-      // Generic post-transaction cache invalidation & state refresh after block confirmation
-      clearArcReadCache();
+      if (currentChain === "Base") {
+        clearBaseBalanceCache();
+      } else {
+        clearArcReadCache();
+      }
+
       if (refreshLendingData) {
         await refreshLendingData();
       }
@@ -227,14 +323,20 @@ export function LendingWorkspace({
     setActionError(null);
     try {
       setIsPending(true);
+      const isNetworkOk = await ensureCorrectNetwork();
+      if (!isNetworkOk) {
+        setIsPending(false);
+        return;
+      }
+
       setStatusMsg("Approving USDC...");
-      const amountRaw = parseUnits(repayInput, 6);
+      const amountRaw = parseUnits(repayInput, debtToken.decimals);
 
       const approveHash = await writeContractAsync({
-        address: USDC_ADDRESS,
+        address: debtToken.address,
         abi: ERC20_WRITE_ABI,
         functionName: "approve",
-        args: [PAYGRIX_LENDING_ADDRESS, amountRaw],
+        args: [lendingAddress, amountRaw],
       });
 
       if (publicClient) {
@@ -244,7 +346,7 @@ export function LendingWorkspace({
 
       setStatusMsg("Repaying USDC debt...");
       const repayHash = await writeContractAsync({
-        address: PAYGRIX_LENDING_ADDRESS,
+        address: lendingAddress,
         abi: LENDING_WRITE_ABI,
         functionName: "repay",
         args: [amountRaw],
@@ -258,8 +360,12 @@ export function LendingWorkspace({
       setStatusMsg("USDC debt repaid successfully!");
       setRepayInput("");
 
-      // Generic post-transaction cache invalidation & state refresh after block confirmation
-      clearArcReadCache();
+      if (currentChain === "Base") {
+        clearBaseBalanceCache();
+      } else {
+        clearArcReadCache();
+      }
+
       if (refreshLendingData) {
         await refreshLendingData();
       }
@@ -276,13 +382,19 @@ export function LendingWorkspace({
     setActionError(null);
     try {
       setIsPending(true);
+      const isNetworkOk = await ensureCorrectNetwork();
+      if (!isNetworkOk) {
+        setIsPending(false);
+        return;
+      }
+
       setStatusMsg("Validating withdrawal...");
-      const amountRaw = parseUnits(withdrawInput, 8);
+      const amountRaw = parseUnits(withdrawInput, collateralToken.decimals);
 
       if (publicClient && userAddress) {
         try {
           await publicClient.simulateContract({
-            address: PAYGRIX_LENDING_ADDRESS,
+            address: lendingAddress,
             abi: LENDING_WRITE_ABI,
             functionName: "withdrawCollateral",
             args: [amountRaw],
@@ -298,7 +410,7 @@ export function LendingWorkspace({
 
       setStatusMsg("Confirming withdrawal in wallet...");
       const txHash = await writeContractAsync({
-        address: PAYGRIX_LENDING_ADDRESS,
+        address: lendingAddress,
         abi: LENDING_WRITE_ABI,
         functionName: "withdrawCollateral",
         args: [amountRaw],
@@ -312,8 +424,12 @@ export function LendingWorkspace({
       setStatusMsg("Collateral withdrawn successfully!");
       setWithdrawInput("");
 
-      // Generic post-transaction cache invalidation & state refresh after block confirmation
-      clearArcReadCache();
+      if (currentChain === "Base") {
+        clearBaseBalanceCache();
+      } else {
+        clearArcReadCache();
+      }
+
       if (refreshLendingData) {
         await refreshLendingData();
       }
@@ -331,7 +447,7 @@ export function LendingWorkspace({
   let borrowError: string | null = null;
   if (borrowInput && !isNaN(Number(borrowInput)) && parseFloat(borrowInput) > 0) {
     try {
-      const borrowAmountRaw = parseUnits(borrowInput, 6);
+      const borrowAmountRaw = parseUnits(borrowInput, debtToken.decimals);
       const maxBorrow = lendingData?.userMaxBorrowRaw ?? BigInt(0);
       const liquidity = lendingData?.poolLiquidityRaw ?? BigInt(0);
 
@@ -356,19 +472,54 @@ export function LendingWorkspace({
       {/* Top accent line */}
       <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf]" />
 
-      <CardHeader className="p-3.5 sm:p-4 pb-2 flex flex-row items-center justify-between">
+      <CardHeader className="p-3.5 sm:p-4 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <CardTitle className="text-base font-bold text-white flex items-center gap-2">
             <Layers className="h-4 w-4 text-purple-400" />
             Manage your position
           </CardTitle>
           <CardDescription className="text-xs text-slate-400 mt-0.5">
-            Supply collateral, borrow USDC, repay debt, or withdraw collateral.
+            Supply collateral, borrow USDC, repay debt, or withdraw collateral on {activeChainConfig.name}.
           </CardDescription>
         </div>
-        <span className="text-[10px] font-mono font-medium text-[#4f8cff] bg-[#4f8cff]/10 border border-[#4f8cff]/20 px-2 py-0.5 rounded-full shrink-0">
-          {lendingData?.isPaused ? "Paused" : "Active"}
-        </span>
+
+        <div className="flex items-center gap-2.5">
+          {/* Chain Selector: Arc vs Base Sepolia */}
+          <div className="flex items-center gap-1 p-1 bg-[#070e1c] rounded-xl border border-white/10 shrink-0">
+            <button
+              type="button"
+              onClick={() => handleChainChange("Arc")}
+              disabled={isPending}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
+                currentChain === "Arc"
+                  ? "bg-purple-600/90 text-white shadow-[0_0_12px_rgba(168,85,247,0.4)] border border-purple-400/30"
+                  : "text-slate-400 hover:text-white hover:bg-white/5"
+              )}
+            >
+              <span className="h-2 w-2 rounded-full bg-purple-400" />
+              Arc
+            </button>
+            <button
+              type="button"
+              onClick={() => handleChainChange("Base")}
+              disabled={isPending}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
+                currentChain === "Base"
+                  ? "bg-[#0052FF] text-white shadow-[0_0_12px_rgba(0,82,255,0.4)] border border-blue-400/30"
+                  : "text-slate-400 hover:text-white hover:bg-white/5"
+              )}
+            >
+              <span className="h-2 w-2 rounded-full bg-blue-400" />
+              Base Sepolia
+            </button>
+          </div>
+
+          <span className="text-[10px] font-mono font-medium text-[#4f8cff] bg-[#4f8cff]/10 border border-[#4f8cff]/20 px-2 py-0.5 rounded-full shrink-0">
+            {lendingData?.isPaused ? "Paused" : "Active"}
+          </span>
+        </div>
       </CardHeader>
 
       <CardContent className="p-3.5 sm:p-4 pt-1 space-y-4">
@@ -435,14 +586,14 @@ export function LendingWorkspace({
         {activeTab === "supply" && (
           <div className="space-y-3">
             <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
-              <span className="font-semibold text-slate-300">Supply cirBTC Collateral</span>
+              <span className="font-semibold text-slate-300">Supply {collateralToken.symbol} Collateral</span>
               <div className="flex items-center gap-2 font-mono text-[11px]">
                 <span className="text-slate-400">
-                  Wallet: <strong className="text-white">{isLoading ? "Loading..." : lendingData?.userCirBtcBalance || "0.00"}</strong> cirBTC
+                  Wallet: <strong className="text-white">{isLoading ? "Loading..." : lendingData?.userCollateralBalance || "0.00"}</strong> {collateralToken.symbol}
                 </span>
                 <span className="text-slate-600">•</span>
                 <span className="text-slate-400">
-                  Supplied: <strong className="text-purple-300">{isLoading ? "Loading..." : lendingData?.userCollateral || "0.00"}</strong> cirBTC
+                  Supplied: <strong className="text-purple-300">{isLoading ? "Loading..." : lendingData?.userCollateral || "0.00"}</strong> {collateralToken.symbol}
                 </span>
               </div>
             </div>
@@ -453,10 +604,10 @@ export function LendingWorkspace({
                 <button
                   type="button"
                   onClick={() => {
-                    if (lendingData?.userCirBtcBalanceRaw && lendingData.userCirBtcBalanceRaw > BigInt(0)) {
-                      setSupplyInput(formatUnits(lendingData.userCirBtcBalanceRaw, 8));
-                    } else if (lendingData?.userCirBtcBalance && lendingData.userCirBtcBalance !== "Unable to load") {
-                      setSupplyInput(lendingData.userCirBtcBalance);
+                    if (lendingData?.userCollateralBalanceRaw && lendingData.userCollateralBalanceRaw > BigInt(0)) {
+                      setSupplyInput(formatUnits(lendingData.userCollateralBalanceRaw, collateralToken.decimals));
+                    } else if (lendingData?.userCollateralBalance && lendingData.userCollateralBalance !== "Unable to load") {
+                      setSupplyInput(lendingData.userCollateralBalance);
                     }
                   }}
                   className="rounded bg-[#000000] border border-white/10 hover:bg-white/5 px-2 py-0.5 text-[10px] font-bold text-white transition-all cursor-pointer font-mono"
@@ -471,15 +622,15 @@ export function LendingWorkspace({
                     type="text"
                     value={supplyInput}
                     onChange={(e) => setSupplyInput(e.target.value)}
-                    placeholder="0.00 cirBTC"
+                    placeholder={`0.00 ${collateralToken.symbol}`}
                     className="w-full bg-transparent text-2xl sm:text-3xl font-bold text-white placeholder-slate-700 focus:outline-none transition-all font-mono"
                   />
                 </div>
 
                 <div className="shrink-0">
                   <div className="flex items-center bg-[#070f21] border border-white/10 rounded-full pl-2 pr-3 py-1.5 text-white select-none">
-                    <TokenLogo symbol="cirBTC" />
-                    <span className="font-bold text-xs tracking-wider ml-1.5">cirBTC</span>
+                    <LendingTokenLogo symbol={collateralToken.symbol} />
+                    <span className="font-bold text-xs tracking-wider ml-1.5">{collateralToken.symbol}</span>
                   </div>
                 </div>
               </div>
@@ -499,7 +650,7 @@ export function LendingWorkspace({
               <span>
                 {lendingData?.isPaused
                   ? "Contract is paused. Supply operations disabled."
-                  : "Supply cirBTC collateral to increase borrowing capacity on PayGrixLending."}
+                  : `Supply ${collateralToken.symbol} collateral on ${activeChainConfig.name} to increase borrowing capacity.`}
               </span>
             </div>
 
@@ -525,7 +676,7 @@ export function LendingWorkspace({
                 ) : lendingData?.isPaused ? (
                   "Supply Collateral (Paused)"
                 ) : (
-                  "Supply Collateral"
+                  `Supply ${collateralToken.symbol}`
                 )}
               </Button>
             )}
@@ -565,7 +716,7 @@ export function LendingWorkspace({
                   type="button"
                   onClick={() => {
                     if (lendingData?.userMaxBorrowRaw && lendingData.userMaxBorrowRaw > BigInt(0)) {
-                      setBorrowInput(formatUnits(lendingData.userMaxBorrowRaw, 6));
+                      setBorrowInput(formatUnits(lendingData.userMaxBorrowRaw, debtToken.decimals));
                     } else if (lendingData?.userMaxBorrow && lendingData.userMaxBorrow !== "Unable to load") {
                       setBorrowInput(lendingData.userMaxBorrow);
                     }
@@ -589,7 +740,7 @@ export function LendingWorkspace({
 
                 <div className="shrink-0">
                   <div className="flex items-center bg-[#070f21] border border-white/10 rounded-full pl-2 pr-3 py-1.5 text-white select-none">
-                    <TokenLogo symbol="USDC" />
+                    <LendingTokenLogo symbol="USDC" />
                     <span className="font-bold text-xs tracking-wider ml-1.5">USDC</span>
                   </div>
                 </div>
@@ -610,7 +761,7 @@ export function LendingWorkspace({
               <span>
                 {lendingData?.isPaused
                   ? "Contract is paused. Borrow operations disabled."
-                  : "Borrow USDC against deposited cirBTC collateral up to 50% LTV."}
+                  : `Borrow USDC against deposited ${collateralToken.symbol} collateral up to 50% LTV on ${activeChainConfig.name}.`}
               </span>
             </div>
 
@@ -678,7 +829,7 @@ export function LendingWorkspace({
 
                 <div className="shrink-0">
                   <div className="flex items-center bg-[#070f21] border border-white/10 rounded-full pl-2 pr-3 py-1.5 text-white select-none">
-                    <TokenLogo symbol="USDC" />
+                    <LendingTokenLogo symbol="USDC" />
                     <span className="font-bold text-xs tracking-wider ml-1.5">USDC</span>
                   </div>
                 </div>
@@ -698,7 +849,7 @@ export function LendingWorkspace({
               <span>
                 {(lendingData?.userDebtRaw ?? BigInt(0)) === BigInt(0)
                   ? "No active debt on-chain."
-                  : "Repay USDC debt to unlock deposited cirBTC collateral."}
+                  : `Repay USDC debt on ${activeChainConfig.name} to unlock deposited ${collateralToken.symbol} collateral.`}
               </span>
             </div>
 
@@ -735,9 +886,9 @@ export function LendingWorkspace({
         {activeTab === "withdraw" && (
           <div className="space-y-3">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-slate-300">Withdraw cirBTC Collateral</span>
+              <span className="font-semibold text-slate-300">Withdraw {collateralToken.symbol} Collateral</span>
               <span className="text-[11px] text-slate-400 font-mono">
-                Available: {isLoading ? "..." : lendingData?.userAvailableCollateral || "0.00"} cirBTC
+                Available: {isLoading ? "..." : lendingData?.userAvailableCollateral || "0.00"} {collateralToken.symbol}
               </span>
             </div>
 
@@ -759,15 +910,15 @@ export function LendingWorkspace({
                     type="text"
                     value={withdrawInput}
                     onChange={(e) => setWithdrawInput(e.target.value)}
-                    placeholder="0.00 cirBTC"
+                    placeholder={`0.00 ${collateralToken.symbol}`}
                     className="w-full bg-transparent text-2xl sm:text-3xl font-bold text-white placeholder-slate-700 focus:outline-none transition-all font-mono"
                   />
                 </div>
 
                 <div className="shrink-0">
                   <div className="flex items-center bg-[#070f21] border border-white/10 rounded-full pl-2 pr-3 py-1.5 text-white select-none">
-                    <TokenLogo symbol="cirBTC" />
-                    <span className="font-bold text-xs tracking-wider ml-1.5">cirBTC</span>
+                    <LendingTokenLogo symbol={collateralToken.symbol} />
+                    <span className="font-bold text-xs tracking-wider ml-1.5">{collateralToken.symbol}</span>
                   </div>
                 </div>
               </div>
@@ -786,7 +937,7 @@ export function LendingWorkspace({
               <span>
                 {lendingData?.isPaused
                   ? "Contract is paused. Collateral withdrawal is disabled."
-                  : "Withdraw available cirBTC collateral back to your connected wallet."}
+                  : `Withdraw available ${collateralToken.symbol} collateral back to your connected wallet on ${activeChainConfig.name}.`}
               </span>
             </div>
 
@@ -812,7 +963,7 @@ export function LendingWorkspace({
                 ) : lendingData?.isPaused ? (
                   "Withdraw Collateral (Paused)"
                 ) : (
-                  "Withdraw Collateral"
+                  `Withdraw ${collateralToken.symbol}`
                 )}
               </Button>
             )}

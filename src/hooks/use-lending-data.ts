@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { formatUnits, Address } from "viem";
 import { safeArcReadContract, sanitizeArcError, clearArcReadCache } from "@/lib/arc-read-infra";
 import { fetchTokenBalanceDeduped } from "@/lib/arc-client";
+import { basePublicClient, fetchBaseTokenBalanceDeduped, clearBaseBalanceCache } from "@/lib/base-client";
+import { LENDING_CHAINS, SupportedLendingChain } from "@/config/lending-config";
 
 // Phase 3B/3C Deployed PayGrix Lending Contract & Testnet Simulation Oracle (Arc Testnet 5042002)
 export const PAYGRIX_LENDING_ADDRESS: Address = "0x800Cd0a3b737e989F45E69f64eEeB118724522aE";
@@ -179,6 +181,14 @@ export interface LendingOnChainData {
   userCirBtcBalanceRaw: bigint;
   userCirBtcAllowance: string;
   userCirBtcAllowanceRaw: bigint;
+  selectedChain: SupportedLendingChain;
+  collateralSymbol: string;
+  collateralDecimals: number;
+  debtSymbol: string;
+  userCollateralBalance: string;
+  userCollateralBalanceRaw: bigint;
+  userCollateralAllowance: string;
+  userCollateralAllowanceRaw: bigint;
 }
 
 const DEFAULT_LENDING_DATA: LendingOnChainData = {
@@ -218,9 +228,17 @@ const DEFAULT_LENDING_DATA: LendingOnChainData = {
   userCirBtcBalanceRaw: BigInt(0),
   userCirBtcAllowance: "0.00",
   userCirBtcAllowanceRaw: BigInt(0),
+  selectedChain: "Arc",
+  collateralSymbol: "cirBTC",
+  collateralDecimals: 8,
+  debtSymbol: "USDC",
+  userCollateralBalance: "0.00",
+  userCollateralBalanceRaw: BigInt(0),
+  userCollateralAllowance: "0.00",
+  userCollateralAllowanceRaw: BigInt(0),
 };
 
-async function fetchLendingOnChainData(
+async function fetchArcLendingOnChainData(
   userAddress?: Address,
   isArcTestnet?: boolean,
   forceRefresh?: boolean
@@ -502,10 +520,291 @@ async function fetchLendingOnChainData(
     userCirBtcBalanceRaw: safeUserCirBtcBalanceRaw,
     userCirBtcAllowance: userCirBtcAllowanceStr,
     userCirBtcAllowanceRaw,
+    selectedChain: "Arc",
+    collateralSymbol: "cirBTC",
+    collateralDecimals: 8,
+    debtSymbol: "USDC",
+    userCollateralBalance: userCirBtcBalanceStr,
+    userCollateralBalanceRaw: safeUserCirBtcBalanceRaw,
+    userCollateralAllowance: userCirBtcAllowanceStr,
+    userCollateralAllowanceRaw: userCirBtcAllowanceRaw,
   };
 }
 
-export function useLendingData(userAddress?: Address, isArcTestnet?: boolean) {
+async function fetchBaseLendingOnChainData(
+  userAddress?: Address
+): Promise<LendingOnChainData> {
+  const baseConfig = LENDING_CHAINS.Base;
+  const lendingAddress = baseConfig.lendingAddress;
+  const wethAddress = baseConfig.collateral.address;
+  const usdcAddress = baseConfig.debt.address;
+
+  // 1. Global Reads on Base Sepolia
+  const poolLiquidityPromise = basePublicClient.readContract({
+    address: lendingAddress,
+    abi: PAYGRIX_LENDING_ABI,
+    functionName: "poolLiquidity",
+  }).catch(() => BigInt(2000000));
+
+  const totalDebtPromise = basePublicClient.readContract({
+    address: lendingAddress,
+    abi: PAYGRIX_LENDING_ABI,
+    functionName: "totalOutstandingDebt",
+  }).catch(() => BigInt(0));
+
+  const totalBadDebtPromise = basePublicClient.readContract({
+    address: lendingAddress,
+    abi: PAYGRIX_LENDING_ABI,
+    functionName: "totalBadDebt",
+  }).catch(() => BigInt(0));
+
+  const ltvPromise = basePublicClient.readContract({
+    address: lendingAddress,
+    abi: PAYGRIX_LENDING_ABI,
+    functionName: "borrowLtvBps",
+  }).catch(() => BigInt(5000));
+
+  const thresholdPromise = basePublicClient.readContract({
+    address: lendingAddress,
+    abi: PAYGRIX_LENDING_ABI,
+    functionName: "liquidationThresholdBps",
+  }).catch(() => BigInt(7500));
+
+  const pausedPromise = basePublicClient.readContract({
+    address: lendingAddress,
+    abi: PAYGRIX_LENDING_ABI,
+    functionName: "paused",
+  }).catch(() => false);
+
+  const pricePromise = basePublicClient.readContract({
+    address: lendingAddress,
+    abi: PAYGRIX_LENDING_ABI,
+    functionName: "collateralPrice",
+  }).catch(() => BigInt(2500000000)); // Default ~$2,500.00 (6 decimals)
+
+  const oraclePromise = basePublicClient.readContract({
+    address: lendingAddress,
+    abi: PAYGRIX_LENDING_ABI,
+    functionName: "oracle",
+  }).catch(() => baseConfig.oracleAddress);
+
+  const ownerPromise = basePublicClient.readContract({
+    address: lendingAddress,
+    abi: PAYGRIX_LENDING_ABI,
+    functionName: "owner",
+  }).catch(() => null);
+
+  // 2. User Reads on Base Sepolia
+  let userPositionPromise = Promise.resolve([BigInt(0), BigInt(0)] as readonly [bigint, bigint]);
+  let userMaxBorrowPromise = Promise.resolve(BigInt(0));
+  let userHealthFactorPromise = Promise.resolve(BigInt(0));
+  let userAvailableCollateralPromise = Promise.resolve(BigInt(0));
+  let userUsdcBalancePromise = Promise.resolve(BigInt(0));
+  let userUsdcAllowancePromise = Promise.resolve(BigInt(0));
+  let userWethBalancePromise: Promise<bigint | null> = Promise.resolve(BigInt(0));
+  let userWethAllowancePromise = Promise.resolve(BigInt(0));
+
+  if (userAddress) {
+    userPositionPromise = basePublicClient.readContract({
+      address: lendingAddress,
+      abi: PAYGRIX_LENDING_ABI,
+      functionName: "getPosition",
+      args: [userAddress],
+    }).catch(() => [BigInt(0), BigInt(0)] as readonly [bigint, bigint]);
+
+    userMaxBorrowPromise = basePublicClient.readContract({
+      address: lendingAddress,
+      abi: PAYGRIX_LENDING_ABI,
+      functionName: "maxBorrow",
+      args: [userAddress],
+    }).catch(() => BigInt(0));
+
+    userHealthFactorPromise = basePublicClient.readContract({
+      address: lendingAddress,
+      abi: PAYGRIX_LENDING_ABI,
+      functionName: "healthFactor",
+      args: [userAddress],
+    }).catch(() => BigInt(0));
+
+    userAvailableCollateralPromise = basePublicClient.readContract({
+      address: lendingAddress,
+      abi: PAYGRIX_LENDING_ABI,
+      functionName: "availableCollateral",
+      args: [userAddress],
+    }).catch(() => BigInt(0));
+
+    userUsdcBalancePromise = fetchBaseTokenBalanceDeduped(usdcAddress, userAddress).catch(() => BigInt(0));
+
+    userUsdcAllowancePromise = basePublicClient.readContract({
+      address: usdcAddress,
+      abi: USDC_ABI,
+      functionName: "allowance",
+      args: [userAddress, lendingAddress],
+    }).catch(() => BigInt(0));
+
+    userWethBalancePromise = fetchBaseTokenBalanceDeduped(wethAddress, userAddress).catch(() => BigInt(0));
+
+    userWethAllowancePromise = basePublicClient.readContract({
+      address: wethAddress,
+      abi: USDC_ABI,
+      functionName: "allowance",
+      args: [userAddress, lendingAddress],
+    }).catch(() => BigInt(0));
+  }
+
+  const [
+    poolLiquidityRaw,
+    totalDebtRaw,
+    totalBadDebtRaw,
+    borrowLtvBpsRaw,
+    liquidationThresholdBpsRaw,
+    isPaused,
+    priceRaw,
+    oracleAddr,
+    ownerAddress,
+    userPosition,
+    maxBorrowRaw,
+    hfBps,
+    availableCollateralRaw,
+    userUsdcBalanceRaw,
+    userUsdcAllowanceRaw,
+    userWethBalanceRaw,
+    userWethAllowanceRaw,
+  ] = await Promise.all([
+    poolLiquidityPromise,
+    totalDebtPromise,
+    totalBadDebtPromise,
+    ltvPromise,
+    thresholdPromise,
+    pausedPromise,
+    pricePromise,
+    oraclePromise,
+    ownerPromise,
+    userPositionPromise,
+    userMaxBorrowPromise,
+    userHealthFactorPromise,
+    userAvailableCollateralPromise,
+    userUsdcBalancePromise,
+    userUsdcAllowancePromise,
+    userWethBalancePromise,
+    userWethAllowancePromise,
+  ]);
+
+  const [userCollateralRaw, userDebtRaw] = userPosition;
+
+  // Format Global Values
+  const poolLiquidityStr = formatUnits(poolLiquidityRaw, 6);
+  const totalDebtStr = formatUnits(totalDebtRaw, 6);
+  const totalBadDebtStr = formatUnits(totalBadDebtRaw, 6);
+  const priceNum = Number(priceRaw) / 1e6;
+  const priceStr = priceNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  // Format User Values (WETH has 18 decimals)
+  const userCollateralStr = formatUnits(userCollateralRaw, 18);
+  const userDebtStr = formatUnits(userDebtRaw, 6);
+
+  // Derive borrowing capacity via canonical protocol math if on-chain maxBorrow reverted
+  let safeMaxBorrowRaw = maxBorrowRaw;
+  if ((safeMaxBorrowRaw === null || safeMaxBorrowRaw === BigInt(0)) && userCollateralRaw > BigInt(0) && priceRaw > BigInt(0)) {
+    const collateralValueUsdcRaw = (userCollateralRaw * priceRaw) / BigInt(1e18); // WETH 18 decimals -> USDC 6 decimals
+    const maxDebtUsdcRaw = (collateralValueUsdcRaw * borrowLtvBpsRaw) / BigInt(10000); // 50% LTV
+    if (maxDebtUsdcRaw > userDebtRaw) {
+      const capacityRaw = maxDebtUsdcRaw - userDebtRaw;
+      safeMaxBorrowRaw = capacityRaw < poolLiquidityRaw ? capacityRaw : poolLiquidityRaw;
+    } else {
+      safeMaxBorrowRaw = BigInt(0);
+    }
+  }
+
+  const userMaxBorrowStr = formatUnits(safeMaxBorrowRaw, 6);
+  const userAvailableCollateralStr = formatUnits(availableCollateralRaw, 18);
+  const userUsdcBalanceStr = formatUnits(userUsdcBalanceRaw, 6);
+  const userUsdcAllowanceStr = formatUnits(userUsdcAllowanceRaw, 6);
+
+  const safeWethBalanceRaw = userWethBalanceRaw ?? BigInt(0);
+  const userWethBalanceStr = formatUnits(safeWethBalanceRaw, 18);
+  const userWethAllowanceStr = formatUnits(userWethAllowanceRaw, 18);
+
+  // Health Factor String Formatting
+  let hfStr = "—";
+  if (userDebtRaw > BigInt(0) && hfBps > BigInt(0)) {
+    const hfFloat = Number(hfBps) / 10000;
+    hfStr = hfFloat.toFixed(2);
+  }
+
+  // Collateral Value in USD ($)
+  let collateralValueStr = "$0.00";
+  if (userCollateralRaw > BigInt(0) && priceRaw > BigInt(0)) {
+    const valueBaseUnits = (userCollateralRaw * priceRaw) / BigInt(1e18);
+    const valNum = Number(valueBaseUnits) / 1e6;
+    collateralValueStr = `$${valNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  const actualOracleAddr = oracleAddr || baseConfig.oracleAddress;
+  const isContractOwner = Boolean(
+    userAddress && ownerAddress && userAddress.toLowerCase() === ownerAddress.toLowerCase()
+  );
+
+  return {
+    poolLiquidity: poolLiquidityStr,
+    poolLiquidityRaw,
+    totalOutstandingDebt: totalDebtStr,
+    totalOutstandingDebtRaw: totalDebtRaw,
+    totalBadDebt: totalBadDebtStr,
+    totalBadDebtRaw,
+    borrowLtvBps: Number(borrowLtvBpsRaw),
+    liquidationThresholdBps: Number(liquidationThresholdBpsRaw),
+    isPaused,
+    collateralPrice: priceStr,
+    collateralPriceRaw: priceRaw,
+    userCollateral: userCollateralStr,
+    userCollateralRaw,
+    userDebt: userDebtStr,
+    userDebtRaw,
+    userMaxBorrow: userMaxBorrowStr,
+    userMaxBorrowRaw: safeMaxBorrowRaw,
+    userAvailableCollateral: userAvailableCollateralStr,
+    userAvailableCollateralRaw: availableCollateralRaw,
+    userHealthFactor: hfStr,
+    userHealthFactorBps: hfBps,
+    userCollateralValueUsdc: collateralValueStr,
+    ownerAddress: ownerAddress || null,
+    oracleAddress: actualOracleAddr,
+    oracleAddressShort: `${actualOracleAddr.slice(0, 6)}...${actualOracleAddr.slice(-4)}`,
+    contractAddress: lendingAddress,
+    contractAddressShort: `${lendingAddress.slice(0, 6)}...${lendingAddress.slice(-4)}`,
+    isContractOwner,
+    userUsdcBalance: userUsdcBalanceStr,
+    userUsdcBalanceRaw,
+    userUsdcAllowance: userUsdcAllowanceStr,
+    userUsdcAllowanceRaw,
+    userCirBtcBalance: userWethBalanceStr, // For backwards compatibility
+    userCirBtcBalanceRaw: safeWethBalanceRaw,
+    userCirBtcAllowance: userWethAllowanceStr,
+    userCirBtcAllowanceRaw: userWethAllowanceRaw,
+    selectedChain: "Base",
+    collateralSymbol: "WETH",
+    collateralDecimals: 18,
+    debtSymbol: "USDC",
+    userCollateralBalance: userWethBalanceStr,
+    userCollateralBalanceRaw: safeWethBalanceRaw,
+    userCollateralAllowance: userWethAllowanceStr,
+    userCollateralAllowanceRaw: userWethAllowanceRaw,
+  };
+}
+
+export function useLendingData(
+  userAddress?: Address,
+  selectedChainOrIsArc: SupportedLendingChain | boolean = "Arc",
+  isArcTestnetParam?: boolean
+) {
+  const selectedChain: SupportedLendingChain =
+    typeof selectedChainOrIsArc === "string" ? selectedChainOrIsArc : "Arc";
+  const isArcTestnet: boolean =
+    typeof selectedChainOrIsArc === "boolean"
+      ? selectedChainOrIsArc
+      : (isArcTestnetParam ?? true);
+
   const [lendingData, setLendingData] = useState<LendingOnChainData>(DEFAULT_LENDING_DATA);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -514,22 +813,34 @@ export function useLendingData(userAddress?: Address, isArcTestnet?: boolean) {
     setIsLoading(true);
     setError(null);
     try {
-      clearArcReadCache();
-      const data = await fetchLendingOnChainData(userAddress, isArcTestnet, true);
-      setLendingData(data);
+      if (selectedChain === "Base") {
+        clearBaseBalanceCache();
+        const data = await fetchBaseLendingOnChainData(userAddress);
+        setLendingData(data);
+      } else {
+        clearArcReadCache();
+        const data = await fetchArcLendingOnChainData(userAddress, isArcTestnet, true);
+        setLendingData(data);
+      }
     } catch (err: unknown) {
       console.error("Error refreshing lending on-chain data:", err);
       setError(sanitizeArcError(err));
     } finally {
       setIsLoading(false);
     }
-  }, [userAddress, isArcTestnet]);
+  }, [userAddress, selectedChain, isArcTestnet]);
 
   useEffect(() => {
     let isMounted = true;
 
     if (!userAddress) {
-      setLendingData(DEFAULT_LENDING_DATA);
+      const emptyData = {
+        ...DEFAULT_LENDING_DATA,
+        selectedChain,
+        collateralSymbol: selectedChain === "Base" ? "WETH" : "cirBTC",
+        collateralDecimals: selectedChain === "Base" ? 18 : 8,
+      };
+      setLendingData(emptyData);
       setIsLoading(false);
       return;
     }
@@ -538,10 +849,18 @@ export function useLendingData(userAddress?: Address, isArcTestnet?: boolean) {
       setIsLoading(true);
       setError(null);
       try {
-        clearArcReadCache(userAddress);
-        const data = await fetchLendingOnChainData(userAddress, isArcTestnet, true);
-        if (isMounted) {
-          setLendingData(data);
+        if (selectedChain === "Base") {
+          clearBaseBalanceCache();
+          const data = await fetchBaseLendingOnChainData(userAddress);
+          if (isMounted) {
+            setLendingData(data);
+          }
+        } else {
+          clearArcReadCache(userAddress);
+          const data = await fetchArcLendingOnChainData(userAddress, isArcTestnet, true);
+          if (isMounted) {
+            setLendingData(data);
+          }
         }
       } catch (err: unknown) {
         if (isMounted) {
@@ -560,7 +879,7 @@ export function useLendingData(userAddress?: Address, isArcTestnet?: boolean) {
     return () => {
       isMounted = false;
     };
-  }, [userAddress, isArcTestnet]);
+  }, [userAddress, selectedChain, isArcTestnet]);
 
   return {
     lendingData,
