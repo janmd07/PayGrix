@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import { Layers, Lock, AlertCircle, ArrowUpRight, ArrowDownLeft, RotateCcw, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -90,6 +90,10 @@ function parseContractError(err: unknown): string {
 function LendingTokenLogo({ symbol, className }: { symbol: string; className?: string }) {
   const [hasError, setHasError] = useState(false);
 
+  useEffect(() => {
+    setHasError(false);
+  }, [symbol]);
+
   if (symbol === "WETH" || symbol === "ETH") {
     if (hasError) {
       return (
@@ -112,9 +116,23 @@ function LendingTokenLogo({ symbol, className }: { symbol: string; className?: s
     );
   }
   if (symbol === "cirBTC") {
+    if (hasError) {
+      return (
+        <div className={cn("h-6 w-6 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 font-bold text-xs select-none shadow-[0_0_8px_rgba(245,158,11,0.3)]", className)}>
+          ₿
+        </div>
+      );
+    }
     return (
-      <div className={cn("h-6 w-6 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 font-bold text-xs select-none shadow-[0_0_8px_rgba(245,158,11,0.3)]", className)}>
-        ₿
+      <div className={cn("relative h-6 w-6 rounded-full overflow-hidden flex items-center justify-center shrink-0 bg-transparent", className)}>
+        <Image
+          src="/tokens/cirbtc.png"
+          alt={symbol}
+          width={24}
+          height={24}
+          className="h-full w-full object-contain"
+          onError={() => setHasError(true)}
+        />
       </div>
     );
   }
