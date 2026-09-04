@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import {
   ArrowUpDown,
   Coins,
@@ -66,6 +67,36 @@ export function TokenLogo({ symbol, className }: TokenLogoProps) {
 }
 
 import { SupportedSwapChain, SWAP_CHAINS } from "@/config/swap-config";
+
+function SwapChainLogo({ chain }: { chain: SupportedSwapChain }) {
+  const [hasFailed, setHasFailed] = useState(false);
+  const logoUrl = chain === "Arc" ? "/chains/arc.png" : "/chains/base.png";
+  const alt = chain === "Arc" ? "Arc Testnet" : "Base Sepolia";
+
+  if (hasFailed) {
+    return (
+      <span
+        className={cn(
+          "h-2 w-2 rounded-full shrink-0",
+          chain === "Arc" ? "bg-purple-400" : "bg-blue-400"
+        )}
+      />
+    );
+  }
+
+  return (
+    <div className="relative flex items-center justify-center h-4 w-4 rounded-full bg-[#030712] border border-white/10 overflow-hidden shrink-0">
+      <Image
+        src={logoUrl}
+        alt={alt}
+        width={16}
+        height={16}
+        className="h-full w-full object-contain"
+        onError={() => setHasFailed(true)}
+      />
+    </div>
+  );
+}
 
 interface SwapFormProps {
   balanceUSDC: string;
@@ -329,7 +360,7 @@ export function SwapForm({
                     : "text-slate-400 hover:text-white hover:bg-white/5"
                 )}
               >
-                <span className="h-2 w-2 rounded-full bg-purple-400" />
+                <SwapChainLogo chain="Arc" />
                 Arc
               </button>
               <button
@@ -343,7 +374,7 @@ export function SwapForm({
                     : "text-slate-400 hover:text-white hover:bg-white/5"
                 )}
               >
-                <span className="h-2 w-2 rounded-full bg-blue-400" />
+                <SwapChainLogo chain="Base" />
                 Base Sepolia
               </button>
             </div>
