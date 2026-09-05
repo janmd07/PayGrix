@@ -27,7 +27,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     ? "Base Sepolia"
     : chainId === 5042002
     ? "Arc Testnet"
-    : (currentNetwork?.name ?? `Chain ${chainId}`);
+    : (currentNetwork?.name ?? "Unsupported Network");
 
   return (
     <div className="min-h-screen bg-background text-foreground">
