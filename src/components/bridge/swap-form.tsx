@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { useSwap } from "@/hooks/use-swap";
+import { useEthMarketPrice } from "@/hooks/use-eth-market-price";
 
 export interface TokenLogoProps {
   symbol: "USDC" | "EURC" | "cirBTC" | "ETH";
@@ -196,6 +197,9 @@ export function SwapForm({
     resetSwapState,
   } = useSwap(currentNetwork);
 
+  const isEthOnBase = currentNetwork === "Base" && (tokenIn === "ETH" || tokenOut === "ETH");
+  const { marketPrice: ethMarketPrice, source: ethPriceSource } = useEthMarketPrice(isEthOnBase);
+
   const currentBalance =
     tokenIn === "USDC"
       ? balanceUSDC
@@ -346,6 +350,39 @@ export function SwapForm({
   const rate = hasQuote && estimate && amount && parseFloat(amount) > 0
     ? (parseFloat(estimate.estimatedOutput) / parseFloat(amount)).toFixed(6)
     : null;
+
+  // Implied DEX ETH rate calculations from authoritative on-chain quote
+  let impliedDexEthUsd: number | null = null;
+  let impliedEthRateDisplay: string | null = null;
+
+  if (hasQuote && estimate && amount && parseFloat(amount) > 0 && isEthOnBase) {
+    const numAmount = parseFloat(amount);
+    const numOutput = parseFloat(estimate.estimatedOutput);
+
+    if (numAmount > 0 && numOutput > 0) {
+      if (tokenIn === "ETH" && tokenOut === "USDC") {
+        impliedDexEthUsd = numOutput / numAmount;
+        impliedEthRateDisplay = `~$${impliedDexEthUsd.toFixed(2)} / ETH`;
+      } else if (tokenIn === "USDC" && tokenOut === "ETH") {
+        impliedDexEthUsd = numAmount / numOutput;
+        impliedEthRateDisplay = `~$${impliedDexEthUsd.toFixed(2)} / ETH`;
+      } else if (tokenIn === "ETH" && tokenOut === "EURC") {
+        const eurRate = numOutput / numAmount;
+        impliedDexEthUsd = eurRate * 1.05;
+        impliedEthRateDisplay = `~${eurRate.toFixed(2)} EURC / ETH`;
+      } else if (tokenIn === "EURC" && tokenOut === "ETH") {
+        const eurRate = numAmount / numOutput;
+        impliedDexEthUsd = eurRate * 1.05;
+        impliedEthRateDisplay = `~${eurRate.toFixed(2)} EURC / ETH`;
+      }
+    }
+  }
+
+  const hasLargeDiscrepancy =
+    isEthOnBase &&
+    ethMarketPrice !== null &&
+    impliedDexEthUsd !== null &&
+    Math.abs(impliedDexEthUsd - ethMarketPrice) / ethMarketPrice > 0.15;
 
   return (
     <div className="space-y-6">
@@ -527,12 +564,26 @@ export function SwapForm({
             </div>
 
             {/* Daily Swaps Remaining / Info Row */}
-            <div className="flex justify-between items-center text-xs text-slate-400 px-1 py-1.5 border-t border-b border-white/5">
-              <div className="flex items-center gap-1.5">
-                <div className="h-4 w-4 rounded-full border border-slate-500/30 flex items-center justify-center text-[10px] text-slate-500 font-bold shrink-0">i</div>
-                <span>Network</span>
+            <div className="space-y-1.5 border-t border-b border-white/5 py-1.5 px-1">
+              <div className="flex justify-between items-center text-xs text-slate-400">
+                <div className="flex items-center gap-1.5">
+                  <div className="h-4 w-4 rounded-full border border-slate-500/30 flex items-center justify-center text-[10px] text-slate-500 font-bold shrink-0">i</div>
+                  <span>Network</span>
+                </div>
+                <span className="font-semibold text-white">{SWAP_CHAINS[currentNetwork].name}</span>
               </div>
-              <span className="font-semibold text-white">{SWAP_CHAINS[currentNetwork].name}</span>
+
+              {isEthOnBase && ethMarketPrice !== null && (
+                <div className="flex justify-between items-center text-xs pt-1 border-t border-white/5">
+                  <span className="text-slate-400 flex items-center gap-1">
+                    <span>Live ETH Market Ref</span>
+                    <span className="text-[9px] text-slate-500 font-mono">({ethPriceSource === "binance" ? "Binance" : ethPriceSource === "coinbase" ? "Coinbase" : "Market Data"})</span>
+                  </span>
+                  <span className="font-mono text-xs font-semibold text-slate-200">
+                    ~${ethMarketPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Over-balance Warning */}
@@ -555,12 +606,39 @@ export function SwapForm({
                 </div>
 
                 <div className="space-y-1.5 pt-1">
-                  {rate && (
+                  {/* Live ETH Market Reference row */}
+                  {isEthOnBase && ethMarketPrice !== null && (
+                    <div className="flex justify-between items-center py-0.5">
+                      <span className="text-slate-400 flex items-center gap-1">
+                        <span>Live ETH Market</span>
+                        <span className="text-[9px] text-slate-500 font-mono">({ethPriceSource === "binance" ? "Binance" : "Ref"})</span>
+                      </span>
+                      <span className="text-slate-200 font-mono font-medium">
+                        ~${ethMarketPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ETH
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Base Sepolia DEX Implied Rate row */}
+                  {isEthOnBase && impliedEthRateDisplay && (
+                    <div className="flex justify-between items-center py-0.5">
+                      <span className="text-slate-400 flex items-center gap-1">
+                        <span>Base Sepolia DEX Rate</span>
+                        <span className="text-[9px] text-purple-400/80 font-mono">(On-Chain)</span>
+                      </span>
+                      <span className="text-amber-400 font-mono font-medium">
+                        {impliedEthRateDisplay}
+                      </span>
+                    </div>
+                  )}
+
+                  {rate && !isEthOnBase && (
                     <div className="flex justify-between items-center">
                       <span className="text-slate-400">Rate</span>
                       <span className="text-white font-mono font-medium">1 {tokenIn} ≈ {rate} {tokenOut}</span>
                     </div>
                   )}
+
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400">You Swap</span>
                     <span className="text-white font-mono font-medium">{amount} {tokenIn}</span>
@@ -587,6 +665,19 @@ export function SwapForm({
                     <Clock className="h-3 w-3 text-purple-400 shrink-0" />
                     <span>Slippage tolerance is set to 1% to protect your rate.</span>
                   </div>
+
+                  {/* Price Discrepancy Warning */}
+                  {hasLargeDiscrepancy && (
+                    <div className="mt-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 space-y-1 text-xs">
+                      <div className="flex items-center gap-1.5 font-semibold text-amber-300">
+                        <AlertTriangle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                        <span>Price Discrepancy Notice</span>
+                      </div>
+                      <p className="text-[11px] text-amber-200/90 leading-relaxed">
+                        Base Sepolia DEX rate ({impliedEthRateDisplay}) is significantly below the external market reference (~${ethMarketPrice?.toLocaleString(undefined, { maximumFractionDigits: 0 })}/ETH) due to testnet pool liquidity. Your swap will execute strictly against the on-chain DEX quote.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
