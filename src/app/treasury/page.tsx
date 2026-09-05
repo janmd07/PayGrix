@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { 
-  Activity, 
-  Check, 
-  Copy, 
-  ExternalLink, 
-  Landmark, 
+import {
+  Activity,
+  Check,
+  Copy,
+  ExternalLink,
+  Landmark,
   Wallet,
   Coins,
   History,
@@ -81,7 +81,7 @@ export default function TreasuryPage() {
         try {
           const parsed = JSON.parse(storedBatches);
           const txs: TransactionRow[] = [];
-          
+
           if (Array.isArray(parsed)) {
             parsed.forEach((b) => {
               if (b && b.contributors && Array.isArray(b.contributors)) {
@@ -126,16 +126,17 @@ export default function TreasuryPage() {
   }, [mounted]);
 
 
-  const { 
-    address, 
-    isConnected, 
-    isArcTestnet, 
-    availableConnector, 
-    connect, 
+  const {
+    address,
+    isConnected,
+    isArcTestnet,
+    availableConnector,
+    connect,
     disconnect,
     isConnecting,
     isSwitching,
-    switchToArcTestnet
+    switchToArcTestnet,
+    chainId
   } = useArcWallet();
 
 
@@ -194,7 +195,7 @@ export default function TreasuryPage() {
           {/* Animated Ambient background glows */}
           <div className="orb orb-1 opacity-60" />
           <div className="orb orb-2 opacity-40" />
-          
+
           <Card className="w-full max-w-md relative z-10 border border-white/10 bg-[#060f24]/60 backdrop-blur-xl p-8 text-center shadow-2xl">
             <div className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-[#6d5dfc]/10 border border-[#6d5dfc]/15 text-[#4f8cff]">
               <Landmark className="h-8 w-8" />
@@ -205,7 +206,7 @@ export default function TreasuryPage() {
             </p>
             <div className="flex flex-col gap-3">
               {availableConnector ? (
-                <Button 
+                <Button
                   onClick={() => connect({ connector: availableConnector })}
                   disabled={isConnecting}
                   size="lg"
@@ -318,9 +319,9 @@ export default function TreasuryPage() {
                 The founder wallet itself acts as the treasury. Deposits are not required since all payroll runs are signed and sent directly from your address.
               </p>
               <div className="pt-2">
-                <Button 
-                  size="sm" 
-                  variant="outline" 
+                <Button
+                  size="sm"
+                  variant="outline"
                   onClick={() => disconnect()}
                   className="w-full sm:w-auto text-rose-400 border-rose-500/20 hover:bg-rose-500/10 hover:text-rose-300"
                 >
@@ -341,21 +342,23 @@ export default function TreasuryPage() {
                 <div className="flex items-center gap-2">
                   <div className={cn(
                     "h-2 w-2 rounded-full",
-                    isArcTestnet ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
+                    isArcTestnet ? "bg-emerald-400 animate-pulse" : chainId === 84532 ? "bg-blue-400" : "bg-amber-400"
                   )} />
                   <span className="text-sm font-medium text-white">
-                    {isArcTestnet ? "Arc Testnet (Active)" : "Unsupported Network"}
+                    {isArcTestnet ? "Arc Testnet (Active)" : chainId === 84532 ? "Base Sepolia" : "Unsupported Network"}
                   </span>
                 </div>
-                <Badge variant={isArcTestnet ? "success" : "warning"}>
-                  {isArcTestnet ? "Active" : "Wrong Network"}
+                <Badge variant={isArcTestnet ? "success" : chainId === 84532 ? "outline" : "warning"}>
+                  {isArcTestnet ? "Active" : chainId === 84532 ? "Arc Required" : "Wrong Network"}
                 </Badge>
               </div>
-              
+
               {!isArcTestnet ? (
                 <div className="space-y-3">
                   <p className="text-xs text-amber-400/90 leading-relaxed bg-amber-500/5 border border-amber-500/10 rounded-lg p-2.5">
-                    Your wallet is currently connected to an unsupported network. Please switch to Arc Testnet to sync your active treasury balance.
+                    {chainId === 84532
+                      ? "Connected to Base Sepolia. Treasury operations and vault contracts are currently deployed on Arc Testnet. Please switch to Arc Testnet to sync your active treasury balance."
+                      : "Your wallet is currently connected to an unsupported network. Please switch to Arc Testnet to sync your active treasury balance."}
                   </p>
                   <Button
                     size="sm"
@@ -485,15 +488,15 @@ export default function TreasuryPage() {
 
                     {/* Rows */}
                     {paginatedTransactions.map((tx) => (
-                      <div 
-                        key={tx.id} 
+                      <div
+                        key={tx.id}
                         className="grid grid-cols-5 items-center border border-white/5 px-4 py-3 text-sm text-white hover:bg-white/[0.02] rounded-lg transition-all"
                       >
                         <div className="pr-1.5 truncate">
                           <p className="text-slate-300 font-medium truncate">{tx.date}</p>
                           <p className="text-[10px] text-slate-500 truncate mt-0.5">Due: {tx.scheduledDate}</p>
                         </div>
-                        <a 
+                        <a
                           href={`https://testnet.arcscan.app/tx/${tx.txHash}`}
                           target="_blank"
                           rel="noreferrer"
@@ -510,8 +513,8 @@ export default function TreasuryPage() {
                           {tx.amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC
                         </span>
                         <div className="text-right">
-                          <Badge 
-                            variant="success" 
+                          <Badge
+                            variant="success"
                             className="px-2 py-0.5 text-[10px]"
                           >
                             Paid
@@ -552,7 +555,7 @@ export default function TreasuryPage() {
                 )}
               </>
             )}
-            
+
             <div className="mt-4 text-xs text-slate-500 bg-white/[0.01] border border-white/5 rounded-xl p-3 flex gap-2">
               <HelpCircle className="h-4.5 w-4.5 shrink-0 text-slate-500 mt-0.5" />
               <p className="leading-relaxed">

@@ -165,11 +165,11 @@ export default function AnalyticsPage() {
   // 1. OVERVIEW CALCULATIONS
   let totalUsdcPaid = 0;
   const paidContribAddresses = new Set<string>();
-  
+
   const executedBatches = batches.filter(
     (b) => b.status === "Paid" || b.status === "Partially Paid" || b.executedAt
   );
-  
+
   batches.forEach((b) => {
     b.contributors.forEach((c) => {
       if (c.status === "Paid" && c.txHash) {
@@ -185,7 +185,7 @@ export default function AnalyticsPage() {
 
   // 2. MONTHLY PAYROLL CHART DATA
   const monthlySums: Record<string, { amount: number; dateVal: Date; label: string }> = {};
-  
+
   batches.forEach((b) => {
     const isExecuted = b.status === "Paid" || b.status === "Partially Paid" || b.executedAt;
     if (!isExecuted) return;
@@ -321,12 +321,17 @@ export default function AnalyticsPage() {
   let networkColor = "text-rose-400";
   let contractSyncStatus = "Offline (Wrong Network)";
   let contractSyncColor = "text-rose-400";
-  
+
   if (isArcTestnet) {
     networkStatusStr = "Arc Testnet";
     networkColor = "text-emerald-400";
     contractSyncStatus = "Synchronized";
     contractSyncColor = "text-emerald-400";
+  } else if (chainId === 84532) {
+    networkStatusStr = "Base Sepolia";
+    networkColor = "text-[#0052FF]";
+    contractSyncStatus = "Arc Sync Required";
+    contractSyncColor = "text-amber-400";
   } else {
     healthScore -= 30; // Wrong Network penalty
     healthScore -= 20; // Contract offline penalty
@@ -462,7 +467,7 @@ export default function AnalyticsPage() {
 
         {/* ── Main content grid ──────────────────────────────────── */}
         <div className="relative z-10 grid gap-6 lg:grid-cols-3">
-          
+
           {/* ── 2. Monthly Payroll Chart ─────────────────────────── */}
           <Card className="lg:col-span-2 glass-card-component flex flex-col justify-between">
             <CardHeader className="pb-4">
@@ -610,7 +615,7 @@ export default function AnalyticsPage() {
 
         {/* ── Bottom grids: Top contributors, Network Info, Success Rates ── */}
         <div className="relative z-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          
+
           {/* ── 3. Top Contributors ────────────────────────────── */}
           <Card className="glass-card-component">
             <CardHeader className="pb-3">
@@ -742,15 +747,15 @@ export default function AnalyticsPage() {
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-slate-400">Connected Chain</span>
-                <span className={cn("font-semibold font-mono text-[11px]", isArcTestnet ? "text-emerald-400" : "text-rose-400")}>
-                  {isArcTestnet ? "Arc Testnet" : "Wrong Network"}
+                <span className={cn("font-semibold font-mono text-[11px]", isArcTestnet ? "text-emerald-400" : chainId === 84532 ? "text-[#4f8cff]" : "text-rose-400")}>
+                  {isArcTestnet ? "Arc Testnet" : chainId === 84532 ? "Base Sepolia" : "Wrong Network"}
                 </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-slate-400">Active Contract</span>
                 <span className="font-semibold text-white">ArcPayroll</span>
               </div>
-              
+
               <div className="pt-2.5 border-t border-white/5 space-y-2">
                 <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Contract Address</p>
                 <div className="flex items-center justify-between gap-2 bg-white/5 border border-white/8 rounded-lg p-2 font-mono text-[10px] text-slate-300">

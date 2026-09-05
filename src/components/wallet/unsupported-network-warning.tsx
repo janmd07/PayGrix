@@ -19,15 +19,12 @@ export function UnsupportedNetworkWarning() {
 
   const { currentNetwork, isSwitching, isConnected, chainId, switchToArcTestnet } = useArcWallet();
 
+  // PayGrix globally supports Arc Testnet (5042002) and Base Sepolia (84532).
+  // The bridge feature additionally supports Arbitrum Sepolia (421614).
   const isBridgePage = pathname === "/bridge";
-  const isLendingPage = pathname === "/lending";
-  const isPayrollPage = pathname === "/payroll";
-  const isProfilePage = pathname === "/profile";
   const allowedChainIds = isBridgePage
     ? [5042002, 84532, 421614]
-    : isLendingPage || isPayrollPage || isProfilePage
-    ? [5042002, 84532]
-    : [5042002];
+    : [5042002, 84532];
   const isUnsupported = isConnected && !allowedChainIds.includes(chainId);
 
   if (!mounted || !isUnsupported) {
@@ -45,13 +42,7 @@ export function UnsupportedNetworkWarning() {
               Current network: {currentNetwork?.name ?? "Unknown network"}.{" "}
               {isBridgePage
                 ? "The bridge supports Arc Testnet, Base Sepolia, and Arbitrum Sepolia. Please switch to one of these networks to bridge."
-                : isLendingPage
-                ? "Lending supports Arc Testnet and Base Sepolia. Please switch to one of these networks to access lending."
-                : isPayrollPage
-                ? "Payroll supports Arc Testnet and Base Sepolia. Please switch to one of these networks to manage payroll."
-                : isProfilePage
-                ? "Profile supports Arc Testnet and Base Sepolia. Please switch to one of these networks to view your profile."
-                : `PayGrix only supports ${arcTestnet.name}. Features are disabled until you switch.`}
+                : "PayGrix supports Arc Testnet and Base Sepolia. Please switch to one of these networks."}
             </p>
           </div>
         </div>

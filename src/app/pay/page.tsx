@@ -2,34 +2,34 @@
 
 import { useState, useEffect, useRef, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { 
-  QrCode, 
-  ScanLine, 
-  Send, 
-  Copy, 
-  Check, 
-  ExternalLink, 
-  AlertTriangle, 
-  Search, 
-  Clock, 
-  Download, 
-  Share2, 
+import {
+  QrCode,
+  ScanLine,
+  Send,
+  Copy,
+  Check,
+  ExternalLink,
+  AlertTriangle,
+  Search,
+  Clock,
+  Download,
+  Share2,
   RefreshCw,
   Wallet,
   Sparkles
 } from "lucide-react";
-import { 
-  erc20Abi, 
-  parseUnits, 
-  formatUnits, 
-  isAddress, 
-  type Address 
+import {
+  erc20Abi,
+  parseUnits,
+  formatUnits,
+  isAddress,
+  type Address
 } from "viem";
-import { 
-  useAccount, 
-  useWriteContract, 
+import {
+  useAccount,
+  useWriteContract,
   usePublicClient,
-  useReadContract 
+  useReadContract
 } from "wagmi";
 
 import { AppShell } from "@/components/layout/app-shell";
@@ -76,12 +76,12 @@ type ParsedPaymentData = {
 function PayPageContent() {
   const [mounted, setMounted] = useState(false);
   const [activeTab, setActiveTab] = useState<"send" | "receive" | "scan" | "history">("send");
-  
+
   // Wallet state
   const { isConnected, address } = useAccount();
-  const { isArcTestnet } = useArcWallet();
+  const { isArcTestnet, chainId } = useArcWallet();
   const publicClient = usePublicClient({ chainId: CHAIN_ID });
-  
+
   // Balance state
   const { data: usdcBalanceRaw, refetch: refetchBalance, isLoading: isBalanceLoading } = useReadContract({
     address: USDC_ADDRESS,
@@ -93,8 +93,8 @@ function PayPageContent() {
     }
   });
 
-  const usdcBalance = usdcBalanceRaw !== undefined 
-    ? Number(formatUnits(usdcBalanceRaw, 6)) 
+  const usdcBalance = usdcBalanceRaw !== undefined
+    ? Number(formatUnits(usdcBalanceRaw, 6))
     : 0;
 
   // Send Form State
@@ -105,24 +105,24 @@ function PayPageContent() {
   const [requestId, setRequestId] = useState("");
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [paymentSource, setPaymentSource] = useState<"manual" | "qr" | "payment_link">("manual");
-  
+
   // Warnings / Detections
   const [isContractRecipient, setIsContractRecipient] = useState(false);
   const [isSelfTransfer, setIsSelfTransfer] = useState(false);
   const [urlError, setUrlError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  
+
   // Review Modal State
   const [reviewOpen, setReviewOpen] = useState(false);
   const [isDuplicateRequest, setIsDuplicateRequest] = useState(false);
   const [bypassDuplicateWarning, setBypassDuplicateWarning] = useState(false);
-  
+
   // Transaction lifecycle
   const { writeContractAsync } = useWriteContract();
   const [txStatus, setTxStatus] = useState<"idle" | "broadcasting" | "confirming" | "success" | "failed">("idle");
   const [txHash, setTxHash] = useState("");
   const [txError, setTxError] = useState<string | null>(null);
-  
+
   // Receive Form State
   const [recvName, setRecvName] = useState("");
   const [recvAmount, setRecvAmount] = useState("");
@@ -132,7 +132,7 @@ function PayPageContent() {
   const [generatedJson, setGeneratedJson] = useState("");
   const [recvRequestId, setRecvRequestId] = useState("");
   const [recvExpiresAt, setRecvExpiresAt] = useState<string | null>(null);
-  
+
   // Copy state helpers
   const [copiedText, setCopiedText] = useState("");
 
@@ -144,7 +144,7 @@ function PayPageContent() {
   const [fileScanSuccess, setFileScanSuccess] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const html5QrCodeRef = useRef<any>(null);
-  
+
   // History State
   const [history, setHistory] = useState<PaymentRecord[]>([]);
   const [isHistoryLoading, setIsHistoryLoading] = useState(false);
@@ -223,7 +223,7 @@ function PayPageContent() {
   // Parse URL payment link params
   useEffect(() => {
     if (!mounted || !searchParams) return;
-    
+
     const recipientParam = searchParams.get("recipient");
     const amountParam = searchParams.get("amount");
     const noteParam = searchParams.get("note");
@@ -259,7 +259,7 @@ function PayPageContent() {
         if (reqIdParam) setRequestId(reqIdParam);
         if (expiresParam) setExpiresAt(expiresParam);
         setPaymentSource("payment_link");
-        
+
         // Auto open review screen
         setReviewOpen(true);
       } catch (err) {
@@ -276,10 +276,10 @@ function PayPageContent() {
       setIsSelfTransfer(false);
       return;
     }
-    
+
     if (isAddress(recipient)) {
       setIsSelfTransfer(address?.toLowerCase() === recipient.toLowerCase());
-      
+
       const checkBytecode = async () => {
         if (publicClient) {
           try {
@@ -307,10 +307,10 @@ function PayPageContent() {
   // QR link generator for receive tab
   const handleGenerateQR = () => {
     if (!address) return;
-    
+
     const reqId = `pay_${Math.random().toString(36).substring(2, 11)}_${Date.now().toString(36)}`;
     setRecvRequestId(reqId);
-    
+
     let expISO: string | null = null;
     if (recvExpiry !== "never") {
       const now = new Date();
@@ -331,7 +331,7 @@ function PayPageContent() {
       `&chainId=${CHAIN_ID}` +
       (recvNote ? `&note=${encodeURIComponent(recvNote)}` : "") +
       (expISO ? `&expiresAt=${expISO}` : "");
-      
+
     const fullUrl = `${origin}${path}`;
     setGeneratedLink(fullUrl);
 
@@ -398,7 +398,7 @@ function PayPageContent() {
   const startCamera = async () => {
     if (!html5QrcodeCtorRef.current) return;
     if (typeof window === "undefined") return;
-    
+
     const container = document.getElementById("scanner-feed-container");
     if (!container) {
       setScannerError("Camera container element not found in DOM.");
@@ -491,7 +491,7 @@ function PayPageContent() {
         if (json.version !== 1) {
           throw new Error("Unsupported payment version payload.");
         }
-        
+
         const chainIdVal = json.network?.chainId || json.chainId;
         if (chainIdVal && Number(chainIdVal) !== CHAIN_ID) {
           throw new Error("This QR request is for a different blockchain network.");
@@ -514,7 +514,7 @@ function PayPageContent() {
       } else if (text.includes("/pay?") || text.includes("pay?")) {
         const urlString = text.startsWith("http") ? text : `https://paygrid.io${text.startsWith("/") ? "" : "/"}${text}`;
         const url = new URL(urlString);
-        
+
         const chainIdVal = url.searchParams.get("chainId");
         if (chainIdVal && Number(chainIdVal) !== CHAIN_ID) {
           throw new Error("This request link is for a different blockchain network.");
@@ -622,7 +622,11 @@ function PayPageContent() {
         throw new Error("Please connect your wallet first.");
       }
       if (!isArcTestnet) {
-        throw new Error("Please switch your wallet to Arc Testnet network.");
+        throw new Error(
+          chainId === 84532
+            ? "The QR payment module is currently deployed on Arc Testnet. Please switch to Arc Testnet to send payments."
+            : "Please switch your wallet to Arc Testnet network."
+        );
       }
       if (!recipient || !isAddress(recipient)) {
         throw new Error("Please enter a valid EVM recipient address.");
@@ -668,13 +672,13 @@ function PayPageContent() {
   // Execute actual on-chain transaction
   const handleExecutePayment = async () => {
     if (!recipient || !amount || !address) return;
-    
+
     setTxError(null);
     setTxStatus("broadcasting");
-    
+
     try {
       const amountUnits = parseUnits(amount, 6);
-      
+
       // Request wallet transaction
       const hash = await writeContractAsync({
         abi: erc20Abi,
@@ -690,16 +694,16 @@ function PayPageContent() {
       // Wait for block receipt
       if (publicClient) {
         const receipt = await publicClient.waitForTransactionReceipt({ hash });
-        
+
         if (receipt.status === "success") {
           setTxStatus("success");
-          
+
           // Save in database or local history
           await savePaymentToHistory(hash, amount, recipient, paymentNote, paymentSource, requestId, recipientName);
-          
+
           // Refresh details
           refetchBalance();
-          
+
           // Reset form fields
           setRecipient("");
           setRecipientName("");
@@ -719,7 +723,7 @@ function PayPageContent() {
     } catch (err) {
       console.error("Payment execution error:", err);
       setTxStatus("failed");
-      
+
       const errMsg = (err as Error).message || "";
       if (errMsg.includes("User rejected") || errMsg.includes("rejected")) {
         setTxError("Transaction signature was rejected in wallet.");
@@ -731,12 +735,12 @@ function PayPageContent() {
 
   // Save transaction to history helper
   const savePaymentToHistory = async (
-    hash: string, 
-    amtStr: string, 
-    toAddr: string, 
-    noteStr: string, 
-    source: string, 
-    reqId: string, 
+    hash: string,
+    amtStr: string,
+    toAddr: string,
+    noteStr: string,
+    source: string,
+    reqId: string,
     nameStr: string
   ) => {
     if (!address) return;
@@ -796,7 +800,7 @@ function PayPageContent() {
     if (historyFilter !== "all" && item.source_type !== historyFilter) {
       return false;
     }
-    
+
     // Search Query
     if (historySearch) {
       const q = historySearch.toLowerCase();
@@ -804,10 +808,10 @@ function PayPageContent() {
       const matchName = item.recipient_name?.toLowerCase().includes(q);
       const matchHash = item.tx_hash.toLowerCase().includes(q);
       const matchReq = item.request_id?.toLowerCase().includes(q);
-      
+
       return matchAddress || matchName || matchHash || matchReq;
     }
-    
+
     return true;
   });
 
@@ -825,7 +829,7 @@ function PayPageContent() {
               P2P USDC transfers with QR code scanner and payment requests on Arc Testnet.
             </p>
           </div>
-          
+
           {/* Status Badge */}
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="border-[#4f8cff]/20 bg-[#2563ff]/5 text-[#60a5fa] px-3 py-1 text-xs font-semibold flex items-center gap-1.5 shadow-[0_0_15px_rgba(79,140,255,0.1)]">
@@ -873,7 +877,7 @@ function PayPageContent() {
         {/* Dynamic Card Display */}
         <Card className="border-slate-800 bg-slate-900/60 backdrop-blur-xl shadow-2xl relative overflow-hidden">
           <div className="absolute inset-0 bg-gradient-to-tr from-slate-950/20 via-transparent to-[#6d5dfc]/5 pointer-events-none" />
-          
+
           <CardContent className="p-6 relative z-10">
             {/* Wallet status banner */}
             {!isConnected && activeTab !== "history" && (
@@ -895,9 +899,13 @@ function PayPageContent() {
               <div className="mb-6 p-4 border border-amber-500/25 bg-amber-500/5 rounded-xl flex gap-3 text-amber-200 text-sm">
                 <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
                 <div>
-                  <p className="font-semibold text-amber-300">Unsupported Network</p>
+                  <p className="font-semibold text-amber-300">
+                    {chainId === 84532 ? "Arc Testnet Required for QR Module" : "Unsupported Network"}
+                  </p>
                   <p className="text-xs text-amber-400/80 mt-0.5">
-                    PayGrix QR module runs exclusively on **Arc Testnet (Chain ID: 5042002)**. Switch your wallet to proceed.
+                    {chainId === 84532
+                      ? "PayGrix supports Base Sepolia, but the QR payment module is currently deployed on Arc Testnet (Chain ID: 5042002). Please switch to Arc Testnet to proceed."
+                      : "PayGrix QR module runs exclusively on **Arc Testnet (Chain ID: 5042002)**. Switch your wallet to proceed."}
                   </p>
                 </div>
               </div>
@@ -938,7 +946,7 @@ function PayPageContent() {
                       onChange={(e) => setRecipient(e.target.value.trim())}
                       className="w-full bg-slate-950 border border-slate-800 focus:border-[#6d5dfc]/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-[#6d5dfc]/50 transition-all font-mono"
                     />
-                    
+
                     {/* Contract warnings */}
                     {isContractRecipient && (
                       <p className="text-[11px] text-amber-400 font-medium flex items-center gap-1">
@@ -1073,7 +1081,7 @@ function PayPageContent() {
                           className="w-full bg-slate-950 border border-slate-800 focus:border-[#6d5dfc]/50 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none transition-all font-mono"
                         />
                       </div>
-                      
+
                       <div className="space-y-2">
                         <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Request Expiry</label>
                         <select
@@ -1172,7 +1180,7 @@ function PayPageContent() {
                               <Copy className="h-3 w-3" />
                             )}
                           </button>
-                          
+
                           <button
                             onClick={() => handleCopy(generatedLink, "link")}
                             className="w-full flex items-center justify-between px-3 py-2 rounded-lg text-[10px] bg-slate-950 border border-slate-900 text-slate-400 hover:text-white transition-all font-mono truncate"
@@ -1210,8 +1218,8 @@ function PayPageContent() {
                 <div className="grid gap-6 md:grid-cols-2">
                   {/* Left Column: Live camera view */}
                   <div className="flex flex-col items-center justify-center p-6 border border-slate-800 bg-slate-950/40 rounded-2xl relative min-h-[350px]">
-                    <div 
-                      id="scanner-feed-container" 
+                    <div
+                      id="scanner-feed-container"
                       className={`relative w-full max-w-xs aspect-square overflow-hidden rounded-xl border border-slate-800 bg-black flex items-center justify-center ${
                         scannerActive ? "opacity-100" : "opacity-40"
                       }`}
@@ -1223,7 +1231,7 @@ function PayPageContent() {
                         </div>
                       )}
                     </div>
-                    
+
                     {/* Camera Control button */}
                     <div className="mt-6 w-full max-w-xs">
                       {scannerActive ? (
@@ -1253,7 +1261,7 @@ function PayPageContent() {
                         <h4 className="text-xs font-bold text-white uppercase tracking-wider">Option 1: Upload QR Image</h4>
                         <p className="text-[11px] text-slate-500">Select a QR code screenshot or image file from your device.</p>
                       </div>
-                      
+
                       <div className="relative border border-dashed border-slate-800 hover:border-slate-700 bg-slate-950 rounded-xl p-6 text-center cursor-pointer transition-all">
                         <input
                           type="file"
@@ -1291,7 +1299,7 @@ function PayPageContent() {
                         />
                       </div>
                     </div>
-                    
+
                     {scannerError && (
                       <div className="p-3 bg-red-950/20 border border-red-500/25 rounded-xl text-red-300 text-xs flex gap-2">
                         <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -1320,7 +1328,7 @@ function PayPageContent() {
                       {isSupabaseConfigured ? "Synched payments database history." : "Local device payment logs only."}
                     </p>
                   </div>
-                  
+
                   {/* Local storage badge reminder */}
                   {!isSupabaseConfigured && (
                     <Badge variant="outline" className="border-amber-500/20 bg-amber-500/5 text-amber-400 text-[10px] uppercase font-bold py-1">
@@ -1383,32 +1391,32 @@ function PayPageContent() {
                   <div className="space-y-3">
                     {filteredHistory.map((item, idx) => {
                       const isSender = address?.toLowerCase() === item.sender_address.toLowerCase();
-                      
+
                       return (
-                        <div 
+                        <div
                           key={item.tx_hash || idx}
                           className="p-4 border border-slate-800/80 bg-slate-950/30 hover:bg-slate-950/60 rounded-xl transition-all flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
                         >
                           <div className="flex items-start gap-3">
                             {/* Direction Badge Icon */}
                             <div className={`h-8 w-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 border ${
-                              isSender 
-                                ? "bg-red-950/15 border-red-900/40 text-red-400" 
+                              isSender
+                                ? "bg-red-950/15 border-red-900/40 text-red-400"
                                 : "bg-green-950/15 border-green-900/40 text-green-400"
                             }`}>
                               {isSender ? "OUT" : "IN"}
                             </div>
-                            
+
                             <div className="space-y-0.5">
                               {/* Recipient / Sender Name and Address */}
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="text-xs font-bold text-white">
-                                  {isSender 
+                                  {isSender
                                     ? (item.recipient_name ? `${item.recipient_name} (${item.recipient_address.slice(0, 6)}...)` : item.recipient_address.slice(0, 14) + "...")
                                     : `From: ${item.sender_address.slice(0, 14)}...`
                                   }
                                 </span>
-                                
+
                                 <Badge variant="outline" className="text-[9px] scale-90 tracking-wide font-semibold border-slate-800 bg-slate-900 text-slate-400 px-1.5 py-0.5">
                                   {item.source_type}
                                 </Badge>
@@ -1418,7 +1426,7 @@ function PayPageContent() {
                               <p className="text-[10px] text-slate-500">
                                 {new Date(item.created_at).toLocaleDateString()} at {new Date(item.created_at).toLocaleTimeString()}
                               </p>
-                              
+
                               {/* Note if available */}
                               {item.note && (
                                 <p className="text-xs text-slate-400 bg-slate-950 border border-slate-900 px-2 py-0.5 rounded italic max-w-sm inline-block">
@@ -1457,7 +1465,7 @@ function PayPageContent() {
                                   <Copy className="h-3.5 w-3.5" />
                                 )}
                               </button>
-                              
+
                               <a
                                 href={`${EXPLORER_URL}/tx/${item.tx_hash}`}
                                 target="_blank"
@@ -1489,7 +1497,7 @@ function PayPageContent() {
       {reviewOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
           <div className="w-full max-w-md bg-slate-950 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl p-6 space-y-6">
-            
+
             {/* Header */}
             <div className="text-center border-b border-slate-800 pb-4">
               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-widest">Payment Request Review</h3>
@@ -1585,7 +1593,7 @@ function PayPageContent() {
                       <Check className="h-6 w-6 text-green-500" />
                     </div>
                     <p className="text-xs font-bold text-white">Payment Confirmed!</p>
-                    
+
                     <div className="bg-slate-950 border border-slate-900 p-3 rounded-xl space-y-1.5 text-left text-[11px] w-full">
                       <div className="flex justify-between">
                         <span className="text-slate-500">Recipient</span>
