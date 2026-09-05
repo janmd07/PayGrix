@@ -2,32 +2,16 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ReactNode, useState, useEffect } from "react";
+import { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { navItems, productNavItem } from "@/components/layout/nav-items";
 import { UnsupportedNetworkWarning, WalletPanel } from "@/components/wallet/wallet-panel";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
-import { useArcWallet } from "@/components/wallet/use-arc-wallet";
-
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const ProductIcon = productNavItem.icon;
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const { chainId, isConnected, currentNetwork } = useArcWallet();
-
-  const networkLabel = !mounted || !isConnected
-    ? "Arc Testnet"
-    : chainId === 84532
-    ? "Base Sepolia"
-    : chainId === 5042002
-    ? "Arc Testnet"
-    : (currentNetwork?.name ?? "Unsupported Network");
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -294,7 +278,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </div>
                   <span className="text-sm font-semibold text-white">PayGrix</span>
                 </Link>
-                <Badge variant="default" className="text-xs">{networkLabel}</Badge>
                 <ThemeToggle />
               </div>
             </div>
