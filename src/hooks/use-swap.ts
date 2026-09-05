@@ -9,6 +9,7 @@ import { arcPublicClient, clearBalanceCache } from "@/lib/arc-client";
 import { basePublicClient, clearBaseBalanceCache } from "@/lib/base-client";
 import { sanitizeExecutionError } from "@/lib/arc-read-infra";
 import { SWAP_CHAINS, SupportedSwapChain } from "@/config/swap-config";
+import { appendBaseBuilderSuffix } from "@/config/base-builder-code";
 
 export type SwapStatus =
   | "idle"
@@ -238,7 +239,7 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
                 {
                   from: address,
                   to: tokenInAddress,
-                  data: approveData,
+                  data: appendBaseBuilderSuffix(approveData),
                   value: "0x0",
                 },
               ],
@@ -288,7 +289,7 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
             {
               from: address,
               to: targetAddress,
-              data: swapCalldata,
+              data: appendBaseBuilderSuffix(swapCalldata),
               value: swapValue,
             },
           ],

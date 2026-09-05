@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { useAccount, useWalletClient, usePublicClient, useSwitchChain } from "wagmi";
 import { isAddress, parseUnits, decodeEventLog } from "viem";
+import { BASE_BUILDER_DATA_SUFFIX } from "@/config/base-builder-code";
 
 export const BASE_SEPOLIA_CHAIN_ID = 84532;
 export const FORBIDDEN_CHAIN_ID = 8453; // Base Mainnet
@@ -216,6 +217,7 @@ export function useGenlayerEscrow() {
             abi: ERC20_ABI,
             functionName: "approve",
             args: [PAYGRIX_ESCROW_VAULT_ADDRESS, rawAmount],
+            dataSuffix: BASE_BUILDER_DATA_SUFFIX,
           });
 
           setApprovalTxHash(approveHash);
@@ -242,6 +244,7 @@ export function useGenlayerEscrow() {
           abi: PAYGRIX_ESCROW_VAULT_ABI,
           functionName: "createEscrow",
           args: [trimmedBeneficiary as `0x${string}`, rawAmount, BigInt(durationSeconds)],
+          dataSuffix: BASE_BUILDER_DATA_SUFFIX,
         });
 
         setCreateTxHash(createHash);
@@ -292,6 +295,7 @@ export function useGenlayerEscrow() {
             abi: PAYGRIX_ESCROW_VAULT_ABI,
             functionName: "fundEscrow",
             args: [extractedEscrowId as `0x${string}`],
+            dataSuffix: BASE_BUILDER_DATA_SUFFIX,
           });
 
           setFundTxHash(fundHash);

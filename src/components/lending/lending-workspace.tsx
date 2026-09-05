@@ -11,6 +11,7 @@ import { LendingOnChainData } from "@/hooks/use-lending-data";
 import { clearArcReadCache } from "@/lib/arc-read-infra";
 import { clearBaseBalanceCache } from "@/lib/base-client";
 import { LENDING_CHAINS, SupportedLendingChain } from "@/config/lending-config";
+import { BASE_BUILDER_DATA_SUFFIX } from "@/config/base-builder-code";
 import { useWriteContract, usePublicClient, useAccount, useSwitchChain } from "wagmi";
 import { parseUnits, formatUnits } from "viem";
 
@@ -308,6 +309,7 @@ export function LendingWorkspace({
         abi: ERC20_WRITE_ABI,
         functionName: "approve",
         args: [lendingAddress, amountRaw],
+        ...(currentChain === "Base" ? { dataSuffix: BASE_BUILDER_DATA_SUFFIX } : {}),
       });
 
       if (publicClient) {
@@ -321,6 +323,7 @@ export function LendingWorkspace({
         abi: LENDING_WRITE_ABI,
         functionName: "depositCollateral",
         args: [amountRaw],
+        ...(currentChain === "Base" ? { dataSuffix: BASE_BUILDER_DATA_SUFFIX } : {}),
       });
 
       if (publicClient) {
@@ -386,6 +389,7 @@ export function LendingWorkspace({
         abi: LENDING_WRITE_ABI,
         functionName: "borrow",
         args: [amountRaw],
+        ...(currentChain === "Base" ? { dataSuffix: BASE_BUILDER_DATA_SUFFIX } : {}),
       });
 
       if (publicClient) {
@@ -432,6 +436,7 @@ export function LendingWorkspace({
         abi: ERC20_WRITE_ABI,
         functionName: "approve",
         args: [lendingAddress, amountRaw],
+        ...(currentChain === "Base" ? { dataSuffix: BASE_BUILDER_DATA_SUFFIX } : {}),
       });
 
       if (publicClient) {
@@ -445,6 +450,7 @@ export function LendingWorkspace({
         abi: LENDING_WRITE_ABI,
         functionName: "repay",
         args: [amountRaw],
+        ...(currentChain === "Base" ? { dataSuffix: BASE_BUILDER_DATA_SUFFIX } : {}),
       });
 
       if (publicClient) {
@@ -509,6 +515,7 @@ export function LendingWorkspace({
         abi: LENDING_WRITE_ABI,
         functionName: "withdrawCollateral",
         args: [amountRaw],
+        ...(currentChain === "Base" ? { dataSuffix: BASE_BUILDER_DATA_SUFFIX } : {}),
       });
 
       if (publicClient) {

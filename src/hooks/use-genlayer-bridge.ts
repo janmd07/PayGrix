@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { useAccount, useWalletClient, usePublicClient, useSwitchChain } from "wagmi";
 import { isAddress, parseUnits, decodeEventLog } from "viem";
+import { BASE_BUILDER_DATA_SUFFIX } from "@/config/base-builder-code";
 
 export const BASE_SEPOLIA_CHAIN_ID = 84532;
 export const FORBIDDEN_CHAIN_ID = 8453; // Base Mainnet
@@ -194,6 +195,7 @@ export function useGenlayerBridge() {
             abi: ERC20_ABI,
             functionName: "approve",
             args: [PAYGRIX_BRIDGE_VAULT_ADDRESS, rawAmount],
+            dataSuffix: BASE_BUILDER_DATA_SUFFIX,
           });
 
           setApprovalTxHash(approveHash);
@@ -236,6 +238,7 @@ export function useGenlayerBridge() {
           abi: PAYGRIX_BASE_ROUTER_ABI,
           functionName: "bridgeUSDC",
           args: [rawAmount, trimmedRecipient as `0x${string}`],
+          dataSuffix: BASE_BUILDER_DATA_SUFFIX,
         });
 
         setBridgeTxHash(bridgeHash);
