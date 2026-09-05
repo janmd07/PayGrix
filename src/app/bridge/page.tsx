@@ -352,46 +352,15 @@ export default function BridgePage() {
               </Card>
             </>
           ) : (
-            <>
-              <SwapBalanceCard
-                usdcBalance={swapUsdcBalance}
-                eurcBalance={swapEurcBalance}
-                cirbtcBalance={swapCirBtcBalance}
-                ethBalance={swapEthBalance}
-                isLoading={isLoadingUsdc || isLoadingEurc || isLoadingCirBtc || isLoadingEth}
-                onRefresh={handleRefreshSwapBalances}
-                network={selectedSwapNetwork}
-              />
-
-              <Card className="border border-white/10 bg-[#060f24]/50 backdrop-blur-md">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <HelpCircle className="h-4 w-4 text-purple-400" />
-                    How Swapping Works
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3.5 text-xs text-slate-400 leading-5">
-                  <div className="flex gap-2">
-                    <div className="h-1.5 w-1.5 rounded-full bg-purple-500 shrink-0 mt-2" />
-                    <p>
-                      Same-chain swaps execute instantly in a single transaction on the Arc Testnet.
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <div className="h-1.5 w-1.5 rounded-full bg-purple-500 shrink-0 mt-2" />
-                    <p>
-                      USDC and EURC liquidity pool is routed automatically using Circle App Kit integrations.
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <div className="h-1.5 w-1.5 rounded-full bg-purple-500 shrink-0 mt-2" />
-                    <p>
-                      The app automatically checks allowances and triggers token approvals in-line if needed. No manual steps are required.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </>
+            <SwapBalanceCard
+              usdcBalance={swapUsdcBalance}
+              eurcBalance={swapEurcBalance}
+              cirbtcBalance={swapCirBtcBalance}
+              ethBalance={swapEthBalance}
+              isLoading={isLoadingUsdc || isLoadingEurc || isLoadingCirBtc || isLoadingEth}
+              onRefresh={handleRefreshSwapBalances}
+              network={selectedSwapNetwork}
+            />
           )}
         </div>
       </div>
