@@ -351,33 +351,6 @@ export function SwapForm({
     ? (parseFloat(estimate.estimatedOutput) / parseFloat(amount)).toFixed(6)
     : null;
 
-  // Implied DEX ETH rate calculations from authoritative on-chain quote
-  let impliedDexEthUsd: number | null = null;
-  let impliedEthRateDisplay: string | null = null;
-
-  if (hasQuote && estimate && amount && parseFloat(amount) > 0 && isEthOnBase) {
-    const numAmount = parseFloat(amount);
-    const numOutput = parseFloat(estimate.estimatedOutput);
-
-    if (numAmount > 0 && numOutput > 0) {
-      if (tokenIn === "ETH" && tokenOut === "USDC") {
-        impliedDexEthUsd = numOutput / numAmount;
-        impliedEthRateDisplay = `~$${impliedDexEthUsd.toFixed(2)} / ETH`;
-      } else if (tokenIn === "USDC" && tokenOut === "ETH") {
-        impliedDexEthUsd = numAmount / numOutput;
-        impliedEthRateDisplay = `~$${impliedDexEthUsd.toFixed(2)} / ETH`;
-      } else if (tokenIn === "ETH" && tokenOut === "EURC") {
-        const eurRate = numOutput / numAmount;
-        impliedDexEthUsd = eurRate * 1.05;
-        impliedEthRateDisplay = `~${eurRate.toFixed(2)} EURC / ETH`;
-      } else if (tokenIn === "EURC" && tokenOut === "ETH") {
-        const eurRate = numAmount / numOutput;
-        impliedDexEthUsd = eurRate * 1.05;
-        impliedEthRateDisplay = `~${eurRate.toFixed(2)} EURC / ETH`;
-      }
-    }
-  }
-
   return (
     <div className="space-y-6">
       <Card className="border border-white/10 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_8px_32px_rgba(6,15,36,0.5)]">
@@ -600,32 +573,6 @@ export function SwapForm({
                 </div>
 
                 <div className="space-y-1.5 pt-1">
-                  {/* Live ETH Market Reference row */}
-                  {isEthOnBase && ethMarketPrice !== null && (
-                    <div className="flex justify-between items-center py-0.5">
-                      <span className="text-slate-400 flex items-center gap-1">
-                        <span>Live ETH Market</span>
-                        <span className="text-[9px] text-slate-500 font-mono">({ethPriceSource === "binance" ? "Binance" : "Ref"})</span>
-                      </span>
-                      <span className="text-slate-200 font-mono font-medium">
-                        ~${ethMarketPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} / ETH
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Base Sepolia DEX Implied Rate row */}
-                  {isEthOnBase && impliedEthRateDisplay && (
-                    <div className="flex justify-between items-center py-0.5">
-                      <span className="text-slate-400 flex items-center gap-1">
-                        <span>Base Sepolia DEX Rate</span>
-                        <span className="text-[9px] text-purple-400/80 font-mono">(On-Chain)</span>
-                      </span>
-                      <span className="text-amber-400 font-mono font-medium">
-                        {impliedEthRateDisplay}
-                      </span>
-                    </div>
-                  )}
-
                   {rate && !isEthOnBase && (
                     <div className="flex justify-between items-center">
                       <span className="text-slate-400">Rate</span>
