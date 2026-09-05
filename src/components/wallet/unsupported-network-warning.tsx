@@ -22,9 +22,10 @@ export function UnsupportedNetworkWarning() {
   const isBridgePage = pathname === "/bridge";
   const isLendingPage = pathname === "/lending";
   const isPayrollPage = pathname === "/payroll";
+  const isProfilePage = pathname === "/profile";
   const allowedChainIds = isBridgePage
     ? [5042002, 84532, 421614]
-    : isLendingPage || isPayrollPage
+    : isLendingPage || isPayrollPage || isProfilePage
     ? [5042002, 84532]
     : [5042002];
   const isUnsupported = isConnected && !allowedChainIds.includes(chainId);
@@ -48,6 +49,8 @@ export function UnsupportedNetworkWarning() {
                 ? "Lending supports Arc Testnet and Base Sepolia. Please switch to one of these networks to access lending."
                 : isPayrollPage
                 ? "Payroll supports Arc Testnet and Base Sepolia. Please switch to one of these networks to manage payroll."
+                : isProfilePage
+                ? "Profile supports Arc Testnet and Base Sepolia. Please switch to one of these networks to view your profile."
                 : `PayGrix only supports ${arcTestnet.name}. Features are disabled until you switch.`}
             </p>
           </div>
