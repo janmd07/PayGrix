@@ -41,6 +41,7 @@ import { Button } from "@/components/ui/button";
 import { shortenAddress, useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
 import { PAYROLL_CONTRACT_ADDRESS } from "@/config/arc-testnet";
+import { BASE_BUILDER_DATA_SUFFIX } from "@/config/base-builder-code";
 import { cn } from "@/lib/utils";
 
 export type SupportedPayrollChain = "Arc" | "Base";
@@ -50,7 +51,8 @@ interface PayrollChainMeta {
   name: string;
   chainKey: SupportedPayrollChain;
   contractName: string;
-  contractAddress: string | null;
+  contractAddress: string;
+  usdcAddress: Address;
   explorerUrl: string;
   isDeployed: boolean;
   statusLabel: string;
@@ -63,6 +65,7 @@ const PAYROLL_CHAIN_CONFIGS: Record<SupportedPayrollChain, PayrollChainMeta> = {
     chainKey: "Arc",
     contractName: "ArcPayroll",
     contractAddress: PAYROLL_CONTRACT_ADDRESS as string,
+    usdcAddress: "0x3600000000000000000000000000000000000000" as Address,
     explorerUrl: "https://testnet.arcscan.app",
     isDeployed: true,
     statusLabel: "Deployed & Verified",
@@ -72,10 +75,11 @@ const PAYROLL_CHAIN_CONFIGS: Record<SupportedPayrollChain, PayrollChainMeta> = {
     name: "Base Sepolia",
     chainKey: "Base",
     contractName: "BasePayroll",
-    contractAddress: null,
+    contractAddress: "0x2d9B6f6B790bEc03f666420089919aeA0c40FBCD",
+    usdcAddress: "0x036CbD53842c5426634e7929541eC2318f3dCF7e" as Address,
     explorerUrl: "https://sepolia.basescan.org",
-    isDeployed: false,
-    statusLabel: "Pending Deployment",
+    isDeployed: true,
+    statusLabel: "Deployed & Verified",
   },
 };
 
@@ -128,9 +132,6 @@ type PayrollBatch = {
     scheduledDate?: string;
   }[];
 };
-
-const USDC_ADDRESS = "0x3600000000000000000000000000000000000000" as Address;
-const PAYROLL_ADDRESS = PAYROLL_CONTRACT_ADDRESS as Address;
 
 const ERC20_ABI = [
   {
@@ -233,7 +234,6 @@ export default function PayrollPage() {
   const {
     isConnected,
     address,
-    isArcTestnet,
     switchToArcTestnet,
     isSwitching,
     chainId,
@@ -297,6 +297,12 @@ export default function PayrollPage() {
   // Disable buttons logic during active operations
   const isActionPending = isExecuting || isSwitching;
 
+  const activeChainConfig = PAYROLL_CHAIN_CONFIGS[selectedChain];
+  const activeChainId = activeChainConfig.id;
+  const activeUsdcAddress = activeChainConfig.usdcAddress;
+  const activePayrollAddress = activeChainConfig.contractAddress as Address;
+  const isWalletOnSelectedChain = isConnected && chainId === activeChainId;
+
   // Wagmi wallet read/write hooks
   const {
     data: usdcBalance,
@@ -304,12 +310,13 @@ export default function PayrollPage() {
     error: usdcBalanceError,
     isError: isUsdcBalanceError
   } = useReadContract({
-    address: USDC_ADDRESS,
+    address: activeUsdcAddress,
     abi: ERC20_ABI,
     functionName: "balanceOf",
-    args: isArcTestnet && address ? [address] : undefined,
+    chainId: activeChainId,
+    args: isWalletOnSelectedChain && address ? [address] : undefined,
     query: {
-      enabled: !!isArcTestnet && !!address,
+      enabled: isWalletOnSelectedChain && !!address,
     }
   });
 
@@ -319,29 +326,30 @@ export default function PayrollPage() {
     error: usdcAllowanceError,
     isError: isUsdcAllowanceError
   } = useReadContract({
-    address: USDC_ADDRESS,
+    address: activeUsdcAddress,
     abi: ERC20_ABI,
     functionName: "allowance",
-    args: isArcTestnet && address ? [address, PAYROLL_ADDRESS] : undefined,
+    chainId: activeChainId,
+    args: isWalletOnSelectedChain && address ? [address, activePayrollAddress] : undefined,
     query: {
-      enabled: !!isArcTestnet && !!address,
+      enabled: isWalletOnSelectedChain && !!address,
     }
   });
 
   const { writeContractAsync } = useWriteContract();
-  const publicClient = usePublicClient({ chainId: 5042002 });
+  const publicClient = usePublicClient({ chainId: activeChainId });
 
   useEffect(() => {
     if (isUsdcBalanceError && usdcBalanceError) {
-      console.error("[DEBUG ERROR] [useReadContract - balanceOf] failed. Exact Function: balanceOf. Line: 192. Complete Error Object:", usdcBalanceError);
+      console.error("[DEBUG ERROR] [useReadContract - balanceOf] failed. Exact Function: balanceOf. Complete Error Object:", usdcBalanceError);
     }
-  }, [isUsdcBalanceError, usdcBalanceError, address, isArcTestnet]);
+  }, [isUsdcBalanceError, usdcBalanceError, address, isWalletOnSelectedChain]);
 
   useEffect(() => {
     if (isUsdcAllowanceError && usdcAllowanceError) {
-      console.error("[DEBUG ERROR] [useReadContract - allowance] failed. Exact Function: allowance. Line: 202. Complete Error Object:", usdcAllowanceError);
+      console.error("[DEBUG ERROR] [useReadContract - allowance] failed. Exact Function: allowance. Complete Error Object:", usdcAllowanceError);
     }
-  }, [isUsdcAllowanceError, usdcAllowanceError, address, isArcTestnet]);
+  }, [isUsdcAllowanceError, usdcAllowanceError, address, isWalletOnSelectedChain]);
 
   useEffect(() => {
     setMounted(true);
@@ -432,7 +440,7 @@ export default function PayrollPage() {
 
   // 7. LIVE ACTIVITY CALCULATIONS (useMemo)
   const liveActivities = useMemo(() => {
-    const list: { id: string; contributorName: string; role: string; amount: number; date: string; txHash?: string }[] = [];
+    const list: { id: string; contributorName: string; role: string; amount: number; date: string; txHash?: string; chainId?: number }[] = [];
     batches.forEach((b) => {
       const dateVal = b.executedAt || b.approvedAt || b.createdAt;
       b.contributors.forEach((c) => {
@@ -443,7 +451,8 @@ export default function PayrollPage() {
             role: c.role,
             amount: c.salaryAmount,
             date: dateVal,
-            txHash: c.txHash
+            txHash: c.txHash,
+            chainId: b.chainId
           });
         }
       });
@@ -717,20 +726,28 @@ export default function PayrollPage() {
     setSuccess(`Payroll batch advanced to ${nextStatus}.`);
   };
 
-  // Batch USDC Payout through ArcPayroll contract
+  // Batch USDC Payout through ArcPayroll or BasePayroll contract
   const handleExecutePayout = async () => {
     const activeBatch = batches.find(b => b.id === activeBatchId);
     if (!activeBatch || !address || isActionPending) return;
 
     setError(null);
     setSuccess(null);
-    // Verify chain and network are Arc Testnet before starting execution
-    if (selectedChain !== "Arc" || chainId !== 5042002) {
-      setPayoutError(
-        selectedChain === "Base"
-          ? "Base Sepolia Payroll smart contract is not yet deployed. Payout execution is available on Arc Testnet."
-          : "Please switch your wallet network to Arc Testnet to execute payouts."
-      );
+    // Strict chain and network verification
+    if (selectedChain === "Arc" && chainId !== 5042002) {
+      setPayoutError("Please switch your wallet network to Arc Testnet to execute Arc payroll payouts.");
+      return;
+    }
+    if (selectedChain === "Base" && chainId !== 84532) {
+      setPayoutError("Please switch your wallet network to Base Sepolia to execute Base payroll payouts.");
+      return;
+    }
+    if (!activePayrollAddress || !activeUsdcAddress) {
+      setPayoutError(`Payroll contract or USDC address not configured for ${activeChainConfig.name}.`);
+      return;
+    }
+    if (!activeBatch.contributors || activeBatch.contributors.length === 0) {
+      setPayoutError("No contributors found in the selected batch.");
       return;
     }
 
@@ -762,9 +779,10 @@ export default function PayrollPage() {
           approveHash = await writeContractAsync({
             abi: ERC20_ABI,
             functionName: "approve",
-            address: USDC_ADDRESS,
-            args: [PAYROLL_ADDRESS, totalAmountUnits],
-            chainId: 5042002,
+            address: activeUsdcAddress,
+            args: [activePayrollAddress, totalAmountUnits],
+            chainId: activeChainId,
+            ...(selectedChain === "Base" ? { dataSuffix: BASE_BUILDER_DATA_SUFFIX } : {}),
           });
         } catch (err: unknown) {
           console.error("[DEBUG ERROR] [writeContractAsync - approve] failed. Exact Function: approve. Line: 580. Complete Error Object:", err);
@@ -787,11 +805,12 @@ export default function PayrollPage() {
       let batchHash;
       try {
         batchHash = await writeContractAsync({
-          address: PAYROLL_ADDRESS,
+          address: activePayrollAddress,
           abi: PAYROLL_ABI,
           functionName: "batchPayEmployees",
           args: [recipients, amounts],
-          chainId: 5042002,
+          chainId: activeChainId,
+          ...(selectedChain === "Base" ? { dataSuffix: BASE_BUILDER_DATA_SUFFIX } : {}),
         });
       } catch (err: unknown) {
         console.error("[DEBUG ERROR] [writeContractAsync - batchPayEmployees] failed. Exact Function: batchPayEmployees. Line: 639. Complete Error Object:", err);
@@ -818,8 +837,8 @@ export default function PayrollPage() {
           ...b,
           status: "Paid" as const,
           executedAt: timestamp,
-          chainId: 5042002,
-          network: "Arc Testnet",
+          chainId: activeChainId,
+          network: activeChainConfig.name,
           contributors: updatedContributors
         } : b
       );
@@ -1306,67 +1325,62 @@ export default function PayrollPage() {
                     </div>
                     <Badge
                       variant={
-                        selectedChain === "Arc"
-                          ? isArcTestnet ? "success" : isConnected ? "warning" : "outline"
-                          : "outline"
+                        isWalletOnSelectedChain ? "success" : isConnected ? "warning" : "outline"
                       }
                       className={cn(
                         "text-[10px]",
-                        selectedChain === "Base" && "border-amber-500/40 text-amber-400 bg-amber-500/10"
+                        !isWalletOnSelectedChain && isConnected && "border-amber-500/40 text-amber-400 bg-amber-500/10"
                       )}
                     >
-                      {selectedChain === "Arc"
-                        ? isArcTestnet ? "Connected" : isConnected ? "Wrong Network" : "Disconnected"
-                        : "Not Deployed"}
+                      {isWalletOnSelectedChain ? "Connected" : isConnected ? "Wrong Network" : "Disconnected"}
                     </Badge>
                   </CardHeader>
                   <CardContent className="text-xs space-y-2">
                     <div className="flex justify-between py-1 border-b border-white/5">
                       <span className="text-slate-400">Target Contract</span>
                       <span className="font-semibold text-white">
-                        {selectedChain === "Arc" ? "ArcPayroll" : "BasePayroll (Pending)"}
+                        {activeChainConfig.contractName}
                       </span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-white/5">
                       <span className="text-slate-400">Chain Target</span>
                       <span className="font-semibold text-white">
-                        {selectedChain === "Arc" ? "Arc Testnet (5042002)" : "Base Sepolia (84532)"}
+                        {activeChainConfig.name} ({activeChainId})
+                      </span>
+                    </div>
+                    <div className="flex justify-between py-1 border-b border-white/5">
+                      <span className="text-slate-400">Status</span>
+                      <span className="font-semibold text-emerald-400">
+                        {activeChainConfig.statusLabel}
                       </span>
                     </div>
                     <div className="pt-2">
                       <span className="text-slate-500 text-[10px] uppercase font-bold block mb-1">Contract Address</span>
-                      {selectedChain === "Arc" ? (
-                        <div className="flex items-center justify-between gap-2 bg-white/5 border border-white/8 rounded-lg p-2 font-mono text-[10px] text-slate-300">
-                          <span className="truncate">{PAYROLL_ADDRESS}</span>
-                          <div className="flex shrink-0 items-center gap-1.5">
-                            <button
-                              onClick={() => handleCopy("contract-addr", PAYROLL_ADDRESS)}
-                              className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-white transition-colors"
-                              title="Copy Address"
-                            >
-                              {copiedId === "contract-addr" ? (
-                                <Check className="h-3.5 w-3.5 text-emerald-400" />
-                              ) : (
-                                <Copy className="h-3.5 w-3.5" />
-                              )}
-                            </button>
-                            <a
-                              href={`https://testnet.arcscan.app/address/${PAYROLL_ADDRESS}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-white transition-colors"
-                              title="View on ArcScan"
-                            >
-                              <ExternalLink className="h-3.5 w-3.5" />
-                            </a>
-                          </div>
+                      <div className="flex items-center justify-between gap-2 bg-white/5 border border-white/8 rounded-lg p-2 font-mono text-[10px] text-slate-300">
+                        <span className="truncate">{activePayrollAddress}</span>
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          <button
+                            onClick={() => handleCopy("contract-addr", activePayrollAddress)}
+                            className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-white transition-colors"
+                            title="Copy Address"
+                          >
+                            {copiedId === "contract-addr" ? (
+                              <Check className="h-3.5 w-3.5 text-emerald-400" />
+                            ) : (
+                              <Copy className="h-3.5 w-3.5" />
+                            )}
+                          </button>
+                          <a
+                            href={`${activeChainConfig.explorerUrl}/address/${activePayrollAddress}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-white transition-colors"
+                            title={`View on ${selectedChain === "Base" ? "BaseScan" : "ArcScan"}`}
+                          >
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          </a>
                         </div>
-                      ) : (
-                        <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-2.5 text-[10px] text-amber-300/90 leading-relaxed">
-                          <span className="font-semibold text-amber-400 block mb-0.5">Not Yet Deployed</span>
-                          Smart contract not yet deployed on Base Sepolia. Payout execution is available on Arc Testnet.
-                        </div>
-                      )}
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -1440,7 +1454,7 @@ export default function PayrollPage() {
                               <span className="font-semibold text-[#4f8cff]">{act.amount.toLocaleString()} USDC</span>
                               {act.txHash && (
                                 <a
-                                  href={getExplorerTxUrl(act.txHash)}
+                                  href={getExplorerTxUrl(act.txHash, act.chainId)}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="text-[9px] text-slate-500 hover:text-white flex items-center gap-0.5 justify-end mt-0.5"
@@ -1583,71 +1597,32 @@ export default function PayrollPage() {
                                   <Lock className="h-4 w-4" />
                                   Connect Wallet to Execute
                                 </Button>
-                              ) : selectedChain === "Base" ? (
-                                chainId === 84532 ? (
-                                  <div className="space-y-2.5">
-                                    <div className="p-3 rounded-xl border border-amber-500/25 bg-amber-500/10 text-amber-300 text-xs leading-relaxed flex items-start gap-2">
-                                      <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
-                                      <div>
-                                        <p className="font-semibold text-white">Base Payroll Not Deployed</p>
-                                        <p className="mt-0.5 text-slate-300">
-                                          Smart contract execution on Base Sepolia is pending deployment. Payout execution is currently live on Arc Testnet.
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <Button
-                                      onClick={() => {
-                                        handleSelectChain("Arc");
-                                        handleSwitchToChain("Arc");
-                                      }}
-                                      disabled={isActionPending}
-                                      className="w-full btn-electric gap-2"
-                                    >
-                                      <Send className="h-4 w-4" />
-                                      Switch to Arc Testnet to Execute
-                                    </Button>
-                                  </div>
-                                ) : (
-                                  <div className="space-y-2">
-                                    <p className="text-xs text-amber-300/90 leading-relaxed">
-                                      Target chain is Base Sepolia. Switch your wallet to Base Sepolia.
-                                    </p>
-                                    <Button
-                                      onClick={() => handleSwitchToChain("Base")}
-                                      disabled={isActionPending}
-                                      className="w-full btn-electric gap-2"
-                                    >
-                                      <Send className="h-4 w-4" />
-                                      {isSwitching ? "Switching..." : "Switch Network to Base Sepolia"}
-                                    </Button>
-                                  </div>
-                                )
-                              ) : selectedChain === "Arc" ? (
-                                chainId !== 5042002 ? (
-                                  <div className="space-y-2">
-                                    <p className="text-xs text-amber-300/90 leading-relaxed">
-                                      Payroll target is Arc Testnet. Switch wallet from {chainId === 84532 ? "Base Sepolia" : "current network"} to Arc Testnet.
-                                    </p>
-                                    <Button
-                                      onClick={() => handleSwitchToChain("Arc")}
-                                      disabled={isActionPending}
-                                      className="w-full btn-electric gap-2"
-                                    >
-                                      <Send className="h-4 w-4" />
-                                      {isSwitching ? "Switching..." : "Switch Network to Arc Testnet"}
-                                    </Button>
-                                  </div>
-                                ) : (
+                              ) : !isWalletOnSelectedChain ? (
+                                <div className="space-y-2">
+                                  <p className="text-xs text-amber-300/90 leading-relaxed">
+                                    {selectedChain === "Arc"
+                                      ? `Payroll target is Arc Testnet. Switch wallet from ${chainId === 84532 ? "Base Sepolia" : "current network"} to Arc Testnet.`
+                                      : `Payroll target is Base Sepolia. Switch wallet from ${chainId === 5042002 ? "Arc Testnet" : "current network"} to Base Sepolia.`}
+                                  </p>
                                   <Button
-                                    onClick={() => setIsPayoutModalOpen(true)}
+                                    onClick={() => handleSwitchToChain(selectedChain)}
                                     disabled={isActionPending}
                                     className="w-full btn-electric gap-2"
                                   >
                                     <Send className="h-4 w-4" />
-                                    Confirm & Execute Payouts
+                                    {isSwitching ? "Switching..." : `Switch Network to ${activeChainConfig.name}`}
                                   </Button>
-                                )
-                              ) : null}
+                                </div>
+                              ) : (
+                                <Button
+                                  onClick={() => setIsPayoutModalOpen(true)}
+                                  disabled={isActionPending}
+                                  className="w-full btn-electric gap-2"
+                                >
+                                  <Send className="h-4 w-4" />
+                                  Confirm & Execute Payouts
+                                </Button>
+                              )}
                             </div>
                           )}
 
@@ -2019,37 +1994,16 @@ export default function PayrollPage() {
                   <div className="text-xs text-amber-400 bg-amber-500/5 border border-amber-500/10 rounded-lg p-2.5 w-full text-center">
                     Please connect your founder wallet in the header navigation to execute payouts.
                   </div>
-                ) : selectedChain === "Base" ? (
+                ) : !isWalletOnSelectedChain ? (
                   <div className="flex flex-col gap-3 w-full">
                     <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-center leading-relaxed">
-                      <strong>Base Sepolia Deployment Pending:</strong> The Payroll smart contract is not yet deployed on Base Sepolia. Payout execution is currently supported on Arc Testnet.
-                    </div>
-                    <div className="flex justify-end gap-3">
-                      <Button
-                        variant="outline"
-                        onClick={() => setIsPayoutModalOpen(false)}
-                      >
-                        Close
-                      </Button>
-                      <Button
-                        onClick={async () => {
-                          handleSelectChain("Arc");
-                          await handleSwitchToChain("Arc");
-                        }}
-                        disabled={isActionPending}
-                        className="btn-electric gap-2"
-                      >
-                        <Send className="h-4 w-4" />
-                        Switch to Arc Testnet
-                      </Button>
-                    </div>
-                  </div>
-                ) : selectedChain === "Arc" && !isArcTestnet ? (
-                  <div className="flex flex-col gap-3 w-full">
-                    <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-center leading-relaxed">
-                      {chainId === 84532
-                        ? "Wallet connected to Base Sepolia. Please switch to Arc Testnet to execute Arc payroll payouts."
-                        : "Unsupported network connected. Please switch to Arc Testnet to execute payouts."}
+                      {selectedChain === "Arc"
+                        ? chainId === 84532
+                          ? "Wallet connected to Base Sepolia. Please switch to Arc Testnet to execute Arc payroll payouts."
+                          : "Unsupported network connected. Please switch to Arc Testnet to execute payouts."
+                        : chainId === 5042002
+                          ? "Wallet connected to Arc Testnet. Please switch to Base Sepolia to execute Base payroll payouts."
+                          : "Unsupported network connected. Please switch to Base Sepolia to execute Base payroll payouts."}
                     </div>
                     <div className="flex justify-end gap-3">
                       <Button
@@ -2060,11 +2014,11 @@ export default function PayrollPage() {
                         Cancel
                       </Button>
                       <Button
-                        onClick={() => handleSwitchToChain("Arc")}
+                        onClick={() => handleSwitchToChain(selectedChain)}
                         disabled={isActionPending}
                         className="btn-electric"
                       >
-                        {isSwitching ? "Switching..." : "Switch to Arc Testnet"}
+                        {isSwitching ? "Switching..." : `Switch to ${activeChainConfig.name}`}
                       </Button>
                     </div>
                   </div>
@@ -2094,7 +2048,7 @@ export default function PayrollPage() {
                           {currentExecutionIndex === -2 ? (
                             "Approving USDC allowance..."
                           ) : (
-                            "Executing batch payroll through ArcPayroll contract..."
+                            `Executing batch payroll through ${activeChainConfig.contractName} contract...`
                           )}
                         </span>
                       </div>

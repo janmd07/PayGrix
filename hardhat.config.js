@@ -23,6 +23,11 @@ module.exports = {
       chainId: 5042002,
       accounts: accounts,
     },
+    baseSepolia: {
+      url: process.env.BASE_SEPOLIA_RPC_URL || "https://sepolia.base.org",
+      chainId: 84532,
+      accounts: accounts,
+    },
   },
   etherscan: {
     apiKey: {
