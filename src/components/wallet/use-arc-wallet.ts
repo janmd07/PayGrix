@@ -3,7 +3,6 @@
 import { useMemo } from "react";
 import {
   useAccount,
-  useChainId,
   useChains,
   useConnect,
   useDisconnect,
@@ -17,25 +16,37 @@ export function shortenAddress(address: string) {
 }
 
 export function useArcWallet() {
-  const chainId = useChainId();
   const chains = useChains();
-  const { address, connector, isConnected, isConnecting, isReconnecting } = useAccount();
+  const {
+    address,
+    connector,
+    isConnected,
+    isConnecting,
+    isReconnecting,
+    chainId: accountChainId,
+    chain: accountChain,
+  } = useAccount();
   const { connectors, connect, error: connectError, isPending } = useConnect();
   const { disconnect } = useDisconnect();
   const { switchChain, switchChainAsync, isPending: isSwitching } = useSwitchChain();
 
   const availableConnector = connectors[0];
-  
+
+  const chainId = isConnected && accountChainId ? accountChainId : arcTestnet.id;
+
   const currentNetwork = useMemo(() => {
     if (!isConnected) {
       return null;
     }
 
-    return chains.find((chain) => chain.id === chainId) ?? {
-      id: chainId,
-      name: `Unsupported network (${chainId})`,
-    };
-  }, [chainId, chains, isConnected]);
+    return (
+      accountChain ??
+      chains.find((chain) => chain.id === chainId) ?? {
+        id: chainId,
+        name: `Unsupported network (${chainId})`,
+      }
+    );
+  }, [accountChain, chainId, chains, isConnected]);
 
   const isArcTestnet = isConnected && chainId === arcTestnet.id;
   const isUnsupportedNetwork = isConnected && !isArcTestnet;
