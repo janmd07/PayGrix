@@ -207,7 +207,10 @@ export function LendingWorkspace({
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const currentChain = selectedChain;
+  const isArcWallet = chainId === 5042002;
+  const isBaseWallet = chainId === 84532;
+  const isSupportedWallet = isArcWallet || isBaseWallet;
+  const currentChain: SupportedLendingChain = isBaseWallet ? "Base" : selectedChain;
   const activeChainConfig = LENDING_CHAINS[currentChain];
   const lendingAddress = activeChainConfig.lendingAddress;
   const collateralToken = activeChainConfig.collateral;
@@ -219,9 +222,6 @@ export function LendingWorkspace({
   };
 
   const handleChainChange = async (chain: SupportedLendingChain) => {
-    if (onChainChange) {
-      onChainChange(chain);
-    }
     setSupplyInput("");
     setBorrowInput("");
     setRepayInput("");
@@ -233,14 +233,23 @@ export function LendingWorkspace({
     if (isConnected && chainId !== targetConfig.id && switchChainAsync) {
       try {
         await switchChainAsync({ chainId: targetConfig.id });
+        if (onChainChange) {
+          onChainChange(chain);
+        }
       } catch (err) {
         console.warn("User dismissed chain switch:", err);
       }
+    } else if (onChainChange) {
+      onChainChange(chain);
     }
   };
 
   const ensureCorrectNetwork = async (): Promise<boolean> => {
     if (!isConnected) return false;
+    if (!isSupportedWallet) {
+      setActionError("Please switch your wallet to Arc Testnet or Base Sepolia.");
+      return false;
+    }
     if (chainId !== activeChainConfig.id) {
       if (switchChainAsync) {
         try {
@@ -544,7 +553,11 @@ export function LendingWorkspace({
             Manage your position
           </CardTitle>
           <CardDescription className="text-xs text-slate-400 mt-0.5">
-            Supply collateral, borrow USDC, repay debt, or withdraw collateral on {activeChainConfig.name}.
+            {isBaseWallet
+              ? "Supply collateral, borrow USDC, repay debt, or withdraw collateral on Base Sepolia."
+              : isArcWallet
+              ? "Supply collateral, borrow USDC, repay debt, or withdraw collateral on Arc Testnet."
+              : "Connect to Arc Testnet or Base Sepolia to manage your position."}
           </CardDescription>
         </div>
 
@@ -557,7 +570,7 @@ export function LendingWorkspace({
               disabled={isPending}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
-                currentChain === "Arc"
+                isArcWallet
                   ? "bg-purple-600/90 text-white shadow-[0_0_12px_rgba(168,85,247,0.4)] border border-purple-400/30"
                   : "text-slate-400 hover:text-white hover:bg-white/5"
               )}
@@ -571,7 +584,7 @@ export function LendingWorkspace({
               disabled={isPending}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
-                currentChain === "Base"
+                isBaseWallet
                   ? "bg-[#0052FF] text-white shadow-[0_0_12px_rgba(0,82,255,0.4)] border border-blue-400/30"
                   : "text-slate-400 hover:text-white hover:bg-white/5"
               )}
@@ -582,7 +595,7 @@ export function LendingWorkspace({
           </div>
 
           <span className="text-[10px] font-mono font-medium text-[#4f8cff] bg-[#4f8cff]/10 border border-[#4f8cff]/20 px-2 py-0.5 rounded-full shrink-0">
-            {lendingData?.isPaused ? "Paused" : "Active"}
+            {!isSupportedWallet ? "Unsupported" : lendingData?.isPaused ? "Paused" : "Active"}
           </span>
         </div>
       </CardHeader>

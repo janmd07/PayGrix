@@ -10,10 +10,18 @@ import { LendingOnChainData } from "@/hooks/use-lending-data";
 interface CompactLendingMarketProps {
   lendingData?: LendingOnChainData;
   isLoading?: boolean;
+  isArcTestnet?: boolean;
 }
 
-export function CompactLendingMarket({ lendingData, isLoading }: CompactLendingMarketProps) {
+export function CompactLendingMarket({ lendingData, isLoading, isArcTestnet }: CompactLendingMarketProps) {
   const isPaused = lendingData?.isPaused ?? true;
+  const isBase = lendingData?.selectedChain === "Base";
+  const isArc = Boolean(isArcTestnet);
+  const networkName = isBase
+    ? "Base Sepolia (84532)"
+    : isArc
+    ? "Arc Testnet (5042002)"
+    : "supported networks";
 
   return (
     <Card className="border border-white/10 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_4px_24px_rgba(6,15,36,0.4)]">
@@ -41,7 +49,7 @@ export function CompactLendingMarket({ lendingData, isLoading }: CompactLendingM
               )}
             </div>
             <p className="text-[11px] text-slate-400">
-              Live protocol reserves and Oracle state on {lendingData?.selectedChain === "Base" ? "Base Sepolia (84532)" : "Arc Testnet (5042002)"}.
+              Live protocol reserves and Oracle state on {networkName}.
             </p>
           </div>
         </div>

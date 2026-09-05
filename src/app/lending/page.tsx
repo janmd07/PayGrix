@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { HandCoins, BookOpen } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { Badge } from "@/components/ui/badge";
@@ -15,19 +14,18 @@ import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
 import { SupportedLendingChain } from "@/config/lending-config";
 
 export default function LendingPage() {
-  const { isConnected, isArcTestnet, address, chainId } = useArcWallet();
-  const [selectedChain, setSelectedChain] = useState<SupportedLendingChain>("Arc");
+  const { isConnected, address, chainId } = useArcWallet();
 
-  // Sync selected chain with wallet network when user switches chain in their wallet
-  useEffect(() => {
-    if (chainId === 84532) {
-      setSelectedChain("Base");
-    } else if (chainId === 5042002) {
-      setSelectedChain("Arc");
-    }
-  }, [chainId]);
+  const isArc = chainId === 5042002;
+  const isBase = chainId === 84532;
+  const isSupportedNetwork = isArc || isBase;
+  const activeChain: SupportedLendingChain = isBase ? "Base" : "Arc";
 
-  const { lendingData, isLoading, refreshLendingData } = useLendingData(address, selectedChain, isArcTestnet);
+  const { lendingData, isLoading, refreshLendingData } = useLendingData(
+    isSupportedNetwork ? address : undefined,
+    activeChain,
+    isArc
+  );
 
   const handleStartBorrowing = () => {
     const el = document.getElementById("manage-position");
@@ -93,8 +91,6 @@ export default function LendingPage() {
     );
   }
 
-  const isBase = selectedChain === "Base";
-
   return (
     <AppShell>
       <div className="flex flex-col gap-5 max-w-6xl mx-auto">
@@ -104,12 +100,18 @@ export default function LendingPage() {
             <div className="space-y-1.5 max-w-2xl">
               <div className="flex items-center gap-2">
                 <Badge variant="outline" className="text-[10px] text-[#4f8cff] border-[#4f8cff]/30 bg-[#4f8cff]/10 font-semibold px-2 py-0.5">
-                  {isBase ? "Base Sepolia • Chain ID 84532" : "Arc Testnet • Security Staging"}
+                  {isBase 
+                    ? "Base Sepolia • Chain ID 84532" 
+                    : isArc 
+                    ? "Arc Testnet • Security Staging" 
+                    : "Unsupported Network"}
                 </Badge>
                 <Badge variant="outline" className="text-[10px] text-purple-300 border-purple-500/20 bg-purple-500/10 px-2 py-0.5">
                   {isBase 
                     ? `Chainlink Oracle ($${lendingData?.collateralPrice || "2,500.00"}/ETH)`
-                    : `Simulation Oracle ($${lendingData?.collateralPrice || "60,000.00"}/BTC)`}
+                    : isArc
+                    ? `Simulation Oracle ($${lendingData?.collateralPrice || "60,000.00"}/BTC)`
+                    : "Oracle Unavailable"}
                 </Badge>
               </div>
 
@@ -122,7 +124,9 @@ export default function LendingPage() {
               <p className="text-xs text-slate-300 leading-relaxed">
                 {isBase
                   ? "Supply WETH collateral, borrow USDC up to 50% LTV, repay debt, and manage your position on Base Sepolia."
-                  : "Supply cirBTC collateral, borrow USDC up to 50% LTV, repay debt, and manage your position on PayGrixLending."}
+                  : isArc
+                  ? "Supply cirBTC collateral, borrow USDC up to 50% LTV, repay debt, and manage your position on PayGrixLending."
+                  : "Please switch to a supported network (Arc Testnet or Base Sepolia) to manage your lending position."}
               </p>
             </div>
 
@@ -153,7 +157,7 @@ export default function LendingPage() {
         {/* ── 3. COMPACT POSITION OVERVIEW ────────────────── */}
         <PositionOverview
           isConnected={isConnected}
-          isArcTestnet={isArcTestnet}
+          isArcTestnet={isArc}
           lendingData={lendingData}
           isLoading={isLoading}
         />
@@ -162,12 +166,11 @@ export default function LendingPage() {
         <div id="manage-position">
           <LendingWorkspace
             isConnected={isConnected}
-            isArcTestnet={isArcTestnet}
+            isArcTestnet={isArc}
             lendingData={lendingData}
             isLoading={isLoading}
             refreshLendingData={refreshLendingData}
-            selectedChain={selectedChain}
-            onChainChange={setSelectedChain}
+            selectedChain={activeChain}
           />
         </div>
 
@@ -175,6 +178,7 @@ export default function LendingPage() {
         <CompactLendingMarket
           lendingData={lendingData}
           isLoading={isLoading}
+          isArcTestnet={isArc}
         />
 
         {/* ── 6. HOW IT WORKS ─────────────────────────────── */}

@@ -13,14 +13,21 @@ interface PositionOverviewProps {
   isLoading?: boolean;
 }
 
-export function PositionOverview({ isConnected, lendingData, isLoading }: PositionOverviewProps) {
+export function PositionOverview({ isConnected, isArcTestnet, lendingData, isLoading }: PositionOverviewProps) {
   const hasActivePosition = lendingData && (lendingData.userCollateralRaw > BigInt(0) || lendingData.userDebtRaw > BigInt(0));
   const isBase = lendingData?.selectedChain === "Base";
-  const collateralSymbol = lendingData?.collateralSymbol || (isBase ? "WETH" : "cirBTC");
-  const chainBadge = isBase ? "Base Sepolia (84532)" : "Arc Testnet (5042002)";
+  const isArc = Boolean(isArcTestnet);
+  const collateralSymbol = isBase ? "WETH" : isArc ? "cirBTC" : "—";
+  const chainBadge = isBase
+    ? "Base Sepolia (84532)"
+    : isArc
+    ? "Arc Testnet (5042002)"
+    : "Unsupported Network";
   const oracleLabel = isBase 
     ? `Oracle: $${lendingData?.collateralPrice || "2,500.00"}/ETH`
-    : `Oracle: $${lendingData?.collateralPrice || "60,000.00"}/BTC`;
+    : isArc
+    ? `Oracle: $${lendingData?.collateralPrice || "60,000.00"}/BTC`
+    : "Oracle: —";
   const walletBalance = lendingData?.userCollateralBalance || lendingData?.userCirBtcBalance || "0.00";
 
   return (

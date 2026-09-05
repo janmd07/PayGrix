@@ -12,11 +12,13 @@ interface LendingSafetyCardProps {
 
 export function LendingSafetyCard({ lendingData, isLoading }: LendingSafetyCardProps) {
   const isPaused = lendingData?.isPaused ?? true;
+  const isBase = lendingData?.selectedChain === "Base";
+  const isArc = lendingData?.selectedChain === "Arc";
   const poolLiquidity = lendingData?.poolLiquidity || "1.00";
   const totalDebt = lendingData?.totalOutstandingDebt || "0.00";
   const totalBadDebt = lendingData?.totalBadDebt || "0.00";
-  const collateralPrice = lendingData?.collateralPrice || "60,000.00";
-  const contractAddressShort = lendingData?.contractAddressShort || "0x800C...22aE";
+  const collateralPrice = lendingData?.collateralPrice || (isBase ? "2,500.00" : "60,000.00");
+  const contractAddressShort = lendingData?.contractAddressShort || (isBase ? "0x7C5e...34b8" : "0x800C...22aE");
 
   return (
     <Card className="border border-emerald-500/20 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_8px_32px_rgba(6,15,36,0.5)]">
@@ -30,11 +32,11 @@ export function LendingSafetyCard({ lendingData, isLoading }: LendingSafetyCardP
             Lending Safety & Staging Checklist
           </CardTitle>
           <Badge variant="outline" className="text-[10px] text-emerald-400 border-emerald-500/30 bg-emerald-500/10 font-mono">
-            Phase 3C Verified
+            {isBase ? "Base Sepolia Verified" : isArc ? "Phase 3C Verified" : "Verification Checklist"}
           </Badge>
         </div>
         <CardDescription className="text-xs text-slate-400">
-          On-chain safety parameters and contract operational state on Arc Testnet.
+          On-chain safety parameters and contract operational state on {isBase ? "Base Sepolia." : isArc ? "Arc Testnet." : "supported networks."}
         </CardDescription>
       </CardHeader>
 
@@ -91,7 +93,11 @@ export function LendingSafetyCard({ lendingData, isLoading }: LendingSafetyCardP
               <span className="text-slate-300 font-medium">Oracle</span>
             </div>
             <span className="font-mono text-purple-300 font-medium">
-              Testnet Simulation Oracle (${isLoading ? "..." : collateralPrice})
+              {isBase
+                ? `Chainlink ETH/USD (${isLoading ? "..." : `$${collateralPrice}`})`
+                : isArc
+                ? `Testnet Simulation Oracle (${isLoading ? "..." : `$${collateralPrice}`})`
+                : `Oracle (${isLoading ? "..." : `$${collateralPrice}`})`}
             </span>
           </div>
 
@@ -122,7 +128,11 @@ export function LendingSafetyCard({ lendingData, isLoading }: LendingSafetyCardP
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 p-3 flex items-start gap-2.5 text-[11px] text-amber-200/90 leading-relaxed">
           <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
           <span>
-            Safety Staging: PayGrixLending Phase 3C remains paused on Arc Testnet. Public borrowing, deposits, repayments, and liquidations are disabled. Production borrowing is not enabled.
+            {isBase
+              ? "Base Sepolia environment: BaseSepoliaLending contract active on Base Sepolia. Supply WETH, borrow USDC, repay debt, and manage collateral on-chain."
+              : isArc
+              ? "Safety Staging: PayGrixLending Phase 3C remains paused on Arc Testnet. Public borrowing, deposits, repayments, and liquidations are disabled. Production borrowing is not enabled."
+              : "Please connect your wallet to Arc Testnet or Base Sepolia to interact with lending."}
           </span>
         </div>
       </CardContent>
