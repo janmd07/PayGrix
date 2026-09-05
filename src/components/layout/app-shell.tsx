@@ -227,9 +227,9 @@ export function AppShell({ children }: { children: ReactNode }) {
               border: "1px solid rgba(79, 140, 255, 0.15)",
             }}
           >
-            <Badge variant="outline" className="text-xs">Arc Testnet only</Badge>
+            <Badge variant="outline" className="text-xs">Testnet Environment</Badge>
             <p className="text-xs leading-5 text-[#b7c4d6]">
-              Chain ID 5042002. Payroll execution is intentionally not implemented yet.
+              Payroll execution is intentionally not implemented yet.
             </p>
             <div className="pt-2.5 border-t border-[#4f8cff]/10 flex items-center">
               <a
