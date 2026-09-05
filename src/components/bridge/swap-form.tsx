@@ -378,12 +378,6 @@ export function SwapForm({
     }
   }
 
-  const hasLargeDiscrepancy =
-    isEthOnBase &&
-    ethMarketPrice !== null &&
-    impliedDexEthUsd !== null &&
-    Math.abs(impliedDexEthUsd - ethMarketPrice) / ethMarketPrice > 0.15;
-
   return (
     <div className="space-y-6">
       <Card className="border border-white/10 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_8px_32px_rgba(6,15,36,0.5)]">
@@ -665,19 +659,6 @@ export function SwapForm({
                     <Clock className="h-3 w-3 text-purple-400 shrink-0" />
                     <span>Slippage tolerance is set to 1% to protect your rate.</span>
                   </div>
-
-                  {/* Price Discrepancy Warning */}
-                  {hasLargeDiscrepancy && (
-                    <div className="mt-2.5 rounded-xl bg-amber-500/10 border border-amber-500/20 p-3 space-y-1 text-xs">
-                      <div className="flex items-center gap-1.5 font-semibold text-amber-300">
-                        <AlertTriangle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                        <span>Price Discrepancy Notice</span>
-                      </div>
-                      <p className="text-[11px] text-amber-200/90 leading-relaxed">
-                        Base Sepolia DEX rate ({impliedEthRateDisplay}) is significantly below the external market reference (~${ethMarketPrice?.toLocaleString(undefined, { maximumFractionDigits: 0 })}/ETH) due to testnet pool liquidity. Your swap will execute strictly against the on-chain DEX quote.
-                      </p>
-                    </div>
-                  )}
                 </div>
               </div>
             )}
