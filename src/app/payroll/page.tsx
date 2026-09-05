@@ -31,6 +31,7 @@ import { useReadContract, useWriteContract, usePublicClient } from "wagmi";
 import { formatUnits, parseUnits } from "viem";
 import type { Address } from "viem";
 import Link from "next/link";
+import Image from "next/image";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
@@ -41,6 +42,50 @@ import { shortenAddress, useArcWallet } from "@/components/wallet/use-arc-wallet
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
 import { PAYROLL_CONTRACT_ADDRESS } from "@/config/arc-testnet";
 import { cn } from "@/lib/utils";
+
+export type SupportedPayrollChain = "Arc" | "Base";
+
+interface PayrollChainMeta {
+  id: number;
+  name: string;
+  chainKey: SupportedPayrollChain;
+  contractName: string;
+  contractAddress: string | null;
+  explorerUrl: string;
+  isDeployed: boolean;
+  statusLabel: string;
+}
+
+const PAYROLL_CHAIN_CONFIGS: Record<SupportedPayrollChain, PayrollChainMeta> = {
+  Arc: {
+    id: 5042002,
+    name: "Arc Testnet",
+    chainKey: "Arc",
+    contractName: "ArcPayroll",
+    contractAddress: PAYROLL_CONTRACT_ADDRESS as string,
+    explorerUrl: "https://testnet.arcscan.app",
+    isDeployed: true,
+    statusLabel: "Deployed & Verified",
+  },
+  Base: {
+    id: 84532,
+    name: "Base Sepolia",
+    chainKey: "Base",
+    contractName: "BasePayroll",
+    contractAddress: null,
+    explorerUrl: "https://sepolia.basescan.org",
+    isDeployed: false,
+    statusLabel: "Pending Deployment",
+  },
+};
+
+const getExplorerTxUrl = (txHash?: string, chainId?: number) => {
+  if (!txHash) return "#";
+  if (chainId === 84532) {
+    return `https://sepolia.basescan.org/tx/${txHash}`;
+  }
+  return `https://testnet.arcscan.app/tx/${txHash}`;
+};
 
 type Contributor = {
   id: string;
@@ -68,6 +113,8 @@ type PayrollBatch = {
   period?: string;
   weekStart?: string;
   weekEnd?: string;
+  chainId?: number;
+  network?: string;
   contributors: {
     id: string;
     fullName: string;
@@ -183,15 +230,55 @@ const getInitials = (name: string) => {
 
 export default function PayrollPage() {
   const [mounted, setMounted] = useState(false);
-  const { isConnected, address, isArcTestnet, switchToArcTestnet, isSwitching, chainId } = useArcWallet();
+  const {
+    isConnected,
+    address,
+    isArcTestnet,
+    switchToArcTestnet,
+    isSwitching,
+    chainId,
+    switchChainAsync
+  } = useArcWallet();
+
+  const isBaseSepolia = isConnected && chainId === 84532;
+  const isSupportedPayrollWallet = isArcTestnet || isBaseSepolia;
+
+  const [selectedChain, setSelectedChain] = useState<SupportedPayrollChain>("Arc");
+
+  // Sync selected chain when wallet network changes
+  useEffect(() => {
+    if (chainId === 84532) {
+      setSelectedChain("Base");
+    } else if (chainId === 5042002) {
+      setSelectedChain("Arc");
+    }
+  }, [chainId]);
+
+  const handleSelectChain = (chain: SupportedPayrollChain) => {
+    setSelectedChain(chain);
+  };
+
+  const handleSwitchToChain = async (target: SupportedPayrollChain) => {
+    const targetChainId = PAYROLL_CHAIN_CONFIGS[target].id;
+    try {
+      if (targetChainId === 5042002) {
+        switchToArcTestnet();
+      } else if (switchChainAsync) {
+        await switchChainAsync({ chainId: targetChainId });
+      }
+    } catch (err) {
+      console.warn("Chain switch dismissed:", err);
+    }
+  };
+
   const [storageError, setStorageError] = useState(false);
   const [contributors, setContributors] = useState<Contributor[]>([]);
   const [batches, setBatches] = useState<PayrollBatch[]>([]);
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
-  
+
   // Tab states for single card unified generator
   const [activeGeneratorTab, setActiveGeneratorTab] = useState<"monthly" | "weekly">("monthly");
-  
+
   // Selection/form states
   const currentMonthYear = new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" });
   const defaultMonth = MONTH_OPTIONS.includes(currentMonthYear) ? currentMonthYear : MONTH_OPTIONS[0];
@@ -200,13 +287,13 @@ export default function PayrollPage() {
   const [selectedWeeklyPeriodIndex, setSelectedWeeklyPeriodIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  
+
   // Modal & Payout Execution States
   const [isPayoutModalOpen, setIsPayoutModalOpen] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [currentExecutionIndex, setCurrentExecutionIndex] = useState(-1);
   const [payoutError, setPayoutError] = useState<string | null>(null);
-  
+
   // Copy state
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -214,8 +301,8 @@ export default function PayrollPage() {
   const isActionPending = isExecuting || isSwitching;
 
   // Wagmi wallet read/write hooks
-  const { 
-    data: usdcBalance, 
+  const {
+    data: usdcBalance,
     refetch: refetchUsdc,
     error: usdcBalanceError,
     isError: isUsdcBalanceError
@@ -229,8 +316,8 @@ export default function PayrollPage() {
     }
   });
 
-  const { 
-    data: usdcAllowance, 
+  const {
+    data: usdcAllowance,
     refetch: refetchAllowance,
     error: usdcAllowanceError,
     isError: isUsdcAllowanceError
@@ -271,7 +358,7 @@ export default function PayrollPage() {
         setStorageError(true);
       }
     }
-    
+
     // Load payroll batches
     const storedBatches = localStorage.getItem("arc_payroll_batches");
     if (storedBatches) {
@@ -389,12 +476,12 @@ export default function PayrollPage() {
     const [monthName, yearStr] = selectedMonth.split(" ");
     const monthIndex = MONTH_NAMES.indexOf(monthName);
     const year = parseInt(yearStr);
-    
+
     const refDate = new Date(year, monthIndex + 1, 0);
     const batchName = `Monthly Run - ${selectedMonth}`;
 
-    const duplicateExists = batches.some(b => 
-      (b.type === "Monthly" && b.period === selectedMonth) || 
+    const duplicateExists = batches.some(b =>
+      (b.type === "Monthly" && b.period === selectedMonth) ||
       b.month === batchName
     );
     if (duplicateExists) {
@@ -462,6 +549,8 @@ export default function PayrollPage() {
       createdAt: timestamp,
       type: "Monthly",
       period: selectedMonth,
+      chainId: PAYROLL_CHAIN_CONFIGS[selectedChain].id,
+      network: PAYROLL_CHAIN_CONFIGS[selectedChain].name,
       contributors: dueContributorsData.map(item => ({
         id: item.c.id,
         fullName: item.c.fullName,
@@ -502,8 +591,8 @@ export default function PayrollPage() {
     const end = new Date(selectedPeriod.endStr + "T00:00:00");
     const batchName = `Weekly Run - ${selectedPeriod.label.replace(" - ", " to ")}`;
 
-    const duplicateExists = batches.some(b => 
-      (b.type === "Weekly" && b.period === selectedPeriod.label) || 
+    const duplicateExists = batches.some(b =>
+      (b.type === "Weekly" && b.period === selectedPeriod.label) ||
       b.month === batchName
     );
     if (duplicateExists) {
@@ -529,7 +618,7 @@ export default function PayrollPage() {
 
     const getWeeklyDueDateInRange = (c: Contributor): Date | null => {
       const contributorStart = new Date((c.startDate || "2026-05-01") + "T00:00:00");
-      
+
       const weekdays: Record<string, number> = {
         Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6
       };
@@ -581,6 +670,8 @@ export default function PayrollPage() {
       period: selectedPeriod.label,
       weekStart: selectedPeriod.startStr,
       weekEnd: selectedPeriod.endStr,
+      chainId: PAYROLL_CHAIN_CONFIGS[selectedChain].id,
+      network: PAYROLL_CHAIN_CONFIGS[selectedChain].name,
       contributors: dueContributorsData.map(item => ({
         id: item.c.id,
         fullName: item.c.fullName,
@@ -636,11 +727,13 @@ export default function PayrollPage() {
 
     setError(null);
     setSuccess(null);
-    setPayoutError(null);
-
-    // Verify network is Arc Testnet before starting execution
-    if (chainId !== 5042002) {
-      setPayoutError("Switching network to Arc Testnet...");
+    // Verify chain and network are Arc Testnet before starting execution
+    if (selectedChain !== "Arc" || chainId !== 5042002) {
+      setPayoutError(
+        selectedChain === "Base"
+          ? "Base Sepolia Payroll smart contract is not yet deployed. Payout execution is available on Arc Testnet."
+          : "Please switch your wallet network to Arc Testnet to execute payouts."
+      );
       return;
     }
 
@@ -693,7 +786,7 @@ export default function PayrollPage() {
 
       // Step 2: batchPayEmployees execution
       setCurrentExecutionIndex(-1); // -1 signifies broadcasting payouts
-      
+
       let batchHash;
       try {
         batchHash = await writeContractAsync({
@@ -723,12 +816,14 @@ export default function PayrollPage() {
         updatedContributors[i].txHash = batchHash;
       }
 
-      const finalBatchesList = batches.map(b => 
-        b.id === activeBatch.id ? { 
-          ...b, 
-          status: "Paid" as const, 
+      const finalBatchesList = batches.map(b =>
+        b.id === activeBatch.id ? {
+          ...b,
+          status: "Paid" as const,
           executedAt: timestamp,
-          contributors: updatedContributors 
+          chainId: 5042002,
+          network: "Arc Testnet",
+          contributors: updatedContributors
         } : b
       );
 
@@ -740,10 +835,10 @@ export default function PayrollPage() {
       console.error("[DEBUG ERROR] Main catch block in handleExecutePayout. Complete Error Object:", error);
       const err = error as { name?: string; code?: number; message?: string; shortMessage?: string };
       const msg = err.shortMessage || err.message || "Transaction failed";
-      
-      const isUserRejection = 
-        err.name === "UserRejectedRequestError" || 
-        err.code === 4001 || 
+
+      const isUserRejection =
+        err.name === "UserRejectedRequestError" ||
+        err.code === 4001 ||
         /user rejected/i.test(err.message || "") ||
         /user rejected/i.test(err.shortMessage || "");
 
@@ -754,11 +849,11 @@ export default function PayrollPage() {
         updatedContributors[i].errorMsg = errorText;
       }
 
-      const finalBatchesList = batches.map(b => 
-        b.id === activeBatch.id ? { 
-          ...b, 
-          status: "Approved" as const, 
-          contributors: updatedContributors 
+      const finalBatchesList = batches.map(b =>
+        b.id === activeBatch.id ? {
+          ...b,
+          status: "Approved" as const,
+          contributors: updatedContributors
         } : b
       );
 
@@ -854,6 +949,42 @@ export default function PayrollPage() {
             title="Premium Payroll Runs"
             description="Generate weekly and monthly payroll rosters, verify smart contract alignment, and execute stablecoin payouts."
           />
+
+          {/* Chain Selector: Arc Testnet vs Base Sepolia */}
+          <div className="flex items-center gap-1.5 p-1.5 bg-[#070e1c]/90 rounded-2xl border border-white/10 backdrop-blur-md shrink-0 shadow-lg">
+            <button
+              type="button"
+              onClick={() => handleSelectChain("Arc")}
+              className={cn(
+                "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer",
+                selectedChain === "Arc"
+                  ? "bg-purple-600/90 text-white shadow-[0_0_16px_rgba(168,85,247,0.4)] border border-purple-400/30"
+                  : "text-slate-400 hover:text-white hover:bg-white/5"
+              )}
+            >
+              <Image src="/chains/arc.png" alt="Arc" width={18} height={18} className="rounded-full" />
+              <span>Arc Testnet</span>
+              {selectedChain === "Arc" && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSelectChain("Base")}
+              className={cn(
+                "flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer",
+                selectedChain === "Base"
+                  ? "bg-[#0052FF] text-white shadow-[0_0_16px_rgba(0,82,255,0.4)] border border-blue-400/30"
+                  : "text-slate-400 hover:text-white hover:bg-white/5"
+              )}
+            >
+              <Image src="/chains/base.png" alt="Base" width={18} height={18} className="rounded-full" />
+              <span>Base Sepolia</span>
+              {selectedChain === "Base" && (
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-300 animate-pulse" />
+              )}
+            </button>
+          </div>
         </div>
 
         {storageError && (
@@ -877,10 +1008,10 @@ export default function PayrollPage() {
             <div className="absolute inset-0 bg-gradient-to-b from-white/[0.09] to-transparent h-1/2 pointer-events-none" />
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.07),transparent_50%)] pointer-events-none" />
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.08] to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-out pointer-events-none" />
-            
+
             {/* Pulsing card background glow */}
             <div className="absolute -top-10 -right-10 w-28 h-28 rounded-full bg-emerald-500/15 blur-3xl group-hover:bg-emerald-500/22 transition-all duration-500 animate-[pulse_3s_infinite]" />
-            
+
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0 relative z-10">
               <CardTitle className="text-xs font-bold text-slate-200 uppercase tracking-wider">
                 Total USDC Paid
@@ -907,10 +1038,10 @@ export default function PayrollPage() {
             <div className="absolute inset-0 bg-gradient-to-b from-white/[0.09] to-transparent h-1/2 pointer-events-none" />
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.07),transparent_50%)] pointer-events-none" />
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.08] to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-out pointer-events-none" />
-            
+
             {/* Pulsing card background glow */}
             <div className="absolute -top-10 -right-10 w-28 h-28 rounded-full bg-blue-500/15 blur-3xl group-hover:bg-blue-500/22 transition-all duration-500 animate-[pulse_3s_infinite]" />
-            
+
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0 relative z-10">
               <CardTitle className="text-xs font-bold text-slate-200 uppercase tracking-wider">
                 Contributors Paid
@@ -937,10 +1068,10 @@ export default function PayrollPage() {
             <div className="absolute inset-0 bg-gradient-to-b from-white/[0.09] to-transparent h-1/2 pointer-events-none" />
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.07),transparent_50%)] pointer-events-none" />
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.08] to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-out pointer-events-none" />
-            
+
             {/* Pulsing card background glow */}
             <div className="absolute -top-10 -right-10 w-28 h-28 rounded-full bg-purple-500/15 blur-3xl group-hover:bg-purple-500/22 transition-all duration-500 animate-[pulse_3s_infinite]" />
-            
+
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0 relative z-10">
               <CardTitle className="text-xs font-bold text-slate-200 uppercase tracking-wider">
                 Payroll Runs
@@ -967,10 +1098,10 @@ export default function PayrollPage() {
             <div className="absolute inset-0 bg-gradient-to-b from-white/[0.09] to-transparent h-1/2 pointer-events-none" />
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(255,255,255,0.07),transparent_50%)] pointer-events-none" />
             <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.08] to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-out pointer-events-none" />
-            
+
             {/* Pulsing card background glow */}
             <div className="absolute -top-10 -right-10 w-28 h-28 rounded-full bg-cyan-500/15 blur-3xl group-hover:bg-cyan-500/22 transition-all duration-500 animate-[pulse_3s_infinite]" />
-            
+
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0 relative z-10">
               <CardTitle className="text-xs font-bold text-slate-200 uppercase tracking-wider">
                 Success Rate
@@ -1028,10 +1159,10 @@ export default function PayrollPage() {
 
             {/* ── Main Grid ────────────────────────────────────────── */}
             <div className="relative z-10 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-              
+
               {/* Left Column: Generator, Contract widget, Quick Actions, Live Activity */}
               <div className="space-y-6">
-                
+
                 {/* ── 2. Unified Payroll Generator Card ───────────────── */}
                 <Card className="glass-card-component overflow-hidden">
                   <div className="border-b border-white/5 bg-white/[0.02]">
@@ -1171,49 +1302,74 @@ export default function PayrollPage() {
                         Smart Contract Status
                       </CardTitle>
                       <CardDescription className="text-[10px] text-slate-500 mt-0.5">
-                        Aligned with Arc Testnet deployment address
+                        {selectedChain === "Arc"
+                          ? "Aligned with Arc Testnet deployment address"
+                          : "Base Sepolia deployment configuration"}
                       </CardDescription>
                     </div>
-                    <Badge variant={isArcTestnet ? "success" : "warning"} className="text-[10px]">
-                      {isArcTestnet ? "Connected" : "Wrong Network"}
+                    <Badge
+                      variant={
+                        selectedChain === "Arc"
+                          ? isArcTestnet ? "success" : isConnected ? "warning" : "outline"
+                          : "outline"
+                      }
+                      className={cn(
+                        "text-[10px]",
+                        selectedChain === "Base" && "border-amber-500/40 text-amber-400 bg-amber-500/10"
+                      )}
+                    >
+                      {selectedChain === "Arc"
+                        ? isArcTestnet ? "Connected" : isConnected ? "Wrong Network" : "Disconnected"
+                        : "Not Deployed"}
                     </Badge>
                   </CardHeader>
                   <CardContent className="text-xs space-y-2">
                     <div className="flex justify-between py-1 border-b border-white/5">
                       <span className="text-slate-400">Target Contract</span>
-                      <span className="font-semibold text-white">ArcPayroll</span>
+                      <span className="font-semibold text-white">
+                        {selectedChain === "Arc" ? "ArcPayroll" : "BasePayroll (Pending)"}
+                      </span>
                     </div>
                     <div className="flex justify-between py-1 border-b border-white/5">
                       <span className="text-slate-400">Chain Target</span>
-                      <span className="font-semibold text-white">Arc Testnet (5042002)</span>
+                      <span className="font-semibold text-white">
+                        {selectedChain === "Arc" ? "Arc Testnet (5042002)" : "Base Sepolia (84532)"}
+                      </span>
                     </div>
                     <div className="pt-2">
                       <span className="text-slate-500 text-[10px] uppercase font-bold block mb-1">Contract Address</span>
-                      <div className="flex items-center justify-between gap-2 bg-white/5 border border-white/8 rounded-lg p-2 font-mono text-[10px] text-slate-300">
-                        <span className="truncate">{PAYROLL_ADDRESS}</span>
-                        <div className="flex shrink-0 items-center gap-1.5">
-                          <button
-                            onClick={() => handleCopy("contract-addr", PAYROLL_ADDRESS)}
-                            className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-white transition-colors"
-                            title="Copy Address"
-                          >
-                            {copiedId === "contract-addr" ? (
-                              <Check className="h-3.5 w-3.5 text-emerald-400" />
-                            ) : (
-                              <Copy className="h-3.5 w-3.5" />
-                            )}
-                          </button>
-                          <a
-                            href={`https://testnet.arcscan.app/address/${PAYROLL_ADDRESS}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-white transition-colors"
-                            title="View on ArcScan"
-                          >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                          </a>
+                      {selectedChain === "Arc" ? (
+                        <div className="flex items-center justify-between gap-2 bg-white/5 border border-white/8 rounded-lg p-2 font-mono text-[10px] text-slate-300">
+                          <span className="truncate">{PAYROLL_ADDRESS}</span>
+                          <div className="flex shrink-0 items-center gap-1.5">
+                            <button
+                              onClick={() => handleCopy("contract-addr", PAYROLL_ADDRESS)}
+                              className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-white transition-colors"
+                              title="Copy Address"
+                            >
+                              {copiedId === "contract-addr" ? (
+                                <Check className="h-3.5 w-3.5 text-emerald-400" />
+                              ) : (
+                                <Copy className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                            <a
+                              href={`https://testnet.arcscan.app/address/${PAYROLL_ADDRESS}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="p-1 hover:bg-white/10 rounded text-slate-400 hover:text-white transition-colors"
+                              title="View on ArcScan"
+                            >
+                              <ExternalLink className="h-3.5 w-3.5" />
+                            </a>
+                          </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-2.5 text-[10px] text-amber-300/90 leading-relaxed">
+                          <span className="font-semibold text-amber-400 block mb-0.5">Not Yet Deployed</span>
+                          Smart contract not yet deployed on Base Sepolia. Payout execution is available on Arc Testnet.
+                        </div>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -1287,7 +1443,7 @@ export default function PayrollPage() {
                               <span className="font-semibold text-[#4f8cff]">{act.amount.toLocaleString()} USDC</span>
                               {act.txHash && (
                                 <a
-                                  href={`https://testnet.arcscan.app/tx/${act.txHash}`}
+                                  href={getExplorerTxUrl(act.txHash)}
                                   target="_blank"
                                   rel="noreferrer"
                                   className="text-[9px] text-slate-500 hover:text-white flex items-center gap-0.5 justify-end mt-0.5"
@@ -1308,7 +1464,7 @@ export default function PayrollPage() {
 
               {/* Right Column: Active Batch pipeline details & History */}
               <div className="space-y-6">
-                
+
                 {/* Active Batch Container */}
                 {!activeBatch ? (
                   <Card className="glass-card-component flex flex-col items-center justify-center text-center p-12 min-h-[400px]">
@@ -1322,11 +1478,11 @@ export default function PayrollPage() {
                   </Card>
                 ) : (
                   <div className="space-y-6">
-                    
+
                     {/* Active Run Header */}
                     <div className="glow-border-shell">
                       <div className="border-0 bg-[#060f24]/90 rounded-2xl p-5 space-y-5">
-                        
+
                         <div>
                           <Badge variant="blue" className="mb-2">
                             {activeBatch.type || "Monthly"} Run
@@ -1345,7 +1501,7 @@ export default function PayrollPage() {
                           <div className="grid grid-cols-4 gap-2 relative">
                             {/* Line connector */}
                             <div className="absolute top-4 left-[12.5%] right-[12.5%] h-0.5 bg-white/5 z-0" />
-                            
+
                             {getPipelineSteps(activeBatch).map((step, idx) => {
                               const StepIcon = step.icon;
                               const isCompleted = step.isCompleted;
@@ -1389,7 +1545,7 @@ export default function PayrollPage() {
                               <p className="text-xs text-slate-400 leading-relaxed">
                                 Verify roster details below. Submit for review once alignment is audited.
                               </p>
-                              <Button 
+                              <Button
                                 onClick={() => handleAdvanceStatus(activeBatch.id, "Pending")}
                                 disabled={isActionPending}
                                 className="w-full btn-electric gap-2"
@@ -1405,7 +1561,7 @@ export default function PayrollPage() {
                               <p className="text-xs text-slate-400 leading-relaxed">
                                 Pending workspace administrator audit. Verify keys and salaries below.
                               </p>
-                              <Button 
+                              <Button
                                 onClick={() => handleAdvanceStatus(activeBatch.id, "Approved")}
                                 disabled={isActionPending}
                                 className="w-full btn-electric gap-2"
@@ -1421,14 +1577,80 @@ export default function PayrollPage() {
                               <p className="text-xs text-slate-400 leading-relaxed">
                                 Batch authorized. Launch the execution pipeline to pay contributors.
                               </p>
-                              <Button 
-                                onClick={() => setIsPayoutModalOpen(true)}
-                                disabled={!isArcTestnet || isActionPending}
-                                className="w-full btn-electric gap-2"
-                              >
-                                <Send className="h-4 w-4" />
-                                {!isArcTestnet ? "Switch Network to execute" : "Confirm & Execute Payouts"}
-                              </Button>
+
+                              {!isConnected ? (
+                                <Button
+                                  disabled
+                                  className="w-full btn-electric gap-2 opacity-60"
+                                >
+                                  <Lock className="h-4 w-4" />
+                                  Connect Wallet to Execute
+                                </Button>
+                              ) : selectedChain === "Base" ? (
+                                chainId === 84532 ? (
+                                  <div className="space-y-2.5">
+                                    <div className="p-3 rounded-xl border border-amber-500/25 bg-amber-500/10 text-amber-300 text-xs leading-relaxed flex items-start gap-2">
+                                      <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                                      <div>
+                                        <p className="font-semibold text-white">Base Payroll Not Deployed</p>
+                                        <p className="mt-0.5 text-slate-300">
+                                          Smart contract execution on Base Sepolia is pending deployment. Payout execution is currently live on Arc Testnet.
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <Button
+                                      onClick={() => {
+                                        handleSelectChain("Arc");
+                                        handleSwitchToChain("Arc");
+                                      }}
+                                      disabled={isActionPending}
+                                      className="w-full btn-electric gap-2"
+                                    >
+                                      <Send className="h-4 w-4" />
+                                      Switch to Arc Testnet to Execute
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-2">
+                                    <p className="text-xs text-amber-300/90 leading-relaxed">
+                                      Target chain is Base Sepolia. Switch your wallet to Base Sepolia.
+                                    </p>
+                                    <Button
+                                      onClick={() => handleSwitchToChain("Base")}
+                                      disabled={isActionPending}
+                                      className="w-full btn-electric gap-2"
+                                    >
+                                      <Send className="h-4 w-4" />
+                                      {isSwitching ? "Switching..." : "Switch Network to Base Sepolia"}
+                                    </Button>
+                                  </div>
+                                )
+                              ) : selectedChain === "Arc" ? (
+                                chainId !== 5042002 ? (
+                                  <div className="space-y-2">
+                                    <p className="text-xs text-amber-300/90 leading-relaxed">
+                                      Payroll target is Arc Testnet. Switch wallet from {chainId === 84532 ? "Base Sepolia" : "current network"} to Arc Testnet.
+                                    </p>
+                                    <Button
+                                      onClick={() => handleSwitchToChain("Arc")}
+                                      disabled={isActionPending}
+                                      className="w-full btn-electric gap-2"
+                                    >
+                                      <Send className="h-4 w-4" />
+                                      {isSwitching ? "Switching..." : "Switch Network to Arc Testnet"}
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <Button
+                                    onClick={() => setIsPayoutModalOpen(true)}
+                                    disabled={isActionPending}
+                                    className="w-full btn-electric gap-2"
+                                  >
+                                    <Send className="h-4 w-4" />
+                                    Confirm & Execute Payouts
+                                  </Button>
+                                )
+                              ) : null}
                             </div>
                           )}
 
@@ -1436,8 +1658,8 @@ export default function PayrollPage() {
                           {(activeBatch.status === "Paid" || activeBatch.status === "Partially Paid") && (
                             <div className={cn(
                               "border rounded-xl p-4 space-y-3 text-xs backdrop-blur-md",
-                              activeBatch.status === "Paid" 
-                                ? "bg-emerald-500/5 border-emerald-500/15 text-emerald-400" 
+                              activeBatch.status === "Paid"
+                                ? "bg-emerald-500/5 border-emerald-500/15 text-emerald-400"
                                 : "bg-amber-500/5 border-amber-500/15 text-amber-200"
                             )}>
                               <div className="flex items-center gap-2 font-bold text-sm">
@@ -1464,13 +1686,13 @@ export default function PayrollPage() {
                                   <span className="font-semibold text-white">{activeBatch.executedAt}</span>
                                 </div>
                               </div>
-                              
+
                               {/* Grab transaction hash from the first paid contributor */}
                               {activeBatch.contributors.find(c => c.status === "Paid" && c.txHash) && (
                                 <div className="space-y-1.5 pt-1">
                                   <span className="text-[10px] text-slate-500 uppercase block font-semibold">Transaction Link</span>
                                   <a
-                                    href={`https://testnet.arcscan.app/tx/${activeBatch.contributors.find(c => c.status === "Paid")?.txHash}`}
+                                    href={getExplorerTxUrl(activeBatch.contributors.find(c => c.status === "Paid")?.txHash, activeBatch.chainId)}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="inline-flex items-center gap-1 text-[#4f8cff] hover:underline font-mono text-[10px] break-all bg-white/5 p-2 border border-white/8 rounded-lg w-full justify-between"
@@ -1513,8 +1735,8 @@ export default function PayrollPage() {
 
                             {/* Rows */}
                             {activeBatch.contributors.map(c => (
-                              <div 
-                                key={c.id} 
+                              <div
+                                key={c.id}
                                 className="grid grid-cols-[1.5fr_1.5fr_1fr_1fr] items-center border border-white/5 px-4 py-3 text-xs text-slate-300 rounded-xl hover:bg-white/[0.01] hover:border-white/10 transition-all"
                               >
                                 {/* Contributor with initials avatar */}
@@ -1527,7 +1749,7 @@ export default function PayrollPage() {
                                     <p className="text-[9px] text-slate-500 truncate mt-0.5">{c.role}</p>
                                   </div>
                                 </div>
-                                
+
                                 {/* Wallet */}
                                 <div className="flex items-center gap-1.5 font-mono text-slate-400 pr-1.5">
                                   <span>{shortenAddress(c.walletAddress)}</span>
@@ -1549,9 +1771,9 @@ export default function PayrollPage() {
                                 {/* Status */}
                                 <div>
                                   {c.status === "Paid" && c.txHash ? (
-                                    <a 
-                                      href={`https://testnet.arcscan.app/tx/${c.txHash}`} 
-                                      target="_blank" 
+                                    <a
+                                      href={getExplorerTxUrl(c.txHash, activeBatch?.chainId)}
+                                      target="_blank"
                                       rel="noopener noreferrer"
                                       className="text-emerald-400 inline-flex items-center gap-1 hover:underline font-semibold text-[10px] bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full"
                                     >
@@ -1588,7 +1810,7 @@ export default function PayrollPage() {
 
                   </div>
                 )}
-                
+
                 {/* ── 5. Payroll Run History ──────────────────────────── */}
                 <Card className="glass-card-component">
                   <CardHeader className="pb-3 flex flex-row items-center justify-between space-y-0">
@@ -1630,8 +1852,8 @@ export default function PayrollPage() {
                               }}
                               className={cn(
                                 "flex items-center justify-between border rounded-xl px-4 py-3.5 cursor-pointer hover:-translate-y-0.5 transition-all duration-300 group",
-                                isActive 
-                                  ? "border-[#6d5dfc]/40 bg-[#6d5dfc]/10 hover:bg-[#6d5dfc]/12 shadow-[0_0_12px_rgba(109,93,252,0.15)]" 
+                                isActive
+                                  ? "border-[#6d5dfc]/40 bg-[#6d5dfc]/10 hover:bg-[#6d5dfc]/12 shadow-[0_0_12px_rgba(109,93,252,0.15)]"
                                   : "border-white/5 hover:border-white/12 bg-white/[0.01] hover:bg-white/[0.03]",
                                 isActionPending && "opacity-50 cursor-not-allowed pointer-events-none"
                               )}
@@ -1643,9 +1865,9 @@ export default function PayrollPage() {
                                 </p>
                               </div>
                               <div className="flex items-center gap-2 shrink-0">
-                                <Badge 
+                                <Badge
                                   variant={
-                                    b.status === "Paid" ? "success" : 
+                                    b.status === "Paid" ? "success" :
                                     b.status === "Partially Paid" ? "warning" :
                                     b.status === "Approved" ? "blue" : "secondary"
                                   }
@@ -1677,27 +1899,29 @@ export default function PayrollPage() {
         {isPayoutModalOpen && activeBatch && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             {/* Backdrop */}
-            <div 
+            <div
               className="absolute inset-0 bg-black/70 backdrop-blur-sm cursor-pointer animate-fade-in"
               onClick={() => !isExecuting && setIsPayoutModalOpen(false)}
             />
-            
+
             {/* Modal Card */}
             <div className="w-full max-w-xl relative z-10 rounded-2xl border border-white/12 bg-[#060f24]/95 backdrop-blur-xl p-6 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
               <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#6d5dfc] via-[#6d5dfc] to-[#4f8cff]" />
-              
+
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h3 className="text-lg font-bold text-white">Confirm Payroll Payouts</h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    Batch payroll execution through the ArcPayroll smart contract on Arc Testnet.
+                    {selectedChain === "Arc"
+                      ? "Batch payroll execution through the ArcPayroll smart contract on Arc Testnet."
+                      : "Base Sepolia Payroll deployment status."}
                   </p>
                 </div>
                 {!isExecuting && (
-                  <Button 
-                    size="sm" 
-                    variant="ghost" 
-                    className="h-8 w-8 p-0 hover:bg-white/10" 
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 w-8 p-0 hover:bg-white/10"
                     onClick={() => setIsPayoutModalOpen(false)}
                   >
                     <X className="h-4.5 w-4.5 text-slate-400" />
@@ -1720,8 +1944,8 @@ export default function PayrollPage() {
                     "font-bold mt-1",
                     isConnected ? "gradient-text inline-block" : "text-white"
                   )}>
-                    {!isConnected 
-                      ? "Wallet Disconnected" 
+                    {!isConnected
+                      ? "Wallet Disconnected"
                       : `${usdcBalanceFormatted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC`}
                   </p>
                 </div>
@@ -1753,8 +1977,8 @@ export default function PayrollPage() {
                 {activeBatch.contributors.map((c, index) => {
                   const isCurrent = currentExecutionIndex === index;
                   return (
-                    <div 
-                      key={c.id} 
+                    <div
+                      key={c.id}
                       className={cn(
                         "grid grid-cols-[1.5fr_1.5fr_1fr] items-center px-3 py-2 text-xs border border-transparent rounded-lg transition-all",
                         isCurrent ? "bg-[#6d5dfc]/10 border-[#6d5dfc]/20" : "bg-white/[0.01]"
@@ -1798,10 +2022,37 @@ export default function PayrollPage() {
                   <div className="text-xs text-amber-400 bg-amber-500/5 border border-amber-500/10 rounded-lg p-2.5 w-full text-center">
                     Please connect your founder wallet in the header navigation to execute payouts.
                   </div>
-                ) : !isArcTestnet ? (
+                ) : selectedChain === "Base" ? (
                   <div className="flex flex-col gap-3 w-full">
-                    <div className="text-xs text-amber-400 bg-amber-500/5 border border-amber-500/10 rounded-lg p-2.5 text-center">
-                      Unsupported network connected. PayGrix only supports Arc Testnet. Please switch networks to execute payouts.
+                    <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-center leading-relaxed">
+                      <strong>Base Sepolia Deployment Pending:</strong> The Payroll smart contract is not yet deployed on Base Sepolia. Payout execution is currently supported on Arc Testnet.
+                    </div>
+                    <div className="flex justify-end gap-3">
+                      <Button
+                        variant="outline"
+                        onClick={() => setIsPayoutModalOpen(false)}
+                      >
+                        Close
+                      </Button>
+                      <Button
+                        onClick={async () => {
+                          handleSelectChain("Arc");
+                          await handleSwitchToChain("Arc");
+                        }}
+                        disabled={isActionPending}
+                        className="btn-electric gap-2"
+                      >
+                        <Send className="h-4 w-4" />
+                        Switch to Arc Testnet
+                      </Button>
+                    </div>
+                  </div>
+                ) : selectedChain === "Arc" && !isArcTestnet ? (
+                  <div className="flex flex-col gap-3 w-full">
+                    <div className="text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-center leading-relaxed">
+                      {chainId === 84532
+                        ? "Wallet connected to Base Sepolia. Please switch to Arc Testnet to execute Arc payroll payouts."
+                        : "Unsupported network connected. Please switch to Arc Testnet to execute payouts."}
                     </div>
                     <div className="flex justify-end gap-3">
                       <Button
@@ -1812,7 +2063,7 @@ export default function PayrollPage() {
                         Cancel
                       </Button>
                       <Button
-                        onClick={switchToArcTestnet}
+                        onClick={() => handleSwitchToChain("Arc")}
                         disabled={isActionPending}
                         className="btn-electric"
                       >

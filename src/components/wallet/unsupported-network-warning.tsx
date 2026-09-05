@@ -21,9 +21,10 @@ export function UnsupportedNetworkWarning() {
 
   const isBridgePage = pathname === "/bridge";
   const isLendingPage = pathname === "/lending";
+  const isPayrollPage = pathname === "/payroll";
   const allowedChainIds = isBridgePage
     ? [5042002, 84532, 421614]
-    : isLendingPage
+    : isLendingPage || isPayrollPage
     ? [5042002, 84532]
     : [5042002];
   const isUnsupported = isConnected && !allowedChainIds.includes(chainId);
@@ -45,7 +46,9 @@ export function UnsupportedNetworkWarning() {
                 ? "The bridge supports Arc Testnet, Base Sepolia, and Arbitrum Sepolia. Please switch to one of these networks to bridge."
                 : isLendingPage
                 ? "Lending supports Arc Testnet and Base Sepolia. Please switch to one of these networks to access lending."
-                : `PayGrix only supports ${arcTestnet.name}. Payroll features are disabled until you switch.`}
+                : isPayrollPage
+                ? "Payroll supports Arc Testnet and Base Sepolia. Please switch to one of these networks to manage payroll."
+                : `PayGrix only supports ${arcTestnet.name}. Features are disabled until you switch.`}
             </p>
           </div>
         </div>
