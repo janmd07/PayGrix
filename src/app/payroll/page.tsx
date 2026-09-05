@@ -240,9 +240,6 @@ export default function PayrollPage() {
     switchChainAsync
   } = useArcWallet();
 
-  const isBaseSepolia = isConnected && chainId === 84532;
-  const isSupportedPayrollWallet = isArcTestnet || isBaseSepolia;
-
   const [selectedChain, setSelectedChain] = useState<SupportedPayrollChain>("Arc");
 
   // Sync selected chain when wallet network changes
