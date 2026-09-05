@@ -87,7 +87,7 @@ function parseContractError(err: unknown): string {
   return "Transaction failed on-chain. Please verify parameters and try again.";
 }
 
-function LendingTokenLogo({ symbol, className }: { symbol: string; className?: string }) {
+function LendingTokenLogo({ symbol, className, chain }: { symbol: string; className?: string; chain?: SupportedLendingChain }) {
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
@@ -127,6 +127,27 @@ function LendingTokenLogo({ symbol, className }: { symbol: string; className?: s
       <div className={cn("relative h-6 w-6 rounded-full overflow-hidden flex items-center justify-center shrink-0 bg-transparent", className)}>
         <Image
           src="/tokens/cirbtc.png"
+          alt={symbol}
+          width={24}
+          height={24}
+          className="h-full w-full object-contain"
+          onError={() => setHasError(true)}
+        />
+      </div>
+    );
+  }
+  if (symbol === "USDC" && chain === "Base") {
+    if (hasError) {
+      return (
+        <div className={cn("h-6 w-6 rounded-full bg-[#2775CA]/20 border border-[#2775CA]/40 flex items-center justify-center text-[#2775CA] shrink-0 font-bold text-xs select-none shadow-[0_0_8px_rgba(39,117,202,0.3)]", className)}>
+          $
+        </div>
+      );
+    }
+    return (
+      <div className={cn("relative h-6 w-6 rounded-full overflow-hidden flex items-center justify-center shrink-0 bg-transparent", className)}>
+        <Image
+          src="/tokens/usdc.png"
           alt={symbol}
           width={24}
           height={24}
@@ -818,7 +839,7 @@ export function LendingWorkspace({
 
                 <div className="shrink-0">
                   <div className="flex items-center bg-[#070f21] border border-white/10 rounded-full pl-2 pr-3 py-1.5 text-white select-none">
-                    <LendingTokenLogo symbol="USDC" />
+                    <LendingTokenLogo symbol="USDC" chain={currentChain} />
                     <span className="font-bold text-xs tracking-wider ml-1.5">USDC</span>
                   </div>
                 </div>
@@ -907,7 +928,7 @@ export function LendingWorkspace({
 
                 <div className="shrink-0">
                   <div className="flex items-center bg-[#070f21] border border-white/10 rounded-full pl-2 pr-3 py-1.5 text-white select-none">
-                    <LendingTokenLogo symbol="USDC" />
+                    <LendingTokenLogo symbol="USDC" chain={currentChain} />
                     <span className="font-bold text-xs tracking-wider ml-1.5">USDC</span>
                   </div>
                 </div>
