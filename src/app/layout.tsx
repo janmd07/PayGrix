@@ -7,6 +7,9 @@ import { Analytics } from "@vercel/analytics/react";
 export const metadata: Metadata = {
   title: "PayGrix",
   description: "Stablecoin payroll for crypto-native teams on Arc Testnet.",
+  other: {
+    "base:app_id": "69f363dcb8c9889b5bf9346",
+  },
   icons: {
     icon: [
       { url: "/favicon.ico" },
