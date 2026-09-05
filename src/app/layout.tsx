@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   title: "PayGrix",
   description: "Stablecoin payroll for crypto-native teams on Arc Testnet.",
   other: {
-    "base:app_id": "69f363dcb8c9889b5bf9346",
+    "base:app_id": "69f363cdbc8c9889b5bf9346",
   },
   icons: {
     icon: [
@@ -34,6 +34,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning>
+        <meta name="base:app_id" content="69f363cdbc8c9889b5bf9346" />
         <AppProviders>{children}</AppProviders>
         <Analytics />
       </body>
