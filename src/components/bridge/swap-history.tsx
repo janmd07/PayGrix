@@ -77,6 +77,7 @@ export function SwapHistory({ swaps }: SwapHistoryProps) {
                       <span className={
                         tx.tokenIn === "USDC" ? "text-[#4f8cff]" :
                         tx.tokenIn === "EURC" ? "text-purple-400" :
+                        tx.tokenIn === "ETH" ? "text-emerald-400" :
                         "text-amber-500"
                       }>
                         {tx.tokenIn}
@@ -91,6 +92,7 @@ export function SwapHistory({ swaps }: SwapHistoryProps) {
                       <span className={
                         tx.tokenOut === "USDC" ? "text-[#4f8cff]" :
                         tx.tokenOut === "EURC" ? "text-purple-400" :
+                        tx.tokenOut === "ETH" ? "text-emerald-400" :
                         "text-amber-500"
                       }>
                         {tx.tokenOut}

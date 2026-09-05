@@ -93,9 +93,14 @@ export default function BridgePage() {
     isLoading: isLoadingCirBtc,
     refreshBalance: refreshCirBtc,
   } = useTokenBalance("cirBTC", address, selectedSwapNetwork);
+  const {
+    balance: swapEthBalance,
+    isLoading: isLoadingEth,
+    refreshBalance: refreshEth,
+  } = useTokenBalance("ETH", address, selectedSwapNetwork);
 
   const handleRefreshSwapBalances = async () => {
-    await Promise.all([refreshUsdc(), refreshEurc(), refreshCirBtc()]);
+    await Promise.all([refreshUsdc(), refreshEurc(), refreshCirBtc(), refreshEth()]);
   };
 
   useEffect(() => {
@@ -167,8 +172,8 @@ export default function BridgePage() {
   const handleSwapSuccess = (
     amountIn: string,
     amountOut: string,
-    tokenIn: "USDC" | "EURC" | "cirBTC",
-    tokenOut: "USDC" | "EURC" | "cirBTC",
+    tokenIn: "USDC" | "EURC" | "cirBTC" | "ETH",
+    tokenOut: "USDC" | "EURC" | "cirBTC" | "ETH",
     hash: string,
     network?: SupportedSwapChain
   ) => {
@@ -271,7 +276,8 @@ export default function BridgePage() {
               balanceUSDC={swapUsdcBalance}
               balanceEURC={swapEurcBalance}
               balanceCirBTC={swapCirBtcBalance}
-              isLoadingBalance={isLoadingUsdc || isLoadingEurc || isLoadingCirBtc}
+              balanceETH={swapEthBalance}
+              isLoadingBalance={isLoadingUsdc || isLoadingEurc || isLoadingCirBtc || isLoadingEth}
               selectedNetwork={selectedSwapNetwork}
               onNetworkChange={setSelectedSwapNetwork}
               onSwapSuccess={handleSwapSuccess}
@@ -351,7 +357,8 @@ export default function BridgePage() {
                 usdcBalance={swapUsdcBalance}
                 eurcBalance={swapEurcBalance}
                 cirbtcBalance={swapCirBtcBalance}
-                isLoading={isLoadingUsdc || isLoadingEurc || isLoadingCirBtc}
+                ethBalance={swapEthBalance}
+                isLoading={isLoadingUsdc || isLoadingEurc || isLoadingCirBtc || isLoadingEth}
                 onRefresh={handleRefreshSwapBalances}
                 network={selectedSwapNetwork}
               />

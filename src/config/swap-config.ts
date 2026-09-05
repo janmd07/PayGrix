@@ -56,6 +56,11 @@ export const SWAP_CHAINS: Record<SupportedSwapChain, SwapChainConfig> = {
     poolAddress: "0x43047A302cD99DDb32E32B2886B40935b60aD2C1", // USDC/EURC 0.05%
     feeTier: 500, // 0.05% Uniswap v3 pool
     tokens: {
+      ETH: {
+        address: "0x4200000000000000000000000000000000000006",
+        decimals: 18,
+        symbol: "ETH",
+      },
       USDC: {
         address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
         decimals: 6,

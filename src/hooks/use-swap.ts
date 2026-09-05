@@ -19,10 +19,12 @@ export type SwapStatus =
   | "completed"
   | "failed";
 
+export type SwapToken = "USDC" | "EURC" | "cirBTC" | "ETH";
+
 export interface SwapHistoryItem {
   id: string;
-  tokenIn: "USDC" | "EURC" | "cirBTC";
-  tokenOut: "USDC" | "EURC" | "cirBTC";
+  tokenIn: SwapToken;
+  tokenOut: SwapToken;
   amountIn: string;
   amountOut: string;
   txHash: string;
@@ -48,8 +50,8 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
 
   const getSwapEstimate = useCallback(async (
     amountIn: string,
-    tokenIn: "USDC" | "EURC" | "cirBTC",
-    tokenOut: "USDC" | "EURC" | "cirBTC",
+    tokenIn: SwapToken,
+    tokenOut: SwapToken,
     networkOverride?: SupportedSwapChain
   ) => {
     if (!amountIn || parseFloat(amountIn) <= 0) return null;
@@ -135,8 +137,8 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
 
   const executeSwap = useCallback(async (
     amountIn: string,
-    tokenIn: "USDC" | "EURC" | "cirBTC",
-    tokenOut: "USDC" | "EURC" | "cirBTC",
+    tokenIn: SwapToken,
+    tokenOut: SwapToken,
     networkOverride?: SupportedSwapChain
   ) => {
     if (!amountIn || parseFloat(amountIn) <= 0) return null;
@@ -211,37 +213,40 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
           }
         }
 
-        // Step 1: Check Allowance & Approve for SwapRouter02 if necessary
-        setStatus("approving");
-        const currentAllowance = await basePublicClient.readContract({
-          address: tokenInAddress,
-          abi: erc20Abi,
-          functionName: "allowance",
-          args: [address, routerAddress],
-        });
-
-        if (currentAllowance < rawAmount) {
-          console.log("[SWAP BASE] Requesting token approval for SwapRouter02...");
-          const approveData = encodeFunctionData({
+        // Step 1: Check Allowance & Approve for SwapRouter02 if necessary (native ETH requires NO approval)
+        const isNativeEthIn = tokenIn === "ETH";
+        if (!isNativeEthIn) {
+          setStatus("approving");
+          const currentAllowance = await basePublicClient.readContract({
+            address: tokenInAddress,
             abi: erc20Abi,
-            functionName: "approve",
-            args: [routerAddress, rawAmount],
+            functionName: "allowance",
+            args: [address, routerAddress],
           });
 
-          const approveTx = (await provider.request({
-            method: "eth_sendTransaction",
-            params: [
-              {
-                from: address,
-                to: tokenInAddress,
-                data: approveData,
-                value: "0x0",
-              },
-            ],
-          })) as string;
+          if (currentAllowance < rawAmount) {
+            console.log("[SWAP BASE] Requesting token approval for SwapRouter02...");
+            const approveData = encodeFunctionData({
+              abi: erc20Abi,
+              functionName: "approve",
+              args: [routerAddress, rawAmount],
+            });
 
-          console.log("[SWAP BASE] Approval submitted:", approveTx);
-          await basePublicClient.waitForTransactionReceipt({ hash: approveTx as `0x${string}` });
+            const approveTx = (await provider.request({
+              method: "eth_sendTransaction",
+              params: [
+                {
+                  from: address,
+                  to: tokenInAddress,
+                  data: approveData,
+                  value: "0x0",
+                },
+              ],
+            })) as string;
+
+            console.log("[SWAP BASE] Approval submitted:", approveTx);
+            await basePublicClient.waitForTransactionReceipt({ hash: approveTx as `0x${string}` });
+          }
         }
 
         // Step 2: Build transaction parameters from server route
@@ -266,8 +271,9 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
           throw new Error(buildData.error || "Failed to build transaction parameters for Base.");
         }
 
-        const targetAddress = buildData?.transaction?.to || routerAddress;
-        const swapCalldata = buildData?.transaction?.data;
+        const targetAddress = (buildData?.transaction?.to || routerAddress) as `0x${string}`;
+        const swapCalldata = buildData?.transaction?.data as `0x${string}`;
+        const swapValue = ((buildData?.transaction?.value as string) || "0x0") as `0x${string}`;
 
         if (!swapCalldata) {
           throw new Error("Invalid transaction payload received from server for Base swap.");
@@ -275,7 +281,7 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
 
         // Step 3: Execute Swap
         setStatus("swapping");
-        console.log("[SWAP BASE] Executing swap on SwapRouter02:", { to: targetAddress, from: address });
+        console.log("[SWAP BASE] Executing swap on SwapRouter02:", { to: targetAddress, from: address, value: swapValue });
         const txHashResult = (await provider.request({
           method: "eth_sendTransaction",
           params: [
@@ -283,7 +289,7 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
               from: address,
               to: targetAddress,
               data: swapCalldata,
-              value: "0x0",
+              value: swapValue,
             },
           ],
         })) as string;

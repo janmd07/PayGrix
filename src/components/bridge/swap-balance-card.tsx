@@ -9,6 +9,7 @@ interface SwapBalanceCardProps {
   usdcBalance: string;
   eurcBalance: string;
   cirbtcBalance: string;
+  ethBalance?: string;
   isLoading: boolean;
   onRefresh: () => void;
   network?: SupportedSwapChain;
@@ -18,6 +19,7 @@ export function SwapBalanceCard({
   usdcBalance,
   eurcBalance,
   cirbtcBalance,
+  ethBalance = "0.00",
   isLoading,
   onRefresh,
   network = "Arc",
@@ -53,8 +55,44 @@ export function SwapBalanceCard({
           </button>
         </div>
 
-        <div className={cn("grid grid-cols-1 gap-4", isBase ? "sm:grid-cols-2" : "sm:grid-cols-3")}>
-          <div className="space-y-1">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {isBase ? (
+            <div className="space-y-1">
+              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">ETH Balance</span>
+              <div className="flex items-baseline gap-1.5">
+                {isLoading ? (
+                  <div className="h-7 w-20 animate-pulse rounded bg-white/10" />
+                ) : (
+                  <span className="text-xl font-bold tracking-tight text-white font-mono">
+                    {parseFloat(ethBalance).toLocaleString(undefined, {
+                      minimumFractionDigits: 4,
+                      maximumFractionDigits: 6,
+                    })}
+                  </span>
+                )}
+                <span className="text-[10px] font-semibold text-emerald-400">ETH</span>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">cirBTC Balance</span>
+              <div className="flex items-baseline gap-1.5">
+                {isLoading ? (
+                  <div className="h-7 w-20 animate-pulse rounded bg-white/10" />
+                ) : (
+                  <span className="text-xl font-bold tracking-tight text-white font-mono">
+                    {parseFloat(cirbtcBalance).toLocaleString(undefined, {
+                      minimumFractionDigits: 4,
+                      maximumFractionDigits: 6,
+                    })}
+                  </span>
+                )}
+                <span className="text-[10px] font-semibold text-amber-500">cirBTC</span>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-1 border-t sm:border-t-0 sm:border-l border-white/5 pt-3 sm:pt-0 sm:pl-4">
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">USDC Balance</span>
             <div className="flex items-baseline gap-1.5">
               {isLoading ? (
@@ -87,25 +125,6 @@ export function SwapBalanceCard({
               <span className="text-[10px] font-semibold text-purple-400">EURC</span>
             </div>
           </div>
-
-          {!isBase && (
-            <div className="space-y-1 border-t sm:border-t-0 sm:border-l border-white/5 pt-3 sm:pt-0 sm:pl-4">
-              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">cirBTC Balance</span>
-              <div className="flex items-baseline gap-1.5">
-                {isLoading ? (
-                  <div className="h-7 w-20 animate-pulse rounded bg-white/10" />
-                ) : (
-                  <span className="text-xl font-bold tracking-tight text-white font-mono">
-                    {parseFloat(cirbtcBalance).toLocaleString(undefined, {
-                      minimumFractionDigits: 4,
-                      maximumFractionDigits: 6,
-                    })}
-                  </span>
-                )}
-                <span className="text-[10px] font-semibold text-amber-500">cirBTC</span>
-              </div>
-            </div>
-          )}
         </div>
       </CardContent>
     </Card>

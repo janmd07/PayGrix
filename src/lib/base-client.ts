@@ -66,6 +66,41 @@ export async function fetchBaseTokenBalanceDeduped(
   return promise;
 }
 
+export async function fetchBaseNativeBalanceDeduped(
+  userAddress: `0x${string}`
+): Promise<bigint> {
+  const cacheKey = `base:native:${userAddress.toLowerCase()}`;
+  const now = Date.now();
+
+  const cached = balanceCache.get(cacheKey);
+  if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+    return cached.value;
+  }
+
+  if (inFlightRequests.has(cacheKey)) {
+    return inFlightRequests.get(cacheKey)!;
+  }
+
+  const promise = (async () => {
+    try {
+      const val = await basePublicClient.getBalance({
+        address: userAddress,
+      });
+      balanceCache.set(cacheKey, { value: val, timestamp: Date.now() });
+      return val;
+    } catch (err) {
+      if (cached) return cached.value;
+      throw err;
+    } finally {
+      inFlightRequests.delete(cacheKey);
+    }
+  })();
+
+  inFlightRequests.set(cacheKey, promise);
+  return promise;
+}
+
+
 export function clearBaseBalanceCache() {
   balanceCache.clear();
 }

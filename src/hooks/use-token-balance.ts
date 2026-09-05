@@ -3,11 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { formatUnits } from "viem";
 import { fetchTokenBalanceDeduped } from "@/lib/arc-client";
-import { fetchBaseTokenBalanceDeduped } from "@/lib/base-client";
+import { fetchBaseTokenBalanceDeduped, fetchBaseNativeBalanceDeduped } from "@/lib/base-client";
 import { SWAP_CHAINS, SupportedSwapChain } from "@/config/swap-config";
 
 export function useTokenBalance(
-  tokenSymbol: "USDC" | "EURC" | "cirBTC",
+  tokenSymbol: "USDC" | "EURC" | "cirBTC" | "ETH",
   address?: `0x${string}`,
   network: SupportedSwapChain = "Arc"
 ) {
@@ -28,6 +28,13 @@ export function useTokenBalance(
       return;
     }
 
+    // ETH only exists on Base Sepolia in swap
+    if (network === "Arc" && tokenSymbol === "ETH") {
+      setBalance("0.00");
+      setIsLoading(false);
+      return;
+    }
+
     const tokenConfig = SWAP_CHAINS[network].tokens[tokenSymbol];
     if (!tokenConfig) {
       setBalance("0.00");
@@ -38,7 +45,9 @@ export function useTokenBalance(
     setIsLoading(true);
     try {
       let balanceWei: bigint;
-      if (network === "Base") {
+      if (network === "Base" && tokenSymbol === "ETH") {
+        balanceWei = await fetchBaseNativeBalanceDeduped(address);
+      } else if (network === "Base") {
         balanceWei = await fetchBaseTokenBalanceDeduped(tokenConfig.address, address);
       } else {
         balanceWei = await fetchTokenBalanceDeduped(tokenConfig.address, address);

@@ -18,7 +18,7 @@ import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { useSwap } from "@/hooks/use-swap";
 
 export interface TokenLogoProps {
-  symbol: "USDC" | "EURC" | "cirBTC";
+  symbol: "USDC" | "EURC" | "cirBTC" | "ETH";
   className?: string;
 }
 
@@ -29,6 +29,8 @@ export function TokenLogo({ symbol, className }: TokenLogoProps) {
       ? "/tokens/usdc.png"
       : symbol === "EURC"
       ? "/tokens/eurc.png"
+      : symbol === "ETH"
+      ? "/tokens/weth.png"
       : "/tokens/cirbtc.png";
 
   useEffect(() => {
@@ -44,11 +46,13 @@ export function TokenLogo({ symbol, className }: TokenLogoProps) {
             ? "bg-[#2775CA] shadow-[0_0_8px_rgba(39,117,202,0.4)]"
             : symbol === "EURC"
             ? "bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.4)]"
+            : symbol === "ETH"
+            ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]"
             : "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]",
           className
         )}
       >
-        {symbol === "USDC" ? "$" : symbol === "EURC" ? "€" : "B"}
+        {symbol === "USDC" ? "$" : symbol === "EURC" ? "€" : symbol === "ETH" ? "Ξ" : "B"}
       </div>
     );
   }
@@ -102,14 +106,15 @@ interface SwapFormProps {
   balanceUSDC: string;
   balanceEURC: string;
   balanceCirBTC: string;
+  balanceETH?: string;
   isLoadingBalance: boolean;
   selectedNetwork?: SupportedSwapChain;
   onNetworkChange?: (network: SupportedSwapChain) => void;
   onSwapSuccess: (
     amountIn: string,
     amountOut: string,
-    tokenIn: "USDC" | "EURC" | "cirBTC",
-    tokenOut: "USDC" | "EURC" | "cirBTC",
+    tokenIn: "USDC" | "EURC" | "cirBTC" | "ETH",
+    tokenOut: "USDC" | "EURC" | "cirBTC" | "ETH",
     hash: string,
     network?: SupportedSwapChain
   ) => void;
@@ -119,6 +124,7 @@ export function SwapForm({
   balanceUSDC,
   balanceEURC,
   balanceCirBTC,
+  balanceETH,
   isLoadingBalance,
   selectedNetwork = "Arc",
   onNetworkChange,
@@ -138,12 +144,17 @@ export function SwapForm({
       if (tokenIn === "cirBTC") setTokenIn("USDC");
       if (tokenOut === "cirBTC") setTokenOut("EURC");
     }
+    // If switching to Arc and token is ETH, reset tokens to USDC -> EURC
+    if (net === "Arc") {
+      if (tokenIn === "ETH") setTokenIn("USDC");
+      if (tokenOut === "ETH") setTokenOut("EURC");
+    }
     setAmount("");
     setHasQuote(false);
   };
 
-  const [tokenIn, setTokenIn] = useState<"USDC" | "EURC" | "cirBTC">("USDC");
-  const [tokenOut, setTokenOut] = useState<"USDC" | "EURC" | "cirBTC">("EURC");
+  const [tokenIn, setTokenIn] = useState<"USDC" | "EURC" | "cirBTC" | "ETH">("USDC");
+  const [tokenOut, setTokenOut] = useState<"USDC" | "EURC" | "cirBTC" | "ETH">("EURC");
   const [amount, setAmount] = useState<string>("");
   const [hasQuote, setHasQuote] = useState<boolean>(false);
   const [isEnabled, setIsEnabled] = useState<boolean>(true);
@@ -190,6 +201,8 @@ export function SwapForm({
       ? balanceUSDC
       : tokenIn === "EURC"
       ? balanceEURC
+      : tokenIn === "ETH"
+      ? (balanceETH || "0.00")
       : balanceCirBTC;
   const isOverBalance = parseFloat(amount) > parseFloat(currentBalance);
   const isValidAmount = amount !== "" && parseFloat(amount) > 0;
@@ -211,7 +224,14 @@ export function SwapForm({
 
   const handleMaxClick = () => {
     if (isSwapDisabled) return;
-    setAmount(currentBalance);
+    if (tokenIn === "ETH") {
+      const numBal = parseFloat(currentBalance);
+      const gasBuffer = 0.002;
+      const maxEth = Math.max(0, numBal - gasBuffer);
+      setAmount(maxEth > 0 ? maxEth.toFixed(4) : "0");
+    } else {
+      setAmount(currentBalance);
+    }
   };
 
   const handleGetQuote = async () => {
@@ -235,12 +255,12 @@ export function SwapForm({
 
   const isSelectDisabled = isSwapDisabled || status === "swapping" || status === "waiting-wallet";
 
-  const availableOptions: ("USDC" | "EURC" | "cirBTC")[] =
-    currentNetwork === "Base" ? ["USDC", "EURC"] : ["USDC", "EURC", "cirBTC"];
+  const availableOptions: ("USDC" | "EURC" | "cirBTC" | "ETH")[] =
+    currentNetwork === "Base" ? ["ETH", "USDC", "EURC"] : ["USDC", "EURC", "cirBTC"];
 
   const renderTokenSelector = (
-    value: "USDC" | "EURC" | "cirBTC",
-    onChangeHandler: (val: "USDC" | "EURC" | "cirBTC") => void,
+    value: "USDC" | "EURC" | "cirBTC" | "ETH",
+    onChangeHandler: (val: "USDC" | "EURC" | "cirBTC" | "ETH") => void,
     slot: "in" | "out"
   ) => {
     const isOpen = openSelectorSlot === slot;
@@ -342,7 +362,7 @@ export function SwapForm({
               </CardTitle>
               <CardDescription className="text-xs text-slate-400">
                 {currentNetwork === "Base"
-                  ? "Swap USDC and EURC same-chain on Base Sepolia with on-chain Uniswap v3."
+                  ? "Swap ETH, USDC, and EURC same-chain on Base Sepolia with on-chain Uniswap v3."
                   : "Swap stablecoins and cirBTC same-chain on Arc Testnet instantly."}
               </CardDescription>
             </div>
