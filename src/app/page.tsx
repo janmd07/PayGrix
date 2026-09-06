@@ -5,7 +5,6 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   ArrowRight,
-  CheckCircle2,
   Landmark,
   Shield,
   WalletCards,
@@ -92,8 +91,6 @@ const transactions = [
   { name: "Ana Gutierrez",  role: "Research Lead",   amount: "$5,100", status: "Pending", rgb: "245,158,11",  statusColor: "#fbbf24"  },
   { name: "James Park",     role: "Frontend Dev",    amount: "$3,600", status: "Ready",   rgb: "16,185,129",  statusColor: "#34d399"  },
 ];
-
-const trustItems = ["Chain ID 5042002", "RPC configured", "Explorer ready"];
 
 const particles = [
   { x: 7,  y: 14, s: 2,   blue: true,  dur: 12, delay: 0   },
@@ -914,10 +911,6 @@ export default function LandingPage() {
             <div className="flex flex-col items-center justify-center text-center animate-fade-up max-w-[1250px] mx-auto mb-4">
               {/* Status chips nested tightly above the logo */}
               <div className="mb-4 flex flex-wrap items-center justify-center gap-3 animate-fade-up">
-                <span className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold badge-live tracking-wide">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Arc Testnet · Live
-                </span>
                 <span className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold badge-arc tracking-wide">
                   <Activity className="h-3 w-3" />
                   Stablecoin payroll
@@ -1001,16 +994,6 @@ export default function LandingPage() {
               <Button asChild variant="outline" size="lg" className="text-[16px] px-10 h-[54px] btn-secondary-cta">
                 <Link href="/settings">Review settings</Link>
               </Button>
-            </div>
-
-            {/* Trust elements with larger margin to establish negative space boundary */}
-            <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2 animate-fade-up mb-8" style={{ animationDelay: '0.5s' }}>
-              {trustItems.map((item) => (
-                <div key={item} className="flex items-center gap-2">
-                  <CheckCircle2 className="h-4 w-4 shrink-0 text-[#38bdf8]" />
-                  <span className="text-sm text-slate-400 font-semibold">{item}</span>
-                </div>
-              ))}
             </div>
           </div>
 
