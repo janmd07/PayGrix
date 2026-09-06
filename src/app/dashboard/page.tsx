@@ -257,10 +257,6 @@ export default function DashboardPage() {
 
         {/* Status Chips */}
         <div className="flex flex-wrap items-center gap-3">
-          <span className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold badge-live tracking-wide">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            Arc Testnet · Live
-          </span>
           <span className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-xs font-semibold badge-arc tracking-wide">
             <Activity className="h-3.5 w-3.5" />
             Stablecoin payroll
