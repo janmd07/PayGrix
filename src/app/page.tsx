@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { MagneticButton } from "@/components/ui/magnetic-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BackgroundEffects } from "@/components/landing/background/BackgroundEffects";
 
@@ -989,12 +990,14 @@ export default function LandingPage() {
 
             {/* CTA actions with scaled up primary buttons */}
             <div className="mb-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center animate-fade-up" style={{ animationDelay: '0.35s' }}>
-              <Button asChild size="lg" className="gap-2 text-[16px] px-10 h-[54px] btn-premium-cta">
-                <Link href="/dashboard">
-                  Open workspace
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </Button>
+              <MagneticButton>
+                <Button asChild size="lg" className="gap-2 text-[16px] px-10 h-[54px] btn-premium-cta">
+                  <Link href="/dashboard">
+                    Open workspace
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </MagneticButton>
               <Button asChild variant="outline" size="lg" className="text-[16px] px-10 h-[54px] btn-secondary-cta">
                 <Link href="/settings">Review settings</Link>
               </Button>
