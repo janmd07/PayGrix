@@ -978,7 +978,7 @@ export default function LandingPage() {
             >
               Stablecoin payroll infrastructure for crypto-native teams.
               Structured cycles, treasury clarity, and on-chain payment
-              readiness — running on Arc Testnet.
+              readiness.
             </p>
 
             {/* CTA actions with scaled up primary buttons */}
@@ -1040,11 +1040,6 @@ export default function LandingPage() {
                           </button>
                         ))}
                       </div>
-
-                      <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold badge-arc">
-                        <span className="h-1.5 w-1.5 rounded-full bg-blue-400 animate-pulse" />
-                        Arc Testnet
-                      </span>
                     </div>
 
                     {/* Body content (unchanged layout, enhanced classes) */}
