@@ -117,7 +117,14 @@ export const genlayerBradbury = defineChain({
 
 export const wagmiConfig = createConfig({
   chains: [arcTestnet, baseSepolia, arbitrumSepolia, mainnet, base, genlayerBradbury],
-  connectors: [injected()],
+  connectors: [
+    injected({ target: "metaMask" }),
+    injected({ target: "okxWallet" }),
+    injected({ target: "rabby" }),
+    injected({ target: "coinbaseWallet" }),
+    injected({ target: "phantom" }),
+    injected(),
+  ],
   transports: {
     [arcTestnet.id]: http(arcTestnet.rpcUrls.default.http[0]),
     [baseSepolia.id]: fallback([

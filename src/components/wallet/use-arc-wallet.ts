@@ -30,7 +30,7 @@ export function useArcWallet() {
   const { disconnect } = useDisconnect();
   const { switchChain, switchChainAsync, isPending: isSwitching } = useSwitchChain();
 
-  const availableConnector = connectors[0];
+  const availableConnector = connectors.find((c) => c.id === "injected") || connectors[0];
 
   const chainId = isConnected && accountChainId ? accountChainId : arcTestnet.id;
 
