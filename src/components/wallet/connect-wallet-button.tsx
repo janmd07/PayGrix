@@ -2,7 +2,17 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-import { Wallet, Smartphone, ExternalLink, Copy, Check, X, Download } from "lucide-react";
+import {
+  Wallet,
+  Smartphone,
+  ExternalLink,
+  Copy,
+  Check,
+  X,
+  Download,
+  ChevronRight,
+  Building2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
@@ -70,7 +80,8 @@ export function ConnectWalletButton({ className, size = "sm" }: ConnectWalletBut
   }, []);
 
   const handleButtonClick = () => {
-    if (hasInjected && availableConnector) {
+    // Desktop with injected provider connects immediately
+    if (typeof window !== "undefined" && window.innerWidth >= 1024 && hasInjected && availableConnector) {
       connect({ connector: availableConnector });
     } else {
       setIsModalOpen(true);
@@ -79,7 +90,7 @@ export function ConnectWalletButton({ className, size = "sm" }: ConnectWalletBut
 
   if (!mounted) {
     return (
-      <Button className={cn("gap-2", className)} size={size}>
+      <Button className={cn("gap-2 font-semibold shadow-[0_0_14px_rgba(109,93,252,0.35)]", className)} size={size}>
         <Wallet className="h-4 w-4" />
         Connect Wallet
       </Button>
@@ -89,7 +100,10 @@ export function ConnectWalletButton({ className, size = "sm" }: ConnectWalletBut
   return (
     <>
       <Button
-        className={cn("gap-2", className)}
+        className={cn(
+          "gap-2 font-semibold bg-gradient-to-r from-[#4f8cff] to-[#6d5dfc] text-white shadow-[0_0_14px_rgba(109,93,252,0.35)] hover:shadow-[0_0_22px_rgba(109,93,252,0.55)] hover:from-[#5b95ff] hover:to-[#7b6dff] active:scale-[0.98] transition-all shrink-0 border-0",
+          className
+        )}
         disabled={isConnecting}
         size={size}
         onClick={handleButtonClick}
@@ -98,129 +112,174 @@ export function ConnectWalletButton({ className, size = "sm" }: ConnectWalletBut
         {isConnecting ? "Connecting..." : "Connect Wallet"}
       </Button>
 
-      {/* Connect Wallet Modal for Mobile & Non-Injected Browsers */}
+      {/* Mobile Bottom-Sheet / Desktop Dialog Wallet Picker */}
       {isModalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="connect-modal-title"
-        >
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
           {/* Backdrop */}
           <div
-            className="fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity"
+            className="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity"
             onClick={() => setIsModalOpen(false)}
+            aria-hidden="true"
           />
 
-          {/* Modal Content */}
+          {/* Bottom-Sheet Container on Mobile / Centered Modal on Desktop */}
           <div
-            className="relative w-full max-w-md rounded-2xl p-5 text-left shadow-2xl transition-all z-10"
+            className="relative z-10 w-full max-w-md mx-auto rounded-t-[28px] sm:rounded-2xl overflow-hidden shadow-[0_-12px_45px_rgba(0,0,0,0.85),0_0_35px_rgba(109,93,252,0.25)] animate-in fade-in slide-in-from-bottom-6 sm:zoom-in-95 duration-250 ease-out"
             style={{
-              background: "linear-gradient(180deg, rgba(16, 28, 56, 0.96) 0%, rgba(8, 15, 32, 0.98) 100%)",
-              border: "1px solid rgba(79, 140, 255, 0.25)",
-              boxShadow: "0 0 35px rgba(109, 93, 252, 0.25), 0 25px 50px -12px rgba(0, 0, 0, 0.7)",
+              background: "linear-gradient(180deg, rgba(12, 22, 45, 0.98) 0%, rgba(6, 12, 28, 0.99) 100%)",
+              borderTop: "1px solid rgba(79, 140, 255, 0.3)",
+              borderLeft: "1px solid rgba(79, 140, 255, 0.15)",
+              borderRight: "1px solid rgba(79, 140, 255, 0.15)",
+              backdropFilter: "blur(24px)",
             }}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="wallet-picker-title"
           >
+            {/* Drag handle indicator on mobile */}
+            <div className="pt-3 pb-1 flex justify-center sm:hidden">
+              <div className="w-10 h-1.5 rounded-full bg-white/20" />
+            </div>
+
             {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/[0.08]">
               <div className="flex items-center gap-3">
                 <div
-                  className="flex h-9 w-9 items-center justify-center rounded-xl"
+                  className="flex h-8 w-8 items-center justify-center rounded-xl shrink-0"
                   style={{
-                    background: "linear-gradient(135deg, #4f8cff 0%, #6d5dfc 100%)",
-                    boxShadow: "0 0 16px rgba(109, 93, 252, 0.4)",
+                    background: "linear-gradient(135deg, #4f8cff 0%, #6d5dfc 50%, #d65dfc 100%)",
+                    boxShadow: "0 0 12px rgba(109, 93, 252, 0.4)",
                   }}
                 >
-                  <Wallet className="h-4.5 w-4.5 text-white" />
+                  <Building2 className="h-4 w-4 text-white" />
                 </div>
                 <div>
-                  <h3 id="connect-modal-title" className="text-base font-semibold text-white">
-                    Connect Wallet
+                  <h3 id="wallet-picker-title" className="text-base font-bold text-white tracking-tight leading-none">
+                    Connect a wallet
                   </h3>
-                  <p className="text-xs text-slate-400">
-                    Connect your Web3 wallet to use PayGrix
+                  <p className="text-xs text-slate-400 mt-1">
+                    Connect your wallet to access PayGrix
                   </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setIsModalOpen(false)}
-                className="rounded-lg p-1.5 text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
-                aria-label="Close modal"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f8cff]/50"
+                aria-label="Close wallet picker"
               >
-                <X className="h-5 w-5" />
+                <X className="h-4.5 w-4.5" />
               </button>
             </div>
 
-            {/* Content options */}
-            <div className="mt-4 space-y-2.5">
+            {/* Wallet options list */}
+            <div className="p-4 sm:p-5 space-y-2.5 max-h-[calc(85vh-120px)] overflow-y-auto">
+              {/* Option: Detected Browser Wallet (if window.ethereum present) */}
+              {hasInjected && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (availableConnector) {
+                      connect({ connector: availableConnector });
+                      setIsModalOpen(false);
+                    }
+                  }}
+                  className="group w-full flex items-center justify-between min-h-[56px] p-3.5 rounded-2xl border border-[#4f8cff]/40 bg-[#2563ff]/15 hover:bg-[#2563ff]/25 hover:border-[#4f8cff]/70 active:scale-[0.99] transition-all text-left focus-visible:ring-2 focus-visible:ring-[#4f8cff]/50 focus:outline-none"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#4f8cff]/30 to-[#6d5dfc]/30 text-[#60a5fa] border border-[#4f8cff]/30 shrink-0 group-hover:shadow-[0_0_12px_rgba(79,140,255,0.4)] transition-all">
+                      <Wallet className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-white group-hover:text-[#93c5fd] transition-colors">
+                        Detected Wallet
+                      </div>
+                      <div className="text-xs text-slate-400">
+                        Connect current browser wallet
+                      </div>
+                    </div>
+                  </div>
+                  <ChevronRight className="h-5 w-5 text-slate-500 group-hover:text-white group-hover:translate-x-0.5 transition-all shrink-0" />
+                </button>
+              )}
+
               {/* Option 1: Open in MetaMask App */}
               <button
                 type="button"
                 onClick={handleOpenMetaMask}
-                className="w-full flex items-center justify-between p-3 rounded-xl border border-[#4f8cff]/30 bg-[#2563ff]/10 hover:bg-[#2563ff]/20 hover:border-[#4f8cff]/60 transition-all text-left group"
+                className={cn(
+                  "group w-full flex items-center justify-between min-h-[56px] p-3.5 rounded-2xl active:scale-[0.99] transition-all text-left focus-visible:ring-2 focus-visible:ring-[#4f8cff]/50 focus:outline-none",
+                  !hasInjected
+                    ? "border border-[#4f8cff]/40 bg-[#2563ff]/10 hover:bg-[#2563ff]/20 hover:border-[#4f8cff]/60"
+                    : "border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.07] hover:border-white/20"
+                )}
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-8.5 w-8.5 items-center justify-center rounded-lg bg-[#4f8cff]/20 text-[#4f8cff] shrink-0">
-                    <Smartphone className="h-4.5 w-4.5" />
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#4f8cff]/15 text-[#60a5fa] border border-[#4f8cff]/25 shrink-0 group-hover:shadow-[0_0_12px_rgba(79,140,255,0.35)] transition-all">
+                    <Smartphone className="h-5 w-5" />
                   </div>
                   <div>
                     <div className="text-sm font-semibold text-white group-hover:text-[#93c5fd] transition-colors">
                       Open in MetaMask App
                     </div>
                     <div className="text-xs text-slate-400">
-                      Launch PayGrix directly in MetaMask Mobile
+                      Launch PayGrix in MetaMask Mobile browser
                     </div>
                   </div>
                 </div>
-                <ExternalLink className="h-4 w-4 text-slate-400 group-hover:text-[#4f8cff] shrink-0 transition-colors" />
+                <ChevronRight className="h-5 w-5 text-slate-500 group-hover:text-white group-hover:translate-x-0.5 transition-all shrink-0" />
               </button>
 
               {/* Option 2: Copy App Link */}
               <button
                 type="button"
                 onClick={handleCopyLink}
-                className="w-full flex items-center justify-between p-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 transition-all text-left group"
+                className="group w-full flex items-center justify-between min-h-[56px] p-3.5 rounded-2xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.07] hover:border-white/20 active:scale-[0.99] transition-all text-left focus-visible:ring-2 focus-visible:ring-[#4f8cff]/50 focus:outline-none"
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-8.5 w-8.5 items-center justify-center rounded-lg bg-white/10 text-slate-300 shrink-0">
-                    {copied ? <Check className="h-4.5 w-4.5 text-green-400" /> : <Copy className="h-4.5 w-4.5" />}
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-slate-300 border border-white/10 shrink-0 group-hover:border-white/20 transition-all">
+                    {copied ? <Check className="h-5 w-5 text-emerald-400" /> : <Copy className="h-5 w-5" />}
                   </div>
                   <div>
                     <div className="text-sm font-semibold text-white">
                       {copied ? "URL Copied to Clipboard!" : "Copy App URL"}
                     </div>
                     <div className="text-xs text-slate-400">
-                      Paste into Coinbase Wallet, Rainbow, or Trust Wallet
+                      Paste into Coinbase, Rainbow, or Trust Wallet
                     </div>
                   </div>
                 </div>
-                <span className="text-xs text-[#4f8cff] font-medium shrink-0">
-                  {copied ? "Copied" : "Copy"}
-                </span>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {copied && (
+                    <span className="text-[11px] font-semibold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-400/10 border border-emerald-400/20">
+                      Copied
+                    </span>
+                  )}
+                  <ChevronRight className="h-5 w-5 text-slate-500 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+                </div>
               </button>
 
-              {/* Option 3: Install MetaMask for Desktop */}
+              {/* Option 3: Download MetaMask */}
               <a
                 href="https://metamask.io/download/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-full flex items-center justify-between p-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 transition-all text-left group"
+                className="group w-full flex items-center justify-between min-h-[56px] p-3.5 rounded-2xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.07] hover:border-white/20 active:scale-[0.99] transition-all text-left focus-visible:ring-2 focus-visible:ring-[#4f8cff]/50 focus:outline-none"
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-8.5 w-8.5 items-center justify-center rounded-lg bg-white/10 text-slate-300 shrink-0">
-                    <Download className="h-4.5 w-4.5" />
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-slate-300 border border-white/10 shrink-0 group-hover:border-white/20 transition-all">
+                    <Download className="h-5 w-5" />
                   </div>
                   <div>
                     <div className="text-sm font-semibold text-white group-hover:text-slate-200 transition-colors">
                       Don&apos;t have a wallet?
                     </div>
                     <div className="text-xs text-slate-400">
-                      Download MetaMask browser extension or app
+                      Download MetaMask for mobile or desktop
                     </div>
                   </div>
                 </div>
-                <ExternalLink className="h-4 w-4 text-slate-400 group-hover:text-white shrink-0 transition-colors" />
+                <ExternalLink className="h-4.5 w-4.5 text-slate-500 group-hover:text-white transition-colors shrink-0 mr-0.5" />
               </a>
             </div>
           </div>
