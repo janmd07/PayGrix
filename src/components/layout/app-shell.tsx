@@ -2,19 +2,51 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ReactNode } from "react";
+import { ReactNode, useState, useEffect } from "react";
+import { Menu, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { navItems, productNavItem } from "@/components/layout/nav-items";
 import { UnsupportedNetworkWarning, WalletPanel } from "@/components/wallet/wallet-panel";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
+
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const ProductIcon = productNavItem.icon;
 
+  // Auto-close mobile drawer on route change
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname]);
+
+  // Lock body scroll when mobile drawer is open
+  useEffect(() => {
+    if (mobileMenuOpen) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [mobileMenuOpen]);
+
+  // Close mobile drawer on Escape key
+  useEffect(() => {
+    if (!mobileMenuOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMobileMenuOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [mobileMenuOpen]);
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground overflow-x-hidden w-full max-w-full">
       {/* Premium Sidebar Styling Definitions */}
       <style>{`
         @keyframes smoke-float {
@@ -144,7 +176,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         }
       `}</style>
 
-      {/* ── Sidebar ───────────────────────────────────────── */}
+      {/* ── Sidebar (Desktop only) ───────────────────────── */}
       <aside
         className="fixed inset-y-0 left-0 z-30 hidden w-64 lg:block"
         style={{
@@ -252,23 +284,23 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       {/* ── Main area ─────────────────────────────────────── */}
-      <div className="lg:pl-64">
+      <div className="lg:pl-64 min-w-0 max-w-full w-full">
         {/* Header */}
         <header
-          className="sticky top-0 z-20"
+          className="sticky top-0 z-20 w-full max-w-full"
           style={{
             background: "hsl(var(--background) / 90%)",
             borderBottom: "1px solid hsl(var(--border))",
             backdropFilter: "blur(20px)",
           }}
         >
-          <div className="flex min-h-16 flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
-            {/* Mobile brand */}
-            <div className="flex items-center gap-3 w-full lg:w-auto justify-between lg:justify-start">
+          <div className="flex min-h-16 flex-col gap-2.5 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between w-full max-w-full min-w-0">
+            {/* Top row: Brand & Mobile hamburger on small screens, ThemeToggle on desktop */}
+            <div className="flex items-center justify-between w-full lg:w-auto">
               <div className="flex items-center gap-3">
-                <Link href="/" className="flex items-center gap-2 lg:hidden">
+                <Link href="/" className="flex items-center gap-2.5 lg:hidden">
                   <div
-                    className="flex h-8 w-8 items-center justify-center rounded-lg"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
                     style={{
                       background: "linear-gradient(135deg, #4f8cff 0%, #6d5dfc 50%, #d65dfc 100%)",
                       boxShadow: "0 0 12px rgba(109, 93, 252, 0.30)",
@@ -278,38 +310,167 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </div>
                   <span className="text-sm font-semibold text-white">PayGrix</span>
                 </Link>
+                {/* ThemeToggle shown on desktop on the left */}
+                <div className="hidden lg:block">
+                  <ThemeToggle />
+                </div>
+              </div>
+
+              {/* Mobile controls: ThemeToggle + Mobile Hamburger Menu Button */}
+              <div className="flex items-center gap-2 lg:hidden">
                 <ThemeToggle />
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen((prev) => !prev)}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f8cff]/50"
+                  aria-label={mobileMenuOpen ? "Close menu" : "Open navigation menu"}
+                  aria-expanded={mobileMenuOpen}
+                >
+                  {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+                </button>
               </div>
             </div>
 
-            <WalletPanel />
+            {/* Wallet Panel Controls */}
+            <div className="w-full lg:w-auto min-w-0 flex items-center justify-start lg:justify-end">
+              <WalletPanel />
+            </div>
+          </div>
+        </header>
 
-            {/* Mobile nav */}
-            <nav className="flex gap-1 overflow-x-auto pb-1 lg:hidden">
+        {/* ── Mobile Navigation Drawer ───────────────────────── */}
+        <div
+          className={cn(
+            "fixed inset-0 z-40 lg:hidden transition-all duration-300",
+            mobileMenuOpen ? "pointer-events-auto visible" : "pointer-events-none invisible"
+          )}
+        >
+          {/* Backdrop */}
+          <div
+            className={cn(
+              "fixed inset-0 bg-black/75 backdrop-blur-sm transition-opacity duration-300",
+              mobileMenuOpen ? "opacity-100" : "opacity-0"
+            )}
+            onClick={() => setMobileMenuOpen(false)}
+            aria-hidden="true"
+          />
+
+          {/* Drawer panel */}
+          <aside
+            className={cn(
+              "fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] flex flex-col transition-transform duration-300 ease-out shadow-2xl",
+              mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+            )}
+            style={{
+              background: "hsl(var(--card) / 98%)",
+              borderRight: "1px solid hsl(var(--border))",
+              backdropFilter: "blur(24px)",
+            }}
+            aria-label="Mobile Navigation"
+          >
+            {/* Drawer Brand & Close */}
+            <div className="flex h-16 items-center justify-between px-5 border-b border-white/5">
+              <Link
+                href="/"
+                onClick={() => setMobileMenuOpen(false)}
+                className="flex items-center gap-3"
+              >
+                <div
+                  className="flex h-9 w-9 items-center justify-center rounded-xl shrink-0"
+                  style={{
+                    background: "linear-gradient(135deg, #4f8cff 0%, #6d5dfc 50%, #d65dfc 100%)",
+                    boxShadow: "0 0 14px rgba(109, 93, 252, 0.35)",
+                  }}
+                >
+                  <ProductIcon className="h-4.5 w-4.5 text-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-white">PayGrix</p>
+                  <p className="text-xs text-[#b7c4d6]">Stablecoin operations</p>
+                </div>
+              </Link>
+
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                aria-label="Close navigation"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Drawer Nav links */}
+            <nav className="flex-1 overflow-y-auto space-y-1.5 p-3.5">
               {navItems.map((item) => {
                 const isActive = pathname === item.href;
                 return (
                   <Link
                     key={item.href}
                     href={item.href}
+                    onClick={() => setMobileMenuOpen(false)}
                     className={cn(
-                      "inline-flex h-9 items-center gap-2 whitespace-nowrap rounded-lg px-3 text-sm font-medium transition-all duration-200",
+                      "group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-250 relative overflow-hidden",
                       isActive
-                        ? "bg-[#6d5dfc]/12 text-[#bfdbfe] border border-[#6d5dfc]/25 shadow-[0_0_10px_rgba(109,93,252,0.15)]"
-                        : "text-[#b7c4d6] hover:text-white hover:bg-white/5",
+                        ? "nav-item-active-glass text-white font-semibold"
+                        : "nav-item-glass text-[#b7c4d6] hover:text-white"
                     )}
                   >
-                    <item.icon className="h-4 w-4" />
-                    {item.title}
+                    {isActive && <div className="active-glowing-indicator" />}
+                    <div className="shimmer-reflection" />
+                    <div className="smoke-cloud-2" />
+                    <div className="smoke-cloud-1" />
+
+                    <item.icon
+                      className={cn(
+                        "h-4.5 w-4.5 transition-all duration-250 relative z-10 shrink-0",
+                        isActive
+                          ? "text-[#4f8cff] drop-shadow-[0_0_8px_rgba(79,140,255,0.45)]"
+                          : "text-[#b7c4d6] group-hover:text-[#4f8cff] group-hover:drop-shadow-[0_0_8px_rgba(79,140,255,0.4)]"
+                      )}
+                    />
+                    <span className="relative z-10 transition-colors duration-250">{item.title}</span>
                   </Link>
                 );
               })}
             </nav>
-          </div>
-        </header>
+
+            {/* Drawer Footer info */}
+            <div
+              className="m-3 space-y-3 rounded-xl p-3.5"
+              style={{
+                background: "rgba(37, 99, 255, 0.06)",
+                border: "1px solid rgba(79, 140, 255, 0.15)",
+              }}
+            >
+              <div className="flex items-center justify-between">
+                <Badge variant="outline" className="text-xs">Testnet Environment</Badge>
+              </div>
+              <p className="text-[11px] leading-relaxed text-[#b7c4d6]">
+                Payroll execution is intentionally not implemented yet.
+              </p>
+              <div className="pt-2 border-t border-[#4f8cff]/10 flex items-center">
+                <a
+                  href="https://x.com/janmd07"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-[11px] text-[#b7c4d6] hover:text-white transition-all group font-medium w-full justify-between"
+                >
+                  <span>Built by janmd</span>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#6d5dfc]/10 border border-[#6d5dfc]/20 text-[#4f8cff] group-hover:bg-[#6d5dfc]/20 group-hover:border-[#6d5dfc]/40 shadow-[0_0_10px_rgba(109,93,252,0.1)] transition-all duration-300">
+                    <svg className="h-2.5 w-2.5 text-[#4f8cff] fill-current" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                    </svg>
+                    Follow on X
+                  </span>
+                </a>
+              </div>
+            </div>
+          </aside>
+        </div>
 
         {/* Page content */}
-        <main className="px-4 py-6 sm:px-6 lg:px-8">
+        <main className="px-4 py-6 sm:px-6 lg:px-8 w-full max-w-full min-w-0 overflow-x-hidden">
           <UnsupportedNetworkWarning />
           {children}
         </main>
