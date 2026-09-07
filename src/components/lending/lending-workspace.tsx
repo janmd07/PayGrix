@@ -88,7 +88,7 @@ function parseContractError(err: unknown): string {
   return "Transaction failed on-chain. Please verify parameters and try again.";
 }
 
-function LendingTokenLogo({ symbol, className, chain }: { symbol: string; className?: string; chain?: SupportedLendingChain }) {
+function LendingTokenLogo({ symbol, className }: { symbol: string; className?: string; chain?: SupportedLendingChain }) {
   const [hasError, setHasError] = useState(false);
 
   useEffect(() => {
@@ -137,7 +137,7 @@ function LendingTokenLogo({ symbol, className, chain }: { symbol: string; classN
       </div>
     );
   }
-  if (symbol === "USDC" && chain === "Base") {
+  if (symbol === "USDC") {
     if (hasError) {
       return (
         <div className={cn("h-6 w-6 rounded-full bg-[#2775CA]/20 border border-[#2775CA]/40 flex items-center justify-center text-[#2775CA] shrink-0 font-bold text-xs select-none shadow-[0_0_8px_rgba(39,117,202,0.3)]", className)}>
