@@ -1,8 +1,9 @@
 "use client";
 
-import { History, ExternalLink } from "lucide-react";
+import { History, ExternalLink, Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
 
 export type BridgeTransfer = {
   id: string;
@@ -13,10 +14,13 @@ export type BridgeTransfer = {
   date: string;
   sourceTx?: string;
   destTx?: string;
+  walletAddress?: string;
+  userAddress?: string;
 };
 
 interface TransferHistoryProps {
   transfers: BridgeTransfer[];
+  isConnected?: boolean;
 }
 
 const EXPLORER_URLS: Record<string, string> = {
@@ -29,7 +33,7 @@ function getExplorerUrl(chain: string): string {
   return EXPLORER_URLS[chain] || "https://testnet.arcscan.app";
 }
 
-export function TransferHistory({ transfers }: TransferHistoryProps) {
+export function TransferHistory({ transfers, isConnected = false }: TransferHistoryProps) {
   return (
     <Card className="border border-white/10 bg-[#060f24]/50 backdrop-blur-md">
       <CardHeader className="flex flex-row items-center justify-between border-b border-white/5 pb-4">
@@ -37,14 +41,27 @@ export function TransferHistory({ transfers }: TransferHistoryProps) {
           <History className="h-4.5 w-4.5 text-primary" />
           <CardTitle className="text-base font-semibold">Recent Transfers</CardTitle>
         </div>
-        {transfers.length > 0 && (
+        {isConnected && transfers.length > 0 && (
           <Badge variant="outline" className="text-xs">
             {transfers.length} Total
           </Badge>
         )}
       </CardHeader>
       <CardContent className="p-0">
-        {transfers.length === 0 ? (
+        {!isConnected ? (
+          <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-slate-400 border border-white/10">
+              <Wallet className="h-6 w-6 text-[#4f8cff]" />
+            </div>
+            <h4 className="text-sm font-semibold text-white">Wallet not connected</h4>
+            <p className="mt-1.5 text-xs text-slate-400 max-w-xs leading-5">
+              Connect your wallet to view your transaction history.
+            </p>
+            <div className="mt-4">
+              <ConnectWalletButton size="sm" />
+            </div>
+          </div>
+        ) : transfers.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-slate-500 border border-white/8">
               <History className="h-6 w-6" />

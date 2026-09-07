@@ -1,16 +1,18 @@
 "use client";
 
-import { History, ExternalLink } from "lucide-react";
+import { History, ExternalLink, Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SwapHistoryItem } from "@/hooks/use-swap";
+import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
 import { cn } from "@/lib/utils";
 
 interface SwapHistoryProps {
   swaps: SwapHistoryItem[];
+  isConnected?: boolean;
 }
 
-export function SwapHistory({ swaps }: SwapHistoryProps) {
+export function SwapHistory({ swaps, isConnected = false }: SwapHistoryProps) {
   return (
     <Card className="border border-white/10 bg-[#060f24]/50 backdrop-blur-md">
       <CardHeader className="flex flex-row items-center justify-between border-b border-white/5 pb-4">
@@ -18,14 +20,27 @@ export function SwapHistory({ swaps }: SwapHistoryProps) {
           <History className="h-4.5 w-4.5 text-purple-400" />
           <CardTitle className="text-base font-semibold">Swap History</CardTitle>
         </div>
-        {swaps.length > 0 && (
+        {isConnected && swaps.length > 0 && (
           <Badge variant="outline" className="text-xs">
             {swaps.length} Total
           </Badge>
         )}
       </CardHeader>
       <CardContent className="p-0">
-        {swaps.length === 0 ? (
+        {!isConnected ? (
+          <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+            <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-slate-400 border border-white/10">
+              <Wallet className="h-6 w-6 text-purple-400" />
+            </div>
+            <h4 className="text-sm font-semibold text-white">Wallet not connected</h4>
+            <p className="mt-1.5 text-xs text-slate-400 max-w-xs leading-5">
+              Connect your wallet to view your transaction history.
+            </p>
+            <div className="mt-4">
+              <ConnectWalletButton size="sm" />
+            </div>
+          </div>
+        ) : swaps.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
             <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-white/5 text-slate-500 border border-white/8">
               <History className="h-6 w-6" />

@@ -31,6 +31,8 @@ export interface SwapHistoryItem {
   txHash: string;
   timestamp: string;
   network?: SupportedSwapChain;
+  walletAddress?: string;
+  userAddress?: string;
 }
 
 export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {

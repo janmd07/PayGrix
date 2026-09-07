@@ -103,27 +103,66 @@ export default function BridgePage() {
     await Promise.all([refreshUsdc(), refreshEurc(), refreshCirBtc(), refreshEth()]);
   };
 
+  const isSameAddress = (a?: string | null, b?: string | null): boolean => {
+    if (!a || !b) return false;
+    const cleanA = a.trim();
+    const cleanB = b.trim();
+    if (cleanA.startsWith("0x") && cleanB.startsWith("0x")) {
+      return cleanA.toLowerCase() === cleanB.toLowerCase();
+    }
+    return cleanA === cleanB || cleanA.toLowerCase() === cleanB.toLowerCase();
+  };
+
   useEffect(() => {
-    // Load bridge history
-    const savedTransfers = localStorage.getItem("bridge_transfers");
-    if (savedTransfers) {
-      try {
-        setTransfers(JSON.parse(savedTransfers));
-      } catch (err) {
-        console.error("Error parsing saved transfers:", err);
-      }
+    if (!isConnected || !address) {
+      setTransfers([]);
+      setSwaps([]);
+      return;
     }
 
-    // Load swap history
-    const savedSwaps = localStorage.getItem("swap_history");
-    if (savedSwaps) {
-      try {
-        setSwaps(JSON.parse(savedSwaps));
-      } catch (err) {
-        console.error("Error parsing saved swaps:", err);
+    // Load bridge history scoped to currently connected wallet
+    try {
+      const savedTransfers = localStorage.getItem("bridge_transfers");
+      if (savedTransfers) {
+        const parsed: BridgeTransfer[] = JSON.parse(savedTransfers);
+        if (Array.isArray(parsed)) {
+          const scopedTransfers = parsed.filter((item) =>
+            isSameAddress(item.walletAddress || item.userAddress, address) ||
+            (activeAddress && isSameAddress(item.walletAddress || item.userAddress, activeAddress))
+          );
+          setTransfers(scopedTransfers);
+        } else {
+          setTransfers([]);
+        }
+      } else {
+        setTransfers([]);
       }
+    } catch (err) {
+      console.error("Error parsing saved transfers:", err);
+      setTransfers([]);
     }
-  }, []);
+
+    // Load swap history scoped to currently connected wallet
+    try {
+      const savedSwaps = localStorage.getItem("swap_history");
+      if (savedSwaps) {
+        const parsed: SwapHistoryItem[] = JSON.parse(savedSwaps);
+        if (Array.isArray(parsed)) {
+          const scopedSwaps = parsed.filter((item) =>
+            isSameAddress(item.walletAddress || item.userAddress, address)
+          );
+          setSwaps(scopedSwaps);
+        } else {
+          setSwaps([]);
+        }
+      } else {
+        setSwaps([]);
+      }
+    } catch (err) {
+      console.error("Error parsing saved swaps:", err);
+      setSwaps([]);
+    }
+  }, [isConnected, address, activeAddress]);
 
   const handleBridge = async (amount: string) => {
     try {
@@ -146,6 +185,7 @@ export default function BridgePage() {
         const burnStep = result.steps?.find((s: BridgeStep) => s.name === "burn" || s.name === "execute");
         const mintStep = result.steps?.find((s: BridgeStep) => s.name === "mint" || s.name === "claim");
 
+        const currentWallet = (sourceChain === "Solana Devnet" ? activeAddress : address) || address;
         const newTransfer: BridgeTransfer = {
           id: Math.random().toString(36).substring(2, 9),
           fromChain: sourceChain,
@@ -155,11 +195,20 @@ export default function BridgePage() {
           date: new Date().toLocaleString(),
           sourceTx: burnStep?.txHash || sourceTxHash,
           destTx: mintStep?.txHash || destTxHash,
+          walletAddress: currentWallet,
+          userAddress: currentWallet,
         };
 
-        const updated = [newTransfer, ...transfers];
-        setTransfers(updated);
-        localStorage.setItem("bridge_transfers", JSON.stringify(updated));
+        try {
+          const savedTransfers = localStorage.getItem("bridge_transfers");
+          const allTransfers: BridgeTransfer[] = savedTransfers ? JSON.parse(savedTransfers) : [];
+          const updatedAll = [newTransfer, ...(Array.isArray(allTransfers) ? allTransfers.filter((t) => t.id !== newTransfer.id) : [])];
+          localStorage.setItem("bridge_transfers", JSON.stringify(updatedAll));
+        } catch {
+          localStorage.setItem("bridge_transfers", JSON.stringify([newTransfer]));
+        }
+
+        setTransfers((prev) => [newTransfer, ...prev]);
 
         // Refresh balance automatically after successful bridge completion
         refreshBalance();
@@ -177,6 +226,7 @@ export default function BridgePage() {
     hash: string,
     network?: SupportedSwapChain
   ) => {
+    const currentWallet = address;
     const newSwap: SwapHistoryItem = {
       id: Math.random().toString(36).substring(2, 9),
       tokenIn,
@@ -186,11 +236,20 @@ export default function BridgePage() {
       txHash: hash,
       timestamp: new Date().toLocaleString(),
       network: network || selectedSwapNetwork,
+      walletAddress: currentWallet,
+      userAddress: currentWallet,
     };
 
-    const updated = [newSwap, ...swaps];
-    setSwaps(updated);
-    localStorage.setItem("swap_history", JSON.stringify(updated));
+    try {
+      const savedSwaps = localStorage.getItem("swap_history");
+      const allSwaps: SwapHistoryItem[] = savedSwaps ? JSON.parse(savedSwaps) : [];
+      const updatedAll = [newSwap, ...(Array.isArray(allSwaps) ? allSwaps.filter((s) => s.id !== newSwap.id) : [])];
+      localStorage.setItem("swap_history", JSON.stringify(updatedAll));
+    } catch {
+      localStorage.setItem("swap_history", JSON.stringify([newSwap]));
+    }
+
+    setSwaps((prev) => [newSwap, ...prev]);
 
     // Refresh balances
     handleRefreshSwapBalances();
@@ -368,9 +427,18 @@ export default function BridgePage() {
       {/* Bottom: History */}
       <div className="mt-6">
         {activeTab === "bridge" ? (
-          <TransferHistory transfers={transfers} />
+          <TransferHistory
+            transfers={transfers}
+            isConnected={Boolean(
+              (sourceChain === "Solana Devnet" ? solanaPublicKey : (isConnected && address)) ||
+              (isConnected && address)
+            )}
+          />
         ) : (
-          <SwapHistory swaps={swaps} />
+          <SwapHistory
+            swaps={swaps}
+            isConnected={Boolean(isConnected && address)}
+          />
         )}
       </div>
     </AppShell>
