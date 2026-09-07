@@ -3,18 +3,30 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useState, useEffect } from "react";
-import { Menu, X } from "lucide-react";
+import { Droplet, Menu, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { navItems, productNavItem } from "@/components/layout/nav-items";
 import { UnsupportedNetworkWarning, WalletPanel } from "@/components/wallet/wallet-panel";
+import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
+import { DisconnectWalletButton } from "@/components/wallet/disconnect-wallet-button";
+import { NetworkStatus } from "@/components/wallet/network-status";
+import { WalletAddress } from "@/components/wallet/wallet-address";
+import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const { isConnected } = useArcWallet();
   const ProductIcon = productNavItem.icon;
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Auto-close mobile drawer on route change
   useEffect(() => {
@@ -294,8 +306,8 @@ export function AppShell({ children }: { children: ReactNode }) {
             backdropFilter: "blur(20px)",
           }}
         >
-          <div className="flex min-h-16 flex-col gap-2.5 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between w-full max-w-full min-w-0">
-            {/* Top row: Brand & Mobile hamburger on small screens, ThemeToggle on desktop */}
+          <div className="flex flex-col gap-2 px-4 py-2.5 sm:px-6 lg:py-3 lg:min-h-16 lg:flex-row lg:items-center lg:justify-between w-full max-w-full min-w-0">
+            {/* Top row: Brand & Mobile controls (Connect Wallet + ThemeToggle + Hamburger) */}
             <div className="flex items-center justify-between w-full lg:w-auto">
               <div className="flex items-center gap-3">
                 <Link href="/" className="flex items-center gap-2.5 lg:hidden">
@@ -316,24 +328,55 @@ export function AppShell({ children }: { children: ReactNode }) {
                 </div>
               </div>
 
-              {/* Mobile controls: ThemeToggle + Mobile Hamburger Menu Button */}
+              {/* Mobile controls: Connect Wallet CTA (prominent) + ThemeToggle + Hamburger Button */}
               <div className="flex items-center gap-2 lg:hidden">
+                {mounted && (
+                  isConnected ? (
+                    <WalletAddress />
+                  ) : (
+                    <ConnectWalletButton size="sm" className="h-8 px-3 text-xs" />
+                  )
+                )}
                 <ThemeToggle />
                 <button
                   type="button"
                   onClick={() => setMobileMenuOpen((prev) => !prev)}
-                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f8cff]/50"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-300 hover:text-white hover:bg-white/10 transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f8cff]/50 shrink-0"
                   aria-label={mobileMenuOpen ? "Close menu" : "Open navigation menu"}
                   aria-expanded={mobileMenuOpen}
                 >
-                  {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+                  {mobileMenuOpen ? <X className="h-4.5 w-4.5" /> : <Menu className="h-4.5 w-4.5" />}
                 </button>
               </div>
             </div>
 
-            {/* Wallet Panel Controls */}
-            <div className="w-full lg:w-auto min-w-0 flex items-center justify-start lg:justify-end">
+            {/* Desktop Wallet Panel (hidden on mobile, visible on desktop) */}
+            <div className="hidden lg:flex w-auto min-w-0 items-center justify-end">
               <WalletPanel />
+            </div>
+
+            {/* Mobile Sub-Header: Network Status & Faucet Access (and Disconnect if connected) */}
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/[0.06] w-full lg:hidden">
+              <div className="flex items-center gap-2">
+                <NetworkStatus />
+                <a
+                  href="https://faucet.circle.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 h-7 px-2.5 text-xs rounded-lg text-[#93c5fd] border-[#4f8cff]/25 hover:border-[#4f8cff]/55 hover:bg-[#2563ff]/15 hover:text-white transition-all duration-200"
+                  >
+                    <Droplet className="h-3 w-3 text-[#4f8cff]" />
+                    Faucet
+                  </Button>
+                </a>
+              </div>
+              {mounted && isConnected && (
+                <DisconnectWalletButton />
+              )}
             </div>
           </div>
         </header>
@@ -399,6 +442,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <X className="h-5 w-5" />
               </button>
             </div>
+
+            {/* Quick Wallet CTA in drawer if not connected */}
+            {mounted && !isConnected && (
+              <div className="px-3.5 pt-3 pb-1">
+                <ConnectWalletButton className="w-full justify-center h-10" />
+              </div>
+            )}
 
             {/* Drawer Nav links */}
             <nav className="flex-1 overflow-y-auto space-y-1.5 p-3.5">

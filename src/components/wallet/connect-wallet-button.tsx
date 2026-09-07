@@ -114,7 +114,7 @@ export function ConnectWalletButton({ className, size = "sm" }: ConnectWalletBut
 
           {/* Modal Content */}
           <div
-            className="relative w-full max-w-md rounded-2xl p-6 text-left shadow-2xl transition-all z-10"
+            className="relative w-full max-w-md rounded-2xl p-5 text-left shadow-2xl transition-all z-10"
             style={{
               background: "linear-gradient(180deg, rgba(16, 28, 56, 0.96) 0%, rgba(8, 15, 32, 0.98) 100%)",
               border: "1px solid rgba(79, 140, 255, 0.25)",
@@ -122,16 +122,16 @@ export function ConnectWalletButton({ className, size = "sm" }: ConnectWalletBut
             }}
           >
             {/* Header */}
-            <div className="flex items-center justify-between pb-4 border-b border-white/10">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
               <div className="flex items-center gap-3">
                 <div
-                  className="flex h-10 w-10 items-center justify-center rounded-xl"
+                  className="flex h-9 w-9 items-center justify-center rounded-xl"
                   style={{
                     background: "linear-gradient(135deg, #4f8cff 0%, #6d5dfc 100%)",
                     boxShadow: "0 0 16px rgba(109, 93, 252, 0.4)",
                   }}
                 >
-                  <Wallet className="h-5 w-5 text-white" />
+                  <Wallet className="h-4.5 w-4.5 text-white" />
                 </div>
                 <div>
                   <h3 id="connect-modal-title" className="text-base font-semibold text-white">
@@ -153,16 +153,16 @@ export function ConnectWalletButton({ className, size = "sm" }: ConnectWalletBut
             </div>
 
             {/* Content options */}
-            <div className="mt-5 space-y-3">
+            <div className="mt-4 space-y-2.5">
               {/* Option 1: Open in MetaMask App */}
               <button
                 type="button"
                 onClick={handleOpenMetaMask}
-                className="w-full flex items-center justify-between p-3.5 rounded-xl border border-[#4f8cff]/30 bg-[#2563ff]/10 hover:bg-[#2563ff]/20 hover:border-[#4f8cff]/60 transition-all text-left group"
+                className="w-full flex items-center justify-between p-3 rounded-xl border border-[#4f8cff]/30 bg-[#2563ff]/10 hover:bg-[#2563ff]/20 hover:border-[#4f8cff]/60 transition-all text-left group"
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#4f8cff]/20 text-[#4f8cff] shrink-0">
-                    <Smartphone className="h-5 w-5" />
+                  <div className="flex h-8.5 w-8.5 items-center justify-center rounded-lg bg-[#4f8cff]/20 text-[#4f8cff] shrink-0">
+                    <Smartphone className="h-4.5 w-4.5" />
                   </div>
                   <div>
                     <div className="text-sm font-semibold text-white group-hover:text-[#93c5fd] transition-colors">
@@ -180,11 +180,11 @@ export function ConnectWalletButton({ className, size = "sm" }: ConnectWalletBut
               <button
                 type="button"
                 onClick={handleCopyLink}
-                className="w-full flex items-center justify-between p-3.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 transition-all text-left group"
+                className="w-full flex items-center justify-between p-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 transition-all text-left group"
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-slate-300 shrink-0">
-                    {copied ? <Check className="h-5 w-5 text-green-400" /> : <Copy className="h-5 w-5" />}
+                  <div className="flex h-8.5 w-8.5 items-center justify-center rounded-lg bg-white/10 text-slate-300 shrink-0">
+                    {copied ? <Check className="h-4.5 w-4.5 text-green-400" /> : <Copy className="h-4.5 w-4.5" />}
                   </div>
                   <div>
                     <div className="text-sm font-semibold text-white">
@@ -205,11 +205,11 @@ export function ConnectWalletButton({ className, size = "sm" }: ConnectWalletBut
                 href="https://metamask.io/download/"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="w-full flex items-center justify-between p-3.5 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 transition-all text-left group"
+                className="w-full flex items-center justify-between p-3 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 hover:border-white/20 transition-all text-left group"
               >
                 <div className="flex items-center gap-3">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-slate-300 shrink-0">
-                    <Download className="h-5 w-5" />
+                  <div className="flex h-8.5 w-8.5 items-center justify-center rounded-lg bg-white/10 text-slate-300 shrink-0">
+                    <Download className="h-4.5 w-4.5" />
                   </div>
                   <div>
                     <div className="text-sm font-semibold text-white group-hover:text-slate-200 transition-colors">
@@ -222,13 +222,6 @@ export function ConnectWalletButton({ className, size = "sm" }: ConnectWalletBut
                 </div>
                 <ExternalLink className="h-4 w-4 text-slate-400 group-hover:text-white shrink-0 transition-colors" />
               </a>
-            </div>
-
-            {/* Note */}
-            <div className="mt-4 rounded-lg bg-[#4f8cff]/5 border border-[#4f8cff]/15 p-3">
-              <p className="text-[11px] leading-relaxed text-slate-400">
-                <strong className="text-slate-300">Mobile tip:</strong> If you are on iPhone or Android, tap &quot;Open in MetaMask App&quot; or copy the URL into your wallet app&apos;s built-in browser.
-              </p>
             </div>
           </div>
         </div>
