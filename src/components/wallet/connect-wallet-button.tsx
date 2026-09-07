@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { useConnect, type Connector } from "wagmi";
 
 import {
@@ -429,195 +430,199 @@ export function ConnectWalletButton({ className, size = "sm" }: ConnectWalletBut
       </Button>
 
       {/* Responsive Wallet Picker Modal (Mobile Bottom-Sheet / Desktop Centered Dialog) */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity"
-            onClick={() => setIsModalOpen(false)}
-            aria-hidden="true"
-          />
-
-          {/* Dialog Container */}
-          <div
-            className={cn(
-              "relative z-10 w-full max-w-full sm:max-w-[460px] mx-auto",
-              "rounded-t-[28px] sm:rounded-3xl",
-              "border-t sm:border border-[#4f8cff]/25",
-              "shadow-[0_-12px_45px_rgba(0,0,0,0.85),0_0_35px_rgba(109,93,252,0.25)] sm:shadow-[0_20px_60px_rgba(0,0,0,0.9),0_0_40px_rgba(109,93,252,0.3)]",
-              "animate-in fade-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-250 ease-out",
-              "overflow-hidden flex flex-col"
-            )}
-            style={{
-              background: "linear-gradient(180deg, rgba(12, 22, 45, 0.98) 0%, rgba(6, 12, 28, 0.99) 100%)",
-              backdropFilter: "blur(24px)",
-            }}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="wallet-picker-title"
-          >
-            {/* Drag handle indicator on mobile only */}
-            <div className="pt-3 pb-1 flex justify-center sm:hidden">
-              <div className="w-10 h-1.5 rounded-full bg-white/20" />
-            </div>
-
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-white/[0.08]">
-              <div className="flex items-center gap-3">
-                <div
-                  className="flex h-9 w-9 items-center justify-center rounded-xl shrink-0"
-                  style={{
-                    background: "linear-gradient(135deg, #4f8cff 0%, #6d5dfc 50%, #d65dfc 100%)",
-                    boxShadow: "0 0 12px rgba(109, 93, 252, 0.4)",
-                  }}
-                >
-                  <Building2 className="h-4.5 w-4.5 text-white" />
-                </div>
-                <div>
-                  <h3 id="wallet-picker-title" className="text-base sm:text-lg font-bold text-white tracking-tight leading-none">
-                    Connect a wallet
-                  </h3>
-                  <p className="text-xs text-slate-400 mt-1">
-                    Select a wallet to connect to PayGrix
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
+      {mounted && isModalOpen && typeof document !== "undefined"
+        ? createPortal(
+            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 sm:py-6 overflow-hidden">
+              {/* Backdrop */}
+              <div
+                className="fixed inset-0 bg-black/80 backdrop-blur-md transition-opacity"
                 onClick={() => setIsModalOpen(false)}
-                className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f8cff]/50"
-                aria-label="Close wallet picker"
+                aria-hidden="true"
+              />
+
+              {/* Dialog Container */}
+              <div
+                className={cn(
+                  "relative z-10 w-full max-w-full sm:max-w-[460px] mx-auto",
+                  "rounded-t-[28px] sm:rounded-3xl",
+                  "border-t sm:border border-[#4f8cff]/25",
+                  "shadow-[0_-12px_45px_rgba(0,0,0,0.85),0_0_35px_rgba(109,93,252,0.25)] sm:shadow-[0_20px_60px_rgba(0,0,0,0.9),0_0_40px_rgba(109,93,252,0.3)]",
+                  "animate-in fade-in slide-in-from-bottom-6 sm:slide-in-from-bottom-0 sm:zoom-in-95 duration-250 ease-out",
+                  "overflow-hidden flex flex-col",
+                  "max-h-[88vh] sm:max-h-[min(620px,calc(100vh-3rem))]"
+                )}
+                style={{
+                  background: "linear-gradient(180deg, rgba(12, 22, 45, 0.98) 0%, rgba(6, 12, 28, 0.99) 100%)",
+                  backdropFilter: "blur(24px)",
+                }}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="wallet-picker-title"
               >
-                <X className="h-4.5 w-4.5" />
-              </button>
-            </div>
+                {/* Drag handle indicator on mobile only */}
+                <div className="pt-3 pb-1 flex justify-center sm:hidden shrink-0">
+                  <div className="w-10 h-1.5 rounded-full bg-white/20" />
+                </div>
 
-            {/* Error message banner */}
-            {errorMessage && (
-              <div className="mx-4 sm:mx-5 mt-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-xs text-rose-300 flex items-start gap-2 animate-in fade-in">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-rose-400" />
-                <span className="flex-1">{errorMessage}</span>
-                <button
-                  type="button"
-                  onClick={() => setErrorMessage(null)}
-                  className="text-rose-400 hover:text-white transition-colors"
-                  aria-label="Dismiss error"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            )}
-
-            {/* Wallet list */}
-            <div className="p-4 sm:p-5 space-y-2.5 max-h-[calc(85vh-130px)] sm:max-h-[520px] overflow-y-auto">
-              {WALLET_CONFIGS.map((config) => {
-                const isDetected = detectedMap[config.id];
-                const isThisConnecting = connectingWalletId === config.id;
-                const { Icon } = config;
-
-                return (
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-white/[0.08] shrink-0">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="flex h-9 w-9 items-center justify-center rounded-xl shrink-0"
+                      style={{
+                        background: "linear-gradient(135deg, #4f8cff 0%, #6d5dfc 50%, #d65dfc 100%)",
+                        boxShadow: "0 0 12px rgba(109, 93, 252, 0.4)",
+                      }}
+                    >
+                      <Building2 className="h-4.5 w-4.5 text-white" />
+                    </div>
+                    <div>
+                      <h3 id="wallet-picker-title" className="text-base sm:text-lg font-bold text-white tracking-tight leading-none">
+                        Connect a wallet
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Select a wallet to connect to PayGrix
+                      </p>
+                    </div>
+                  </div>
                   <button
-                    key={config.id}
                     type="button"
-                    onClick={() => handleSelectWallet(config)}
-                    disabled={isAnyConnecting && !isThisConnecting}
-                    className={cn(
-                      "group w-full flex items-center justify-between min-h-[58px] p-3.5 rounded-2xl transition-all text-left focus-visible:ring-2 focus-visible:ring-[#4f8cff]/50 focus:outline-none",
-                      isDetected
-                        ? "border border-[#4f8cff]/30 bg-[#2563ff]/10 hover:bg-[#2563ff]/20 hover:border-[#4f8cff]/60 active:scale-[0.99]"
-                        : "border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.06] hover:border-white/20 active:scale-[0.99]",
-                      isThisConnecting && "border-[#6d5dfc] bg-[#6d5dfc]/20 ring-1 ring-[#6d5dfc]/50"
-                    )}
+                    onClick={() => setIsModalOpen(false)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-colors focus:outline-none focus:ring-2 focus:ring-[#4f8cff]/50"
+                    aria-label="Close wallet picker"
+                  >
+                    <X className="h-4.5 w-4.5" />
+                  </button>
+                </div>
+
+                {/* Error message banner */}
+                {errorMessage && (
+                  <div className="mx-4 sm:mx-5 mt-3 p-3 rounded-xl bg-rose-500/10 border border-rose-500/25 text-xs text-rose-300 flex items-start gap-2 animate-in fade-in shrink-0">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5 text-rose-400" />
+                    <span className="flex-1">{errorMessage}</span>
+                    <button
+                      type="button"
+                      onClick={() => setErrorMessage(null)}
+                      className="text-rose-400 hover:text-white transition-colors"
+                      aria-label="Dismiss error"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Wallet list */}
+                <div className="p-4 sm:p-5 space-y-2.5 overflow-y-auto overscroll-contain flex-1 min-h-0">
+                  {WALLET_CONFIGS.map((config) => {
+                    const isDetected = detectedMap[config.id];
+                    const isThisConnecting = connectingWalletId === config.id;
+                    const { Icon } = config;
+
+                    return (
+                      <button
+                        key={config.id}
+                        type="button"
+                        onClick={() => handleSelectWallet(config)}
+                        disabled={isAnyConnecting && !isThisConnecting}
+                        className={cn(
+                          "group w-full flex items-center justify-between min-h-[58px] p-3.5 rounded-2xl transition-all text-left focus-visible:ring-2 focus-visible:ring-[#4f8cff]/50 focus:outline-none",
+                          isDetected
+                            ? "border border-[#4f8cff]/30 bg-[#2563ff]/10 hover:bg-[#2563ff]/20 hover:border-[#4f8cff]/60 active:scale-[0.99]"
+                            : "border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.06] hover:border-white/20 active:scale-[0.99]",
+                          isThisConnecting && "border-[#6d5dfc] bg-[#6d5dfc]/20 ring-1 ring-[#6d5dfc]/50"
+                        )}
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-black/40 border border-white/10 shrink-0 shadow-inner group-hover:scale-105 transition-transform">
+                            <Icon className="h-6 w-6" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-sm font-semibold text-white group-hover:text-[#93c5fd] transition-colors truncate">
+                              {config.name}
+                            </div>
+                            <div className="text-xs text-slate-400 truncate">
+                              {isThisConnecting
+                                ? "Connecting..."
+                                : isDetected
+                                ? `Connect with ${config.name}`
+                                : "Not detected • Click to install"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0 ml-2">
+                          {isThisConnecting ? (
+                            <Loader2 className="h-4.5 w-4.5 text-[#4f8cff] animate-spin" />
+                          ) : isDetected ? (
+                            <>
+                              <span className="text-[11px] font-medium text-[#93c5fd] px-2 py-0.5 rounded-full bg-[#4f8cff]/15 border border-[#4f8cff]/30">
+                                Detected
+                              </span>
+                              <ChevronRight className="h-4.5 w-4.5 text-slate-500 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
+                            </>
+                          ) : (
+                            <span className="text-[11px] font-medium text-slate-400 group-hover:text-white px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 flex items-center gap-1 transition-colors">
+                              Install
+                              <ExternalLink className="h-3 w-3" />
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+
+                  {/* Divider for secondary actions */}
+                  <div className="relative my-3 pt-1">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-white/[0.08]" />
+                    </div>
+                    <div className="relative flex justify-center text-[10px] uppercase tracking-wider">
+                      <span className="bg-[#081022] px-3 text-slate-500 font-medium">Alternative Options</span>
+                    </div>
+                  </div>
+
+                  {/* Copy App Link (for in-app browsers like Rainbow, Trust, etc.) */}
+                  <button
+                    type="button"
+                    onClick={handleCopyLink}
+                    className="group w-full flex items-center justify-between min-h-[52px] p-3 rounded-2xl border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.06] hover:border-white/20 active:scale-[0.99] transition-all text-left focus-visible:ring-2 focus-visible:ring-[#4f8cff]/50 focus:outline-none"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-black/40 border border-white/10 shrink-0 shadow-inner group-hover:scale-105 transition-transform">
-                        <Icon className="h-6 w-6" />
+                      <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-300 border border-white/10 shrink-0 group-hover:border-white/20 transition-all">
+                        {copied ? <Check className="h-4.5 w-4.5 text-emerald-400" /> : <Copy className="h-4.5 w-4.5" />}
                       </div>
                       <div className="min-w-0">
-                        <div className="text-sm font-semibold text-white group-hover:text-[#93c5fd] transition-colors truncate">
-                          {config.name}
+                        <div className="text-xs sm:text-sm font-semibold text-white truncate">
+                          {copied ? "URL Copied to Clipboard!" : "Copy App URL"}
                         </div>
-                        <div className="text-xs text-slate-400 truncate">
-                          {isThisConnecting
-                            ? "Connecting..."
-                            : isDetected
-                            ? `Connect with ${config.name}`
-                            : "Not detected • Click to install"}
+                        <div className="text-[11px] text-slate-400 truncate">
+                          Paste into Rainbow, Trust, or any Web3 browser
                         </div>
                       </div>
                     </div>
-
-                    <div className="flex items-center gap-2 shrink-0 ml-2">
-                      {isThisConnecting ? (
-                        <Loader2 className="h-4.5 w-4.5 text-[#4f8cff] animate-spin" />
-                      ) : isDetected ? (
-                        <>
-                          <span className="text-[11px] font-medium text-[#93c5fd] px-2 py-0.5 rounded-full bg-[#4f8cff]/15 border border-[#4f8cff]/30">
-                            Detected
-                          </span>
-                          <ChevronRight className="h-4.5 w-4.5 text-slate-500 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
-                        </>
-                      ) : (
-                        <span className="text-[11px] font-medium text-slate-400 group-hover:text-white px-2 py-0.5 rounded-lg bg-white/5 border border-white/10 flex items-center gap-1 transition-colors">
-                          Install
-                          <ExternalLink className="h-3 w-3" />
+                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                      {copied ? (
+                        <span className="text-[11px] font-semibold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-400/10 border border-emerald-400/20">
+                          Copied
                         </span>
+                      ) : (
+                        <ChevronRight className="h-4.5 w-4.5 text-slate-500 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
                       )}
                     </div>
                   </button>
-                );
-              })}
-
-              {/* Divider for secondary actions */}
-              <div className="relative my-3 pt-1">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-white/[0.08]" />
                 </div>
-                <div className="relative flex justify-center text-[10px] uppercase tracking-wider">
-                  <span className="bg-[#081022] px-3 text-slate-500 font-medium">Alternative Options</span>
+
+                {/* Subtle Footer */}
+                <div className="px-5 py-3 border-t border-white/[0.06] bg-black/20 text-center shrink-0">
+                  <p className="text-[11px] text-slate-500">
+                    Non-custodial connection on Arc Testnet & Base Sepolia
+                  </p>
                 </div>
               </div>
-
-              {/* Copy App Link (for in-app browsers like Rainbow, Trust, etc.) */}
-              <button
-                type="button"
-                onClick={handleCopyLink}
-                className="group w-full flex items-center justify-between min-h-[52px] p-3 rounded-2xl border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.06] hover:border-white/20 active:scale-[0.99] transition-all text-left focus-visible:ring-2 focus-visible:ring-[#4f8cff]/50 focus:outline-none"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/5 text-slate-300 border border-white/10 shrink-0 group-hover:border-white/20 transition-all">
-                    {copied ? <Check className="h-4.5 w-4.5 text-emerald-400" /> : <Copy className="h-4.5 w-4.5" />}
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-xs sm:text-sm font-semibold text-white truncate">
-                      {copied ? "URL Copied to Clipboard!" : "Copy App URL"}
-                    </div>
-                    <div className="text-[11px] text-slate-400 truncate">
-                      Paste into Rainbow, Trust, or any Web3 browser
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0 ml-2">
-                  {copied ? (
-                    <span className="text-[11px] font-semibold text-emerald-400 px-2 py-0.5 rounded-full bg-emerald-400/10 border border-emerald-400/20">
-                      Copied
-                    </span>
-                  ) : (
-                    <ChevronRight className="h-4.5 w-4.5 text-slate-500 group-hover:text-white group-hover:translate-x-0.5 transition-all" />
-                  )}
-                </div>
-              </button>
-            </div>
-
-            {/* Subtle Footer */}
-            <div className="px-5 py-3 border-t border-white/[0.06] bg-black/20 text-center">
-              <p className="text-[11px] text-slate-500">
-                Non-custodial connection on Arc Testnet & Base Sepolia
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+            </div>,
+            document.body
+          )
+        : null}
     </>
   );
 }
