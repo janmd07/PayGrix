@@ -16,6 +16,8 @@ export type BridgeTransfer = {
   destTx?: string;
   walletAddress?: string;
   userAddress?: string;
+  sender?: string;
+  initiator?: string;
 };
 
 interface TransferHistoryProps {

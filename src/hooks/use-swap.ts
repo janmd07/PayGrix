@@ -33,6 +33,8 @@ export interface SwapHistoryItem {
   network?: SupportedSwapChain;
   walletAddress?: string;
   userAddress?: string;
+  sender?: string;
+  initiator?: string;
 }
 
 export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {

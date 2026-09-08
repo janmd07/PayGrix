@@ -20,6 +20,10 @@ const BridgeForm = dynamic(
   { ssr: false }
 );
 
+import { createPublicClient, http } from "viem";
+import { arcPublicClient } from "@/lib/arc-client";
+import { basePublicClient } from "@/lib/base-client";
+
 // Swap integrations
 import { SwapForm } from "@/components/bridge/swap-form";
 import { SwapBalanceCard } from "@/components/bridge/swap-balance-card";
@@ -113,6 +117,14 @@ export default function BridgePage() {
     return cleanA === cleanB || cleanA.toLowerCase() === cleanB.toLowerCase();
   };
 
+  const getBridgeInitiator = (item: BridgeTransfer): string | undefined => {
+    return item.walletAddress || item.userAddress || item.sender || item.initiator;
+  };
+
+  const getSwapInitiator = (item: SwapHistoryItem): string | undefined => {
+    return item.walletAddress || item.userAddress || item.sender || item.initiator;
+  };
+
   useEffect(() => {
     if (!isConnected || !address) {
       setTransfers([]);
@@ -120,48 +132,186 @@ export default function BridgePage() {
       return;
     }
 
-    // Load bridge history scoped to currently connected wallet
+    let isMounted = true;
+    const currentWallet = address;
+    const solanaWallet = activeAddress;
+
+    const matchesCurrentWallet = (addr?: string | null): boolean => {
+      if (!addr) return false;
+      return (
+        isSameAddress(addr, currentWallet) ||
+        (solanaWallet ? isSameAddress(addr, solanaWallet) : false)
+      );
+    };
+
+    // Load tx owner cache from localStorage to avoid redundant RPC calls
+    let ownerCache: Record<string, string> = {};
+    try {
+      const cached = localStorage.getItem("paygrix_tx_owner_cache");
+      if (cached) {
+        ownerCache = JSON.parse(cached) || {};
+      }
+    } catch {
+      ownerCache = {};
+    }
+
+    // 1. Initial synchronous load for bridge transfers
+    let allTransfers: BridgeTransfer[] = [];
     try {
       const savedTransfers = localStorage.getItem("bridge_transfers");
       if (savedTransfers) {
-        const parsed: BridgeTransfer[] = JSON.parse(savedTransfers);
+        const parsed = JSON.parse(savedTransfers);
         if (Array.isArray(parsed)) {
-          const scopedTransfers = parsed.filter((item) =>
-            isSameAddress(item.walletAddress || item.userAddress, address) ||
-            (activeAddress && isSameAddress(item.walletAddress || item.userAddress, activeAddress))
-          );
-          setTransfers(scopedTransfers);
-        } else {
-          setTransfers([]);
+          allTransfers = parsed;
         }
-      } else {
-        setTransfers([]);
       }
     } catch (err) {
       console.error("Error parsing saved transfers:", err);
-      setTransfers([]);
     }
 
-    // Load swap history scoped to currently connected wallet
+    const initialTransfers = allTransfers.filter((item) => {
+      const initiator = getBridgeInitiator(item);
+      if (initiator) {
+        return matchesCurrentWallet(initiator);
+      }
+      if (item.sourceTx && ownerCache[item.sourceTx.toLowerCase()]) {
+        return matchesCurrentWallet(ownerCache[item.sourceTx.toLowerCase()]);
+      }
+      return false;
+    });
+    setTransfers(initialTransfers);
+
+    // 2. Initial synchronous load for swap history
+    let allSwaps: SwapHistoryItem[] = [];
     try {
       const savedSwaps = localStorage.getItem("swap_history");
       if (savedSwaps) {
-        const parsed: SwapHistoryItem[] = JSON.parse(savedSwaps);
+        const parsed = JSON.parse(savedSwaps);
         if (Array.isArray(parsed)) {
-          const scopedSwaps = parsed.filter((item) =>
-            isSameAddress(item.walletAddress || item.userAddress, address)
-          );
-          setSwaps(scopedSwaps);
-        } else {
-          setSwaps([]);
+          allSwaps = parsed;
         }
-      } else {
-        setSwaps([]);
       }
     } catch (err) {
       console.error("Error parsing saved swaps:", err);
-      setSwaps([]);
     }
+
+    const initialSwaps = allSwaps.filter((item) => {
+      const initiator = getSwapInitiator(item);
+      if (initiator) {
+        return matchesCurrentWallet(initiator);
+      }
+      if (item.txHash && ownerCache[item.txHash.toLowerCase()]) {
+        return matchesCurrentWallet(ownerCache[item.txHash.toLowerCase()]);
+      }
+      return false;
+    });
+    setSwaps(initialSwaps);
+
+    // 3. Asynchronously resolve legacy records with missing initiator
+    const resolveLegacyRecords = async () => {
+      let cacheModified = false;
+      let transfersModified = false;
+      let swapsModified = false;
+
+      // Identify bridge items with a hash but no known initiator
+      const unresolvedTransfers = allTransfers.filter((item) => {
+        const initiator = getBridgeInitiator(item);
+        return !initiator && item.sourceTx && !ownerCache[item.sourceTx.toLowerCase()];
+      });
+
+      for (const item of unresolvedTransfers) {
+        if (!isMounted) return;
+        const hash = item.sourceTx!;
+        try {
+          let client;
+          if (item.fromChain === "Base Sepolia" || item.fromChain === "Base") {
+            client = basePublicClient;
+          } else if (item.fromChain === "Arbitrum Sepolia") {
+            client = createPublicClient({ transport: http("https://sepolia-rollup.arbitrum.io/rpc") });
+          } else {
+            client = arcPublicClient;
+          }
+          const tx = await client.getTransaction({ hash: hash as `0x${string}` });
+          if (tx && tx.from) {
+            ownerCache[hash.toLowerCase()] = tx.from;
+            item.walletAddress = tx.from;
+            item.userAddress = tx.from;
+            cacheModified = true;
+            transfersModified = true;
+          }
+        } catch {
+          // Transaction not found or pruned; do not guess ownership
+        }
+      }
+
+      // Identify swap items with a hash but no known initiator
+      const unresolvedSwaps = allSwaps.filter((item) => {
+        const initiator = getSwapInitiator(item);
+        return !initiator && item.txHash && !ownerCache[item.txHash.toLowerCase()];
+      });
+
+      for (const item of unresolvedSwaps) {
+        if (!isMounted) return;
+        const hash = item.txHash;
+        try {
+          const client = item.network === "Base" ? basePublicClient : arcPublicClient;
+          const tx = await client.getTransaction({ hash: hash as `0x${string}` });
+          if (tx && tx.from) {
+            ownerCache[hash.toLowerCase()] = tx.from;
+            item.walletAddress = tx.from;
+            item.userAddress = tx.from;
+            cacheModified = true;
+            swapsModified = true;
+          }
+        } catch {
+          // Transaction not found; do not guess ownership
+        }
+      }
+
+      if (!isMounted) return;
+
+      if (cacheModified) {
+        try {
+          localStorage.setItem("paygrix_tx_owner_cache", JSON.stringify(ownerCache));
+        } catch {}
+      }
+
+      if (transfersModified) {
+        try {
+          localStorage.setItem("bridge_transfers", JSON.stringify(allTransfers));
+        } catch {}
+        const finalTransfers = allTransfers.filter((item) => {
+          const initiator = getBridgeInitiator(item);
+          if (initiator) return matchesCurrentWallet(initiator);
+          if (item.sourceTx && ownerCache[item.sourceTx.toLowerCase()]) {
+            return matchesCurrentWallet(ownerCache[item.sourceTx.toLowerCase()]);
+          }
+          return false;
+        });
+        setTransfers(finalTransfers);
+      }
+
+      if (swapsModified) {
+        try {
+          localStorage.setItem("swap_history", JSON.stringify(allSwaps));
+        } catch {}
+        const finalSwaps = allSwaps.filter((item) => {
+          const initiator = getSwapInitiator(item);
+          if (initiator) return matchesCurrentWallet(initiator);
+          if (item.txHash && ownerCache[item.txHash.toLowerCase()]) {
+            return matchesCurrentWallet(ownerCache[item.txHash.toLowerCase()]);
+          }
+          return false;
+        });
+        setSwaps(finalSwaps);
+      }
+    };
+
+    resolveLegacyRecords();
+
+    return () => {
+      isMounted = false;
+    };
   }, [isConnected, address, activeAddress]);
 
   const handleBridge = async (amount: string) => {
@@ -197,6 +347,8 @@ export default function BridgePage() {
           destTx: mintStep?.txHash || destTxHash,
           walletAddress: currentWallet,
           userAddress: currentWallet,
+          sender: currentWallet,
+          initiator: currentWallet,
         };
 
         try {
@@ -238,6 +390,8 @@ export default function BridgePage() {
       network: network || selectedSwapNetwork,
       walletAddress: currentWallet,
       userAddress: currentWallet,
+      sender: currentWallet,
+      initiator: currentWallet,
     };
 
     try {
