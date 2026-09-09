@@ -154,6 +154,7 @@ export interface LendingOnChainData {
   borrowLtvBps: number;
   liquidationThresholdBps: number;
   isPaused: boolean;
+  isOracleStale: boolean;
   collateralPrice: string;
   collateralPriceRaw: bigint;
   userCollateral: string;
@@ -201,6 +202,7 @@ const DEFAULT_LENDING_DATA: LendingOnChainData = {
   borrowLtvBps: 5000,
   liquidationThresholdBps: 7500,
   isPaused: true, // Safety default
+  isOracleStale: false,
   collateralPrice: "60,000.00",
   collateralPriceRaw: BigInt(60000000000),
   userCollateral: "0.00",
@@ -237,6 +239,25 @@ const DEFAULT_LENDING_DATA: LendingOnChainData = {
   userCollateralAllowance: "0.00",
   userCollateralAllowanceRaw: BigInt(0),
 };
+
+function isOracleStaleError(err: unknown): boolean {
+  if (!err) return false;
+  const errMsg = err instanceof Error ? err.message : String(err);
+  if (errMsg.includes("OraclePriceStale")) return true;
+  const errObj = err as {
+    cause?: {
+      data?: { errorName?: string };
+      errorName?: string;
+      reason?: string;
+      name?: string;
+    };
+    data?: { errorName?: string };
+  };
+  if (errObj?.cause?.data?.errorName === "OraclePriceStale") return true;
+  if (errObj?.cause?.errorName === "OraclePriceStale") return true;
+  if (errObj?.data?.errorName === "OraclePriceStale") return true;
+  return false;
+}
 
 async function fetchArcLendingOnChainData(
   userAddress?: Address,
@@ -284,7 +305,12 @@ async function fetchArcLendingOnChainData(
     address: PAYGRIX_LENDING_ADDRESS,
     abi: PAYGRIX_LENDING_ABI,
     functionName: "collateralPrice",
-  }, { cachePolicy: "shared", forceRefresh }).catch(() => BigInt(60000000000));
+  }, { cachePolicy: "shared", forceRefresh })
+    .then((price) => ({ price, isStale: false }))
+    .catch((err) => {
+      const isStale = isOracleStaleError(err);
+      return { price: isStale ? BigInt(0) : BigInt(60000000000), isStale };
+    });
 
   const oraclePromise = safeArcReadContract<Address>({
     address: PAYGRIX_LENDING_ADDRESS,
@@ -300,7 +326,7 @@ async function fetchArcLendingOnChainData(
 
   // 2. User-Specific Read Calls (Only if connected)
   let userPositionPromise = Promise.resolve([BigInt(0), BigInt(0)] as readonly [bigint, bigint]);
-  let userMaxBorrowPromise = Promise.resolve(BigInt(0));
+  let userMaxBorrowPromise = Promise.resolve({ val: BigInt(0), isStale: false });
   let userHealthFactorPromise = Promise.resolve(BigInt(0));
   let userAvailableCollateralPromise = Promise.resolve(BigInt(0));
   let userUsdcBalancePromise = Promise.resolve(BigInt(0));
@@ -323,7 +349,12 @@ async function fetchArcLendingOnChainData(
       functionName: "maxBorrow",
       args: [userAddress],
       account: userAddress,
-    }, { cachePolicy: "wallet", forceRefresh }).catch(() => BigInt(0));
+    }, { cachePolicy: "wallet", forceRefresh })
+      .then((val) => ({ val, isStale: false }))
+      .catch((err) => {
+        const isStale = isOracleStaleError(err);
+        return { val: BigInt(0), isStale };
+      });
 
     userHealthFactorPromise = safeArcReadContract<bigint>({
       address: PAYGRIX_LENDING_ADDRESS,
@@ -385,11 +416,11 @@ async function fetchArcLendingOnChainData(
     borrowLtvBpsRaw,
     liquidationThresholdBpsRaw,
     isPaused,
-    priceRaw,
+    priceResult,
     oracleAddr,
     ownerAddress,
     userPosition,
-    maxBorrowRaw,
+    maxBorrowResult,
     hfBps,
     availableCollateralRaw,
     userUsdcBalanceRaw,
@@ -418,20 +449,37 @@ async function fetchArcLendingOnChainData(
 
   const [userCollateralRaw, userDebtRaw] = userPosition;
 
+  const priceRaw = priceResult.price;
+  const isPriceStale = priceResult.isStale;
+  const maxBorrowRaw =
+    typeof maxBorrowResult === "object" && maxBorrowResult !== null && "val" in maxBorrowResult
+      ? (maxBorrowResult as { val: bigint }).val
+      : BigInt(0);
+  const isMaxBorrowStale =
+    typeof maxBorrowResult === "object" && maxBorrowResult !== null && "isStale" in maxBorrowResult
+      ? (maxBorrowResult as { isStale: boolean }).isStale
+      : false;
+  const isOracleStale = Boolean(isPriceStale || isMaxBorrowStale);
+
   // Format Global Values
   const poolLiquidityStr = formatUnits(poolLiquidityRaw, 6);
   const totalDebtStr = formatUnits(totalDebtRaw, 6);
   const totalBadDebtStr = formatUnits(totalBadDebtRaw, 6);
-  const priceNum = Number(priceRaw) / 1e6;
-  const priceStr = priceNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  let priceStr = "0.00";
+  if (isOracleStale) {
+    priceStr = "Unavailable (Oracle Stale)";
+  } else if (priceRaw > BigInt(0)) {
+    const priceNum = Number(priceRaw) / 1e6;
+    priceStr = priceNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
 
   // Format User Values
   const userCollateralStr = formatUnits(userCollateralRaw, 8);
   const userDebtStr = formatUnits(userDebtRaw, 6);
 
-  // Derive borrowing capacity via canonical protocol math if on-chain maxBorrow() call reverted
+  // Derive borrowing capacity via canonical protocol math if on-chain maxBorrow() call reverted (only when oracle is NOT stale)
   let safeMaxBorrowRaw = maxBorrowRaw;
-  if ((safeMaxBorrowRaw === null || safeMaxBorrowRaw === BigInt(0)) && userCollateralRaw > BigInt(0) && priceRaw > BigInt(0)) {
+  if (!isOracleStale && (safeMaxBorrowRaw === null || safeMaxBorrowRaw === BigInt(0)) && userCollateralRaw > BigInt(0) && priceRaw > BigInt(0)) {
     const collateralValueUsdcRaw = (userCollateralRaw * priceRaw) / BigInt(100000000); // cirBTC 8 decimals -> USDC 6 decimals
     const maxDebtUsdcRaw = (collateralValueUsdcRaw * borrowLtvBpsRaw) / BigInt(10000); // 50% LTV
     if (maxDebtUsdcRaw > userDebtRaw) {
@@ -440,6 +488,8 @@ async function fetchArcLendingOnChainData(
     } else {
       safeMaxBorrowRaw = BigInt(0);
     }
+  } else if (isOracleStale) {
+    safeMaxBorrowRaw = BigInt(0);
   }
 
   const userMaxBorrowStr = formatUnits(safeMaxBorrowRaw, 6);
@@ -475,7 +525,7 @@ async function fetchArcLendingOnChainData(
 
   // Collateral Value Calculation in USDC ($)
   let collateralValueStr = "$0.00";
-  if (userCollateralRaw > BigInt(0) && priceRaw > BigInt(0)) {
+  if (!isOracleStale && userCollateralRaw > BigInt(0) && priceRaw > BigInt(0)) {
     const valueBaseUnits = (userCollateralRaw * priceRaw) / BigInt(100000000); // cirBTC 8 decimals -> USDC 6 decimals
     const valNum = Number(valueBaseUnits) / 1e6;
     collateralValueStr = `$${valNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -493,6 +543,7 @@ async function fetchArcLendingOnChainData(
     borrowLtvBps: Number(borrowLtvBpsRaw),
     liquidationThresholdBps: Number(liquidationThresholdBpsRaw),
     isPaused,
+    isOracleStale,
     collateralPrice: priceStr,
     collateralPriceRaw: priceRaw,
     userCollateral: userCollateralStr,
@@ -580,7 +631,12 @@ async function fetchBaseLendingOnChainData(
     address: lendingAddress,
     abi: PAYGRIX_LENDING_ABI,
     functionName: "collateralPrice",
-  }).catch(() => BigInt(2500000000)); // Default ~$2,500.00 (6 decimals)
+  })
+    .then((price) => ({ price, isStale: false }))
+    .catch((err) => {
+      const isStale = isOracleStaleError(err);
+      return { price: isStale ? BigInt(0) : BigInt(2500000000), isStale };
+    });
 
   const oraclePromise = basePublicClient.readContract({
     address: lendingAddress,
@@ -596,7 +652,7 @@ async function fetchBaseLendingOnChainData(
 
   // 2. User Reads on Base Sepolia
   let userPositionPromise = Promise.resolve([BigInt(0), BigInt(0)] as readonly [bigint, bigint]);
-  let userMaxBorrowPromise = Promise.resolve(BigInt(0));
+  let userMaxBorrowPromise = Promise.resolve({ val: BigInt(0), isStale: false });
   let userHealthFactorPromise = Promise.resolve(BigInt(0));
   let userAvailableCollateralPromise = Promise.resolve(BigInt(0));
   let userUsdcBalancePromise = Promise.resolve(BigInt(0));
@@ -617,7 +673,12 @@ async function fetchBaseLendingOnChainData(
       abi: PAYGRIX_LENDING_ABI,
       functionName: "maxBorrow",
       args: [userAddress],
-    }).catch(() => BigInt(0));
+    })
+      .then((val) => ({ val, isStale: false }))
+      .catch((err) => {
+        const isStale = isOracleStaleError(err);
+        return { val: BigInt(0), isStale };
+      });
 
     userHealthFactorPromise = basePublicClient.readContract({
       address: lendingAddress,
@@ -659,11 +720,11 @@ async function fetchBaseLendingOnChainData(
     borrowLtvBpsRaw,
     liquidationThresholdBpsRaw,
     isPaused,
-    priceRaw,
+    priceResult,
     oracleAddr,
     ownerAddress,
     userPosition,
-    maxBorrowRaw,
+    maxBorrowResult,
     hfBps,
     availableCollateralRaw,
     userUsdcBalanceRaw,
@@ -692,20 +753,37 @@ async function fetchBaseLendingOnChainData(
 
   const [userCollateralRaw, userDebtRaw] = userPosition;
 
+  const priceRaw = priceResult.price;
+  const isPriceStale = priceResult.isStale;
+  const maxBorrowRaw =
+    typeof maxBorrowResult === "object" && maxBorrowResult !== null && "val" in maxBorrowResult
+      ? (maxBorrowResult as { val: bigint }).val
+      : BigInt(0);
+  const isMaxBorrowStale =
+    typeof maxBorrowResult === "object" && maxBorrowResult !== null && "isStale" in maxBorrowResult
+      ? (maxBorrowResult as { isStale: boolean }).isStale
+      : false;
+  const isOracleStale = Boolean(isPriceStale || isMaxBorrowStale);
+
   // Format Global Values
   const poolLiquidityStr = formatUnits(poolLiquidityRaw, 6);
   const totalDebtStr = formatUnits(totalDebtRaw, 6);
   const totalBadDebtStr = formatUnits(totalBadDebtRaw, 6);
-  const priceNum = Number(priceRaw) / 1e6;
-  const priceStr = priceNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  let priceStr = "0.00";
+  if (isOracleStale) {
+    priceStr = "Unavailable (Oracle Stale)";
+  } else if (priceRaw > BigInt(0)) {
+    const priceNum = Number(priceRaw) / 1e6;
+    priceStr = priceNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
 
   // Format User Values (WETH has 18 decimals)
   const userCollateralStr = formatUnits(userCollateralRaw, 18);
   const userDebtStr = formatUnits(userDebtRaw, 6);
 
-  // Derive borrowing capacity via canonical protocol math if on-chain maxBorrow reverted
+  // Derive borrowing capacity via canonical protocol math if on-chain maxBorrow reverted (only when oracle is NOT stale)
   let safeMaxBorrowRaw = maxBorrowRaw;
-  if ((safeMaxBorrowRaw === null || safeMaxBorrowRaw === BigInt(0)) && userCollateralRaw > BigInt(0) && priceRaw > BigInt(0)) {
+  if (!isOracleStale && (safeMaxBorrowRaw === null || safeMaxBorrowRaw === BigInt(0)) && userCollateralRaw > BigInt(0) && priceRaw > BigInt(0)) {
     const collateralValueUsdcRaw = (userCollateralRaw * priceRaw) / BigInt(1e18); // WETH 18 decimals -> USDC 6 decimals
     const maxDebtUsdcRaw = (collateralValueUsdcRaw * borrowLtvBpsRaw) / BigInt(10000); // 50% LTV
     if (maxDebtUsdcRaw > userDebtRaw) {
@@ -714,6 +792,8 @@ async function fetchBaseLendingOnChainData(
     } else {
       safeMaxBorrowRaw = BigInt(0);
     }
+  } else if (isOracleStale) {
+    safeMaxBorrowRaw = BigInt(0);
   }
 
   const userMaxBorrowStr = formatUnits(safeMaxBorrowRaw, 6);
@@ -734,7 +814,7 @@ async function fetchBaseLendingOnChainData(
 
   // Collateral Value in USD ($)
   let collateralValueStr = "$0.00";
-  if (userCollateralRaw > BigInt(0) && priceRaw > BigInt(0)) {
+  if (!isOracleStale && userCollateralRaw > BigInt(0) && priceRaw > BigInt(0)) {
     const valueBaseUnits = (userCollateralRaw * priceRaw) / BigInt(1e18);
     const valNum = Number(valueBaseUnits) / 1e6;
     collateralValueStr = `$${valNum.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -755,6 +835,7 @@ async function fetchBaseLendingOnChainData(
     borrowLtvBps: Number(borrowLtvBpsRaw),
     liquidationThresholdBps: Number(liquidationThresholdBpsRaw),
     isPaused,
+    isOracleStale,
     collateralPrice: priceStr,
     collateralPriceRaw: priceRaw,
     userCollateral: userCollateralStr,

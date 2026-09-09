@@ -352,6 +352,10 @@ export function LendingWorkspace({
   };
 
   const handleBorrow = async () => {
+    if (lendingData?.isOracleStale) {
+      setActionError("Price oracle awaiting update. Borrowing is temporarily unavailable.");
+      return;
+    }
     if (!borrowInput || parseFloat(borrowInput) <= 0) return;
     setActionError(null);
     try {
@@ -565,7 +569,7 @@ export function LendingWorkspace({
     }
   }
 
-  const isBorrowDisabled = lendingData?.isPaused || !isBorrowAmountValid || isPending;
+  const isBorrowDisabled = lendingData?.isPaused || Boolean(lendingData?.isOracleStale) || !isBorrowAmountValid || isPending;
   const isRepayDisabled = !repayInput || parseFloat(repayInput) <= 0 || (lendingData?.userDebtRaw ?? BigInt(0)) === BigInt(0) || isPending;
   const isWithdrawDisabled = lendingData?.isPaused || !withdrawInput || parseFloat(withdrawInput) <= 0 || isPending;
 
@@ -803,8 +807,15 @@ export function LendingWorkspace({
             <div className="grid grid-cols-2 gap-2.5">
               <div className="bg-[#070e1c] border border-white/5 rounded-lg p-2.5 flex flex-col gap-0.5">
                 <span className="text-[10px] text-slate-400 uppercase font-semibold">Available to borrow</span>
-                <span className="text-sm font-bold text-[#4f8cff] font-mono">
-                  {isLoading ? "..." : `${lendingData?.userMaxBorrow || "0.00"} USDC`}
+                <span className={cn(
+                  "text-sm font-bold font-mono",
+                  lendingData?.isOracleStale ? "text-amber-400 text-xs" : "text-[#4f8cff]"
+                )}>
+                  {isLoading
+                    ? "..."
+                    : lendingData?.isOracleStale
+                    ? "Unavailable (Oracle Stale)"
+                    : `${lendingData?.userMaxBorrow || "0.00"} USDC`}
                 </span>
               </div>
               <div className="bg-[#070e1c] border border-white/5 rounded-lg p-2.5 flex flex-col gap-0.5">
@@ -861,6 +872,14 @@ export function LendingWorkspace({
               </div>
             )}
 
+            {/* Stale Oracle Notice */}
+            {lendingData?.isOracleStale && (
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 p-2.5 text-xs text-amber-300 flex items-center gap-2 font-mono">
+                <AlertCircle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                <span>Price oracle awaiting update. Borrowing is temporarily unavailable.</span>
+              </div>
+            )}
+
             {/* Liquidity notice */}
             <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-2.5 text-xs text-amber-300 flex items-center gap-2">
               <AlertCircle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
@@ -892,6 +911,8 @@ export function LendingWorkspace({
                   </span>
                 ) : lendingData?.isPaused ? (
                   "Borrow USDC (Paused)"
+                ) : lendingData?.isOracleStale ? (
+                  "Borrowing Unavailable (Oracle Stale)"
                 ) : (
                   "Borrow USDC"
                 )}
