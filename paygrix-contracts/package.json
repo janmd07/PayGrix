@@ -8,7 +8,8 @@
     "test": "hardhat test",
     "clean": "hardhat clean",
     "deploy:factory:arc": "hardhat run scripts/deploy-factory.ts --network arcTestnet",
-    "deploy:router:arc": "hardhat run scripts/deploy-router.ts --network arcTestnet"
+    "deploy:router:arc": "hardhat run scripts/deploy-router.ts --network arcTestnet",
+    "deploy:pool:base": "hardhat run scripts/deploy-base-sepolia-pool.ts --network baseSepolia"
   },
   "keywords": [
     "paygrix",
