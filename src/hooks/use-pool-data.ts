@@ -67,11 +67,11 @@ async function fetchPoolData(
     let walletUsdc = "0.00";
     let walletEurc = "0.00";
 
-    if (userAddress && isWalletOnSelectedChain) {
+    if (userAddress) {
       try {
         const [rawUsdc, rawEurc] = await Promise.all([
-          fetchBaseTokenBalanceDeduped(chainConfig.tokens.USDC.address, userAddress).catch(() => BigInt(0)),
-          fetchBaseTokenBalanceDeduped(chainConfig.tokens.EURC.address, userAddress).catch(() => BigInt(0)),
+          fetchBaseTokenBalanceDeduped(chainConfig.tokens.USDC.address as `0x${string}`, userAddress as `0x${string}`).catch(() => BigInt(0)),
+          fetchBaseTokenBalanceDeduped(chainConfig.tokens.EURC.address as `0x${string}`, userAddress as `0x${string}`).catch(() => BigInt(0)),
         ]);
         walletUsdc = formatUnits(rawUsdc, chainConfig.tokens.USDC.decimals);
         walletEurc = formatUnits(rawEurc, chainConfig.tokens.EURC.decimals);

@@ -666,9 +666,9 @@ export default function PoolPage() {
                         Manage Liquidity
                       </CardTitle>
                       <CardDescription className="text-xs text-slate-400">
-                        {selectedNetwork === "Base"
-                          ? "Add or remove USDC/EURC liquidity on Base Sepolia."
-                          : "Add or remove USDC/EURC liquidity on Arc Testnet."}
+                        {!activeConfig.isDeployed
+                          ? `${activeConfig.name} USDC/EURC liquidity pool (deployment pending).`
+                          : `Add or remove USDC/EURC liquidity on ${activeConfig.name}.`}
                       </CardDescription>
                     </div>
 
@@ -707,8 +707,8 @@ export default function PoolPage() {
                 </CardHeader>
 
                 <CardContent className="space-y-4">
-                  {/* Network mismatch warning if connected to another chain */}
-                  {isConnected && !isWalletOnSelectedNetwork && (
+                  {/* Network mismatch warning if connected to another chain (only when pool is deployed) */}
+                  {isConnected && activeConfig.isDeployed && !isWalletOnSelectedNetwork && (
                     <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3.5 text-xs text-amber-300">
                       <div className="flex items-center gap-2">
                         <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
@@ -1155,6 +1155,26 @@ export default function PoolPage() {
                     <div className="rounded-xl border border-dashed border-white/10 p-4 text-center">
                       <p className="text-slate-400">Wallet disconnected.</p>
                     </div>
+                  ) : !activeConfig.isDeployed ? (
+                    <div className="rounded-xl border border-dashed border-blue-500/20 bg-blue-500/5 p-4 text-center space-y-2">
+                      <div className="flex items-center justify-center gap-1.5 text-blue-400 font-semibold text-xs">
+                        <Clock className="h-3.5 w-3.5" />
+                        <span>{activeConfig.name} Pool — Pending Deployment</span>
+                      </div>
+                      <p className="text-xs text-slate-400">
+                        Your {activeConfig.name} LP position will appear after the pool is deployed.
+                      </p>
+                      <div className="pt-2 border-t border-white/5 text-left space-y-1.5 text-xs text-slate-400 font-mono">
+                        <div className="flex justify-between">
+                          <span>Wallet USDC:</span>
+                          <span className="text-white font-mono">{parseFloat(walletUsdcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Wallet EURC:</span>
+                          <span className="text-white font-mono">{parseFloat(walletEurcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</span>
+                        </div>
+                      </div>
+                    </div>
                   ) : !isWalletOnSelectedNetwork ? (
                     <div className="rounded-xl border border-dashed border-amber-500/20 bg-amber-500/5 p-4 text-center space-y-2">
                       <p className="text-amber-400 font-semibold">Wrong Network</p>
@@ -1168,21 +1188,6 @@ export default function PoolPage() {
                       >
                         {isSwitching ? "Switching..." : `Switch to ${activeConfig.name}`}
                       </Button>
-                    </div>
-                  ) : !activeConfig.isDeployed ? (
-                    <div className="rounded-xl border border-dashed border-white/10 p-4 text-center space-y-2">
-                      <p className="text-slate-300 font-semibold">No Position on {activeConfig.name}</p>
-                      <p className="text-xs text-slate-400">Pool is currently being configured. Positions will appear here once contracts are deployed.</p>
-                      <div className="pt-2 border-t border-white/5 text-left space-y-1.5 text-xs text-slate-400 font-mono">
-                        <div className="flex justify-between">
-                          <span>Wallet USDC:</span>
-                          <span className="text-white">{parseFloat(walletUsdcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Wallet EURC:</span>
-                          <span className="text-white">{parseFloat(walletEurcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</span>
-                        </div>
-                      </div>
                     </div>
                   ) : (
                     <>
