@@ -5,7 +5,7 @@
 
 export const BASE_BUILDER_CODE = {
   code: "bc_f3sf2iiu",
-  encoded: "0x62635f66337366326969750b0080218021802180218021802180218021" as `0x${string}`,
+  encoded: "0x62635f66337366326969750b00802180218021802180218021" as `0x${string}`,
 } as const;
 
 export const BASE_BUILDER_DATA_SUFFIX = BASE_BUILDER_CODE.encoded;
