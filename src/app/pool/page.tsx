@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import Image from "next/image";
 import { AlertTriangle, ExternalLink, Loader2, RefreshCw, Layers, Plus, HelpCircle, Clock } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
@@ -10,17 +11,12 @@ import { Button } from "@/components/ui/button";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { usePoolData } from "@/hooks/use-pool-data";
 import { TokenLogo } from "@/components/bridge/swap-form";
-import { useWriteContract } from "wagmi";
+import { useWriteContract, useSwitchChain } from "wagmi";
 import { arcPublicClient } from "@/lib/arc-client";
 import { safeArcReadContract, sanitizeArcError, clearArcReadCache } from "@/lib/arc-read-infra";
 import { parseUnits, formatUnits, erc20Abi } from "viem";
 import { cn } from "@/lib/utils";
-
-const FACTORY_ADDRESS = "0x05c69956564c556fc303Cb74C5505D0E1e8EDF2D";
-const ROUTER_ADDRESS = "0xB2A97BAABaB64B389948bebB58D639a654ABac89";
-const PAIR_ADDRESS = "0xf9d04BDdA9C857C9440ac9eD6EbB9118686Ef7b2";
-const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
-const EURC_ADDRESS = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
+import { POOL_CHAINS, SupportedPoolChain } from "@/config/pool-config";
 
 const ROUTER_ABI = [
   {
@@ -63,9 +59,50 @@ const ROUTER_ABI = [
   }
 ] as const;
 
+function PoolChainLogo({ chain }: { chain: SupportedPoolChain }) {
+  const [hasFailed, setHasFailed] = useState(false);
+  const logoUrl = chain === "Arc" ? "/chains/arc.png" : "/chains/base.png";
+  const alt = chain === "Arc" ? "Arc Testnet" : "Base Sepolia";
+
+  if (hasFailed) {
+    return (
+      <span
+        className={cn(
+          "h-2 w-2 rounded-full shrink-0",
+          chain === "Arc" ? "bg-purple-400" : "bg-blue-400"
+        )}
+      />
+    );
+  }
+
+  return (
+    <div className="relative flex items-center justify-center h-4 w-4 rounded-full bg-[#030712] border border-white/10 overflow-hidden shrink-0">
+      <Image
+        src={logoUrl}
+        alt={alt}
+        width={16}
+        height={16}
+        className="h-full w-full object-contain"
+        onError={() => setHasFailed(true)}
+      />
+    </div>
+  );
+}
+
 export default function PoolPage() {
-  const { address, isConnected, isArcTestnet, switchToArcTestnetAsync } = useArcWallet();
-  const { poolData, isLoading, error, refreshPoolData } = usePoolData(address, isArcTestnet);
+  const [selectedNetwork, setSelectedNetwork] = useState<SupportedPoolChain>("Arc");
+  const activeConfig = POOL_CHAINS[selectedNetwork];
+
+  const { address, isConnected, chainId } = useArcWallet();
+  const { switchChainAsync, isPending: isSwitching } = useSwitchChain();
+
+  const isWalletOnSelectedNetwork = isConnected && chainId === activeConfig.id;
+
+  const { poolData, isLoading, error, refreshPoolData } = usePoolData(
+    selectedNetwork,
+    address,
+    isWalletOnSelectedNetwork
+  );
 
   const publicClient = arcPublicClient;
   const { writeContractAsync } = useWriteContract();
@@ -79,7 +116,6 @@ export default function PoolPage() {
  
   // Clean error message to hide raw RPC endpoints or stack traces from users
   const sanitizeErrorMessage = useCallback((err: unknown): string => {
-    // Check for wallet rejection explicitly for user-friendly UI mapping
     const errMsg = err instanceof Error ? err.message : String(err);
     if (errMsg.includes("User rejected") || errMsg.toLowerCase().includes("user rejected")) {
       return "Transaction rejected by wallet signature.";
@@ -114,6 +150,27 @@ export default function PoolPage() {
   const [txHash, setTxHash] = useState<string>("");
   const [txError, setTxError] = useState<string | null>(null);
   const [confirmStage, setConfirmStage] = useState<string>("");
+
+  const handleNetworkChange = (net: SupportedPoolChain) => {
+    setSelectedNetwork(net);
+    setActiveTab("add");
+    setUsdcInput("");
+    setEurcInput("");
+    setLpInput("");
+    setRawLPToRemove(BigInt(0));
+    setTxError(null);
+    setTxStatus("idle");
+  };
+
+  const handleSwitchToSelectedNetwork = async () => {
+    try {
+      if (switchChainAsync) {
+        await switchChainAsync({ chainId: activeConfig.id });
+      }
+    } catch (err: unknown) {
+      console.error("Network switch error:", err);
+    }
+  };
 
   // Clean Inputs on Tab Switch
   useEffect(() => {
@@ -176,39 +233,39 @@ export default function PoolPage() {
   const addEstimates = useMemo(() => {
     if (!usdcInput || !poolData || isNaN(Number(usdcInput))) return null;
     try {
-      const usdcAmountRaw = parseUnits(usdcInput, 6);
-      const reserve0Raw = parseUnits(poolData.reserve0, 6);
+      const usdcAmountRaw = parseUnits(usdcInput, activeConfig.tokens.USDC.decimals);
+      const reserve0Raw = parseUnits(poolData.reserve0, activeConfig.tokens.USDC.decimals);
       const totalSupplyRaw = BigInt(poolData.totalSupplyRaw);
 
       if (reserve0Raw === BigInt(0) || totalSupplyRaw === BigInt(0)) {
         // Initial liquidity mint
-        const eurcAmountRaw = parseUnits(eurcInput, 6);
+        const eurcAmountRaw = parseUnits(eurcInput, activeConfig.tokens.EURC.decimals);
         const product = usdcAmountRaw * eurcAmountRaw;
-        // Simple square root estimation for bigint
         const estimatedLPRaw = BigInt(Math.floor(Math.sqrt(Number(product)))) - BigInt(1000);
         const finalLPRaw = estimatedLPRaw > BigInt(0) ? estimatedLPRaw : BigInt(0);
 
         return {
           usdcAmountRaw,
-          eurcAmountRaw: parseUnits(eurcInput, 6),
+          eurcAmountRaw,
           estimatedLPRaw: finalLPRaw,
           minUsdcRaw: (usdcAmountRaw * BigInt(99)) / BigInt(100),
-          minEurcRaw: (parseUnits(eurcInput, 6) * BigInt(99)) / BigInt(100),
+          minEurcRaw: (eurcAmountRaw * BigInt(99)) / BigInt(100),
         };
       }
 
       const estimatedLPRaw = (usdcAmountRaw * totalSupplyRaw) / reserve0Raw;
+      const reserve1Raw = parseUnits(poolData.reserve1, activeConfig.tokens.EURC.decimals);
       return {
         usdcAmountRaw,
-        eurcAmountRaw: (usdcAmountRaw * parseUnits(poolData.reserve1, 6)) / reserve0Raw,
+        eurcAmountRaw: (usdcAmountRaw * reserve1Raw) / reserve0Raw,
         estimatedLPRaw,
         minUsdcRaw: (usdcAmountRaw * BigInt(99)) / BigInt(100),
-        minEurcRaw: (((usdcAmountRaw * parseUnits(poolData.reserve1, 6)) / reserve0Raw) * BigInt(99)) / BigInt(100),
+        minEurcRaw: (((usdcAmountRaw * reserve1Raw) / reserve0Raw) * BigInt(99)) / BigInt(100),
       };
     } catch {
       return null;
     }
-  }, [usdcInput, eurcInput, poolData]);
+  }, [usdcInput, eurcInput, poolData, activeConfig]);
 
   // Remove Liquidity input handlers
   const handleLpInputChange = (val: string) => {
@@ -247,8 +304,8 @@ export default function PoolPage() {
   const removeEstimates = useMemo(() => {
     if (!poolData || rawLPToRemove === BigInt(0)) return null;
     try {
-      const reserve0Raw = parseUnits(poolData.reserve0, 6);
-      const reserve1Raw = parseUnits(poolData.reserve1, 6);
+      const reserve0Raw = parseUnits(poolData.reserve0, activeConfig.tokens.USDC.decimals);
+      const reserve1Raw = parseUnits(poolData.reserve1, activeConfig.tokens.EURC.decimals);
       const totalSupplyRaw = BigInt(poolData.totalSupplyRaw);
 
       if (totalSupplyRaw === BigInt(0)) return null;
@@ -265,21 +322,29 @@ export default function PoolPage() {
     } catch {
       return null;
     }
-  }, [rawLPToRemove, poolData]);
+  }, [rawLPToRemove, poolData, activeConfig]);
 
-  // Execute Add Liquidity Flow
+  // Execute Add Liquidity Flow (Arc Testnet)
   const handleAddLiquidity = async () => {
+    if (!activeConfig.isDeployed || !activeConfig.routerAddress || !activeConfig.pairAddress || !activeConfig.factoryAddress) {
+      setTxError(`${activeConfig.name} pool contracts are not deployed yet.`);
+      return;
+    }
+
     if (!isConnected || !address) {
       setTxError("Wallet not connected.");
       return;
     }
-    if (!isArcTestnet) {
+
+    if (!isWalletOnSelectedNetwork) {
       setTxStatus("checking");
-      setConfirmStage("Switching network to Arc Testnet...");
+      setConfirmStage(`Switching network to ${activeConfig.name}...`);
       try {
-        await switchToArcTestnetAsync();
+        if (switchChainAsync) {
+          await switchChainAsync({ chainId: activeConfig.id });
+        }
       } catch {
-        setTxError("Please switch to Arc Testnet (Chain ID 5042002).");
+        setTxError(`Please switch your wallet to ${activeConfig.name} (Chain ID ${activeConfig.id}).`);
         setTxStatus("failed");
         return;
       }
@@ -292,10 +357,17 @@ export default function PoolPage() {
     setTxStatus("checking");
     setConfirmStage("Checking router pair address...");
 
+    const factoryAddress = activeConfig.factoryAddress;
+    const routerAddress = activeConfig.routerAddress;
+    const pairAddress = activeConfig.pairAddress;
+    const usdcAddress = activeConfig.tokens.USDC.address;
+    const eurcAddress = activeConfig.tokens.EURC.address;
+    const targetChainId = activeConfig.id;
+
     try {
       // Pre-flight: verify Factory returns the known pair address
       const factoryPair = await safeReadContract<`0x${string}`>({
-        address: FACTORY_ADDRESS,
+        address: factoryAddress,
         abi: [
           {
             inputs: [
@@ -309,58 +381,58 @@ export default function PoolPage() {
           }
         ],
         functionName: "getPair",
-        args: [USDC_ADDRESS, EURC_ADDRESS]
+        args: [usdcAddress, eurcAddress]
       });
 
-      if (factoryPair.toLowerCase() !== PAIR_ADDRESS.toLowerCase()) {
-        throw new Error(`Factory returned incorrect pair address: ${factoryPair}. Expected: ${PAIR_ADDRESS}`);
+      if (factoryPair.toLowerCase() !== pairAddress.toLowerCase()) {
+        throw new Error(`Factory returned incorrect pair address: ${factoryPair}. Expected: ${pairAddress}`);
       }
 
       // Step 1: Check and Approve USDC
       setTxStatus("approving");
       setConfirmStage("Checking USDC allowance...");
       const usdcAllowance = await safeReadContract<bigint>({
-        address: USDC_ADDRESS,
+        address: usdcAddress,
         abi: erc20Abi,
         functionName: "allowance",
-        args: [address, ROUTER_ADDRESS]
+        args: [address, routerAddress]
       });
 
       if (usdcAllowance < addEstimates.usdcAmountRaw) {
         setConfirmStage("Approving USDC (exact amount)...");
         const approveHash = await writeContractAsync({
-          address: USDC_ADDRESS,
+          address: usdcAddress,
           abi: erc20Abi,
           functionName: "approve",
-          args: [ROUTER_ADDRESS, addEstimates.usdcAmountRaw],
-          chainId: 5042002
+          args: [routerAddress, addEstimates.usdcAmountRaw],
+          chainId: targetChainId
         });
         setConfirmStage("Confirming USDC approval on-chain...");
         await publicClient.waitForTransactionReceipt({ hash: approveHash });
-        clearArcReadCache(`arc:${USDC_ADDRESS}`);
+        clearArcReadCache(`arc:${usdcAddress}`);
       }
  
       // Step 2: Check and Approve EURC
       setConfirmStage("Checking EURC allowance...");
       const eurcAllowance = await safeReadContract<bigint>({
-        address: EURC_ADDRESS,
+        address: eurcAddress,
         abi: erc20Abi,
         functionName: "allowance",
-        args: [address, ROUTER_ADDRESS]
+        args: [address, routerAddress]
       });
  
       if (eurcAllowance < addEstimates.eurcAmountRaw) {
         setConfirmStage("Approving EURC (exact amount)...");
         const approveHash = await writeContractAsync({
-          address: EURC_ADDRESS,
+          address: eurcAddress,
           abi: erc20Abi,
           functionName: "approve",
-          args: [ROUTER_ADDRESS, addEstimates.eurcAmountRaw],
-          chainId: 5042002
+          args: [routerAddress, addEstimates.eurcAmountRaw],
+          chainId: targetChainId
         });
         setConfirmStage("Confirming EURC approval on-chain...");
         await publicClient.waitForTransactionReceipt({ hash: approveHash });
-        clearArcReadCache(`arc:${EURC_ADDRESS}`);
+        clearArcReadCache(`arc:${eurcAddress}`);
       }
  
       // Step 3: Add Liquidity Call
@@ -369,12 +441,12 @@ export default function PoolPage() {
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
  
       const hash = await writeContractAsync({
-        address: ROUTER_ADDRESS,
+        address: routerAddress,
         abi: ROUTER_ABI,
         functionName: "addLiquidity",
         args: [
-          USDC_ADDRESS,
-          EURC_ADDRESS,
+          usdcAddress,
+          eurcAddress,
           addEstimates.usdcAmountRaw,
           addEstimates.eurcAmountRaw,
           addEstimates.minUsdcRaw,
@@ -382,7 +454,7 @@ export default function PoolPage() {
           address,
           deadline
         ],
-        chainId: 5042002
+        chainId: targetChainId
       });
  
       setTxHash(hash);
@@ -392,10 +464,9 @@ export default function PoolPage() {
  
       if (receipt.status === "success") {
         setTxStatus("success");
-        // Clear caches and refresh
-        clearArcReadCache(`arc:${USDC_ADDRESS}`);
-        clearArcReadCache(`arc:${EURC_ADDRESS}`);
-        clearArcReadCache(`arc:${PAIR_ADDRESS}`);
+        clearArcReadCache(`arc:${usdcAddress}`);
+        clearArcReadCache(`arc:${eurcAddress}`);
+        clearArcReadCache(`arc:${pairAddress}`);
         await refreshPoolData();
         await refreshUsdc();
         await refreshEurc();
@@ -411,19 +482,27 @@ export default function PoolPage() {
     }
   };
 
-  // Execute Remove Liquidity Flow
+  // Execute Remove Liquidity Flow (Arc Testnet)
   const handleRemoveLiquidity = async () => {
+    if (!activeConfig.isDeployed || !activeConfig.routerAddress || !activeConfig.pairAddress) {
+      setTxError(`${activeConfig.name} pool contracts are not deployed yet.`);
+      return;
+    }
+
     if (!isConnected || !address) {
       setTxError("Wallet not connected.");
       return;
     }
-    if (!isArcTestnet) {
+
+    if (!isWalletOnSelectedNetwork) {
       setTxStatus("checking");
-      setConfirmStage("Switching network to Arc Testnet...");
+      setConfirmStage(`Switching network to ${activeConfig.name}...`);
       try {
-        await switchToArcTestnetAsync();
+        if (switchChainAsync) {
+          await switchChainAsync({ chainId: activeConfig.id });
+        }
       } catch {
-        setTxError("Please switch to Arc Testnet (Chain ID 5042002).");
+        setTxError(`Please switch your wallet to ${activeConfig.name} (Chain ID ${activeConfig.id}).`);
         setTxStatus("failed");
         return;
       }
@@ -436,28 +515,34 @@ export default function PoolPage() {
     setTxStatus("checking");
     setConfirmStage("Checking LP token allowance...");
 
+    const routerAddress = activeConfig.routerAddress;
+    const pairAddress = activeConfig.pairAddress;
+    const usdcAddress = activeConfig.tokens.USDC.address;
+    const eurcAddress = activeConfig.tokens.EURC.address;
+    const targetChainId = activeConfig.id;
+
     try {
       // Step 1: Check and Approve LP token
       setTxStatus("approving");
       const lpAllowance = await safeReadContract<bigint>({
-        address: PAIR_ADDRESS,
+        address: pairAddress,
         abi: erc20Abi,
         functionName: "allowance",
-        args: [address, ROUTER_ADDRESS]
+        args: [address, routerAddress]
       });
 
       if (lpAllowance < rawLPToRemove) {
         setConfirmStage("Approving LP token (exact amount)...");
         const approveHash = await writeContractAsync({
-          address: PAIR_ADDRESS,
+          address: pairAddress,
           abi: erc20Abi,
           functionName: "approve",
-          args: [ROUTER_ADDRESS, rawLPToRemove],
-          chainId: 5042002
+          args: [routerAddress, rawLPToRemove],
+          chainId: targetChainId
         });
         setConfirmStage("Confirming LP token approval on-chain...");
         await publicClient.waitForTransactionReceipt({ hash: approveHash });
-        clearArcReadCache(`arc:${PAIR_ADDRESS}`);
+        clearArcReadCache(`arc:${pairAddress}`);
       }
  
       // Step 2: Remove Liquidity Call
@@ -466,19 +551,19 @@ export default function PoolPage() {
       const deadline = BigInt(Math.floor(Date.now() / 1000) + 20 * 60);
  
       const hash = await writeContractAsync({
-        address: ROUTER_ADDRESS,
+        address: routerAddress,
         abi: ROUTER_ABI,
         functionName: "removeLiquidity",
         args: [
-          USDC_ADDRESS,
-          EURC_ADDRESS,
+          usdcAddress,
+          eurcAddress,
           rawLPToRemove,
           removeEstimates.minUsdcRaw,
           removeEstimates.minEurcRaw,
           address,
           deadline
         ],
-        chainId: 5042002
+        chainId: targetChainId
       });
  
       setTxHash(hash);
@@ -488,10 +573,9 @@ export default function PoolPage() {
  
       if (receipt.status === "success") {
         setTxStatus("success");
-        // Clear caches and refresh
-        clearArcReadCache(`arc:${USDC_ADDRESS}`);
-        clearArcReadCache(`arc:${EURC_ADDRESS}`);
-        clearArcReadCache(`arc:${PAIR_ADDRESS}`);
+        clearArcReadCache(`arc:${usdcAddress}`);
+        clearArcReadCache(`arc:${eurcAddress}`);
+        clearArcReadCache(`arc:${pairAddress}`);
         await refreshPoolData();
         await refreshUsdc();
         await refreshEurc();
@@ -509,6 +593,7 @@ export default function PoolPage() {
 
   // Add Liquidity validation check
   const isAddValid = useMemo(() => {
+    if (!activeConfig.isDeployed) return false;
     if (!usdcInput || !eurcInput) return false;
     const usdcVal = parseFloat(usdcInput);
     const eurcVal = parseFloat(eurcInput);
@@ -519,14 +604,15 @@ export default function PoolPage() {
     const usdcBal = parseFloat(walletUsdcBalance);
     const eurcBal = parseFloat(walletEurcBalance);
     return usdcVal <= usdcBal && eurcVal <= eurcBal;
-  }, [usdcInput, eurcInput, walletUsdcBalance, walletEurcBalance]);
+  }, [usdcInput, eurcInput, walletUsdcBalance, walletEurcBalance, activeConfig.isDeployed]);
 
   // Remove Liquidity validation check
   const isRemoveValid = useMemo(() => {
+    if (!activeConfig.isDeployed) return false;
     if (rawLPToRemove === BigInt(0)) return false;
     const userLPBalanceRaw = BigInt(poolData?.userLPBalanceRaw || "0");
     return rawLPToRemove <= userLPBalanceRaw;
-  }, [rawLPToRemove, poolData]);
+  }, [rawLPToRemove, poolData, activeConfig.isDeployed]);
 
   return (
     <AppShell>
@@ -535,12 +621,13 @@ export default function PoolPage() {
           <PageHeader
             eyebrow="Liquidity & Pools"
             title="USDC/EURC Liquidity Pool"
-            description="Inspect the on-chain reserves, total LP token supply, and your active liquidity position."
+            description={`Inspect on-chain reserves, total LP supply, and your active liquidity position on ${activeConfig.name}.`}
           />
           <button
             onClick={() => refreshPoolData()}
             disabled={isLoading}
-            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-[#060f24]/50 text-slate-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-50 shrink-0 self-start sm:self-center"
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-[#060f24]/50 text-slate-400 hover:text-white hover:bg-white/5 transition-all disabled:opacity-50 shrink-0 self-start sm:self-center cursor-pointer"
+            title="Refresh pool data"
           >
             <RefreshCw className={`h-4.5 w-4.5 ${isLoading ? "animate-spin" : ""}`} />
           </button>
@@ -550,7 +637,7 @@ export default function PoolPage() {
         {isLoading && !poolData && (
           <div className="flex min-h-[300px] flex-col items-center justify-center gap-3 rounded-2xl border border-white/5 bg-[#060f24]/30 backdrop-blur-md">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm text-slate-400">Loading pool data from Arc Testnet...</p>
+            <p className="text-sm text-slate-400">Loading pool data from {activeConfig.name}...</p>
           </div>
         )}
 
@@ -568,343 +655,422 @@ export default function PoolPage() {
             {/* Left: Main Interaction Card */}
             <div className="space-y-6">
               <Card className="border border-white/10 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_8px_32px_rgba(6,15,36,0.5)]">
-                {/* Elegant top gradient accent line */}
+                {/* Top gradient accent line */}
                 <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf]" />
 
                 <CardHeader className="pb-4">
-                  <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
-                    <Layers className="h-5 w-5 text-purple-400 animate-pulse" />
-                    Manage Liquidity
-                  </CardTitle>
-                  <CardDescription className="text-xs text-slate-400">
-                    Add or remove USDC/EURC liquidity on Arc Testnet.
-                  </CardDescription>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-lg font-bold text-white flex items-center gap-2">
+                        <Layers className="h-5 w-5 text-purple-400 animate-pulse" />
+                        Manage Liquidity
+                      </CardTitle>
+                      <CardDescription className="text-xs text-slate-400">
+                        {selectedNetwork === "Base"
+                          ? "Add or remove USDC/EURC liquidity on Base Sepolia."
+                          : "Add or remove USDC/EURC liquidity on Arc Testnet."}
+                      </CardDescription>
+                    </div>
+
+                    {/* Network Switcher: Arc vs Base Sepolia */}
+                    <div className="flex items-center gap-1 p-1 bg-[#070e1c] rounded-xl border border-white/10 shrink-0 self-start sm:self-auto">
+                      <button
+                        type="button"
+                        onClick={() => handleNetworkChange("Arc")}
+                        disabled={txStatus !== "idle"}
+                        className={cn(
+                          "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
+                          selectedNetwork === "Arc"
+                            ? "bg-purple-600/90 text-white shadow-[0_0_12px_rgba(168,85,247,0.4)] border border-purple-400/30"
+                            : "text-slate-400 hover:text-white hover:bg-white/5"
+                        )}
+                      >
+                        <PoolChainLogo chain="Arc" />
+                        Arc
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleNetworkChange("Base")}
+                        disabled={txStatus !== "idle"}
+                        className={cn(
+                          "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
+                          selectedNetwork === "Base"
+                            ? "bg-[#0052FF] text-white shadow-[0_0_12px_rgba(0,82,255,0.4)] border border-blue-400/30"
+                            : "text-slate-400 hover:text-white hover:bg-white/5"
+                        )}
+                      >
+                        <PoolChainLogo chain="Base" />
+                        Base Sepolia
+                      </button>
+                    </div>
+                  </div>
                 </CardHeader>
 
                 <CardContent className="space-y-4">
-                  {/* Tab Switcher */}
-                  <div className="flex rounded-xl bg-[#070e1c]/80 p-1 border border-white/5 mb-6">
-                    <button
-                      onClick={() => setActiveTab("add")}
-                      className={cn(
-                        "flex-1 py-2 text-xs font-bold rounded-lg transition-all duration-200",
-                        activeTab === "add"
-                          ? "bg-purple-600 text-white shadow-lg shadow-purple-600/20"
-                          : "text-slate-400 hover:text-white hover:bg-white/5"
-                      )}
-                    >
-                      Add Liquidity
-                    </button>
-                    <button
-                      onClick={() => setActiveTab("remove")}
-                      className={cn(
-                        "flex-1 py-2 text-xs font-bold rounded-lg transition-all duration-200",
-                        activeTab === "remove"
-                          ? "bg-purple-600 text-white shadow-lg shadow-purple-600/20"
-                          : "text-slate-400 hover:text-white hover:bg-white/5"
-                      )}
-                    >
-                      Remove Liquidity
-                    </button>
-                  </div>
-
-                  {activeTab === "add" ? (
-                    <div className="space-y-4">
-                      {/* USDC Input Panel */}
-                      <div className="bg-[#070e1c] border border-white/5 rounded-2xl p-5 space-y-3.5 transition-all duration-200 focus-within:border-purple-500/30">
-                        <div className="flex justify-between items-center text-xs">
-                          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">DEPOSIT</span>
-                          <div className="flex items-center gap-2 text-slate-500 font-mono">
-                            <span>Balance: {parseFloat(walletUsdcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</span>
-                            <button
-                              onClick={handleUsdcMax}
-                              className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all disabled:opacity-40"
-                            >
-                              MAX
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="flex justify-between items-center gap-4 pt-1">
-                          <div className="flex-1 min-w-0">
-                            <input
-                              type="text"
-                              value={usdcInput}
-                              onChange={(e) => handleUsdcInputChange(e.target.value)}
-                              placeholder="0.00"
-                              className="w-full bg-transparent text-4xl font-bold text-white placeholder-slate-700 focus:outline-none transition-all font-mono"
-                            />
-                          </div>
-
-                          <div className="shrink-0">
-                            <div className="flex items-center bg-[#070f21] border border-white/8 rounded-full pl-2.5 pr-4 py-2 text-white select-none">
-                              <TokenLogo symbol="USDC" />
-                              <span className="font-bold text-sm tracking-wider ml-2">USDC</span>
-                            </div>
-                          </div>
-                        </div>
+                  {/* Network mismatch warning if connected to another chain */}
+                  {isConnected && !isWalletOnSelectedNetwork && (
+                    <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-3.5 text-xs text-amber-300">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400" />
+                        <span>Wallet is connected to another network. Switch to {activeConfig.name} to interact.</span>
                       </div>
-
-                      {/* Middle Icon */}
-                      <div className="flex justify-center -my-4.5 relative z-10">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#070e1c] border border-white/10 text-slate-400 hover:text-white hover:border-purple-500/50 hover:shadow-[0_0_10px_rgba(157,78,221,0.4)] transition-all duration-200">
-                          <Plus className="h-3.5 w-3.5 text-purple-400" />
-                        </div>
-                      </div>
-
-                      {/* EURC Input Panel */}
-                      <div className="bg-[#070e1c] border border-white/5 rounded-2xl p-5 space-y-3.5 transition-all duration-200 focus-within:border-purple-500/30">
-                        <div className="flex justify-between items-center text-xs">
-                          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">DEPOSIT</span>
-                          <div className="flex items-center gap-2 text-slate-500 font-mono">
-                            <span>Balance: {parseFloat(walletEurcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</span>
-                            <button
-                              onClick={handleEurcMax}
-                              className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all disabled:opacity-40"
-                            >
-                              MAX
-                            </button>
-                          </div>
-                        </div>
-
-                        <div className="flex justify-between items-center gap-4 pt-1">
-                          <div className="flex-1 min-w-0">
-                            <input
-                              type="text"
-                              value={eurcInput}
-                              onChange={(e) => handleEurcInputChange(e.target.value)}
-                              placeholder="0.00"
-                              className="w-full bg-transparent text-4xl font-bold text-white placeholder-slate-700 focus:outline-none transition-all font-mono"
-                            />
-                          </div>
-
-                          <div className="shrink-0">
-                            <div className="flex items-center bg-[#070f21] border border-white/8 rounded-full pl-2.5 pr-4 py-2 text-white select-none">
-                              <TokenLogo symbol="EURC" />
-                              <span className="font-bold text-sm tracking-wider ml-2">EURC</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Add Preview / Quote Details */}
-                      {addEstimates && (
-                        <div className="rounded-2xl border border-white/5 bg-[#070e1c] p-4.5 space-y-2 text-xs">
-                          <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                            <span className="font-semibold text-slate-300">Quote Details</span>
-                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                              Live Quote
-                            </span>
-                          </div>
-
-                          <div className="space-y-1.5 pt-1">
-                            <div className="flex justify-between items-center">
-                              <span className="text-slate-400">Pool Ratio</span>
-                              <span className="text-white font-mono font-medium">1 USDC ≈ {getRatioString()} EURC</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-slate-400">Expected USDC</span>
-                              <span className="text-white font-mono font-medium">{formatUnits(addEstimates.usdcAmountRaw, 6)} USDC</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-slate-400">Expected EURC</span>
-                              <span className="text-white font-mono font-medium">{formatUnits(addEstimates.eurcAmountRaw, 6)} EURC</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-slate-400">Minimum USDC</span>
-                              <span className="text-white font-mono font-medium">{formatUnits(addEstimates.minUsdcRaw, 6)} USDC</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-slate-400">Minimum EURC</span>
-                              <span className="text-white font-mono font-medium">{formatUnits(addEstimates.minEurcRaw, 6)} EURC</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-slate-400">Estimated LP Units</span>
-                              <div className="text-right">
-                                <span className="font-mono text-white font-bold block">
-                                  {(Number(addEstimates.estimatedLPRaw) / 1000000).toFixed(6)} Units
-                                </span>
-                                <span className="text-[10px] text-slate-500 block font-mono">
-                                  ({formatUnits(addEstimates.estimatedLPRaw, 18)} UNI-V2)
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="pt-1.5 border-t border-white/5 text-[10px] text-slate-500 flex items-center gap-1">
-                              <Clock className="h-3 w-3 text-purple-400 shrink-0" />
-                              <span>Slippage: 1% | Deadline: 20 minutes</span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
                       <Button
-                        disabled={!isAddValid || txStatus !== "idle"}
-                        onClick={handleAddLiquidity}
-                        className={cn(
-                          "w-full text-sm font-bold py-3.5 h-12 rounded-xl transition-all duration-300 active:scale-[0.98]",
-                          "bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf] hover:from-[#3b7cff] hover:via-[#8c3ed9] hover:to-[#6a1cb0]",
-                          "text-white shadow-[0_4px_14px_rgba(157,78,221,0.3)] hover:shadow-[0_4px_20px_rgba(157,78,221,0.5)]",
-                          (!isAddValid || txStatus !== "idle") && "opacity-50 cursor-not-allowed hover:shadow-none hover:from-[#4f8cff] hover:via-[#9d4edd] hover:to-[#7b2cbf]"
-                        )}
+                        size="sm"
+                        variant="outline"
+                        disabled={isSwitching}
+                        onClick={handleSwitchToSelectedNetwork}
+                        className="h-7 text-[11px] border-amber-500/30 hover:bg-amber-500/20 text-white shrink-0"
                       >
-                        Add Liquidity
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {/* LP Input Panel */}
-                      <div className="bg-[#070e1c] border border-white/5 rounded-2xl p-5 space-y-3.5 transition-all duration-200 focus-within:border-purple-500/30">
-                        <div className="flex justify-between items-center text-xs">
-                          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">LP Pool Units to Remove</span>
-                          <div className="flex items-center gap-2 text-slate-500 font-mono">
-                            <span>Max: {(Number(poolData.userLPBalanceRaw) / 1000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} Units</span>
-                          </div>
-                        </div>
-
-                        <div className="flex justify-between items-center gap-4 pt-1">
-                          <div className="flex-1 min-w-0">
-                            <input
-                              type="text"
-                              value={lpInput}
-                              onChange={(e) => handleLpInputChange(e.target.value)}
-                              placeholder="0.00"
-                              className="w-full bg-transparent text-4xl font-bold text-white placeholder-slate-700 focus:outline-none transition-all font-mono"
-                            />
-                          </div>
-
-                          <div className="shrink-0 flex gap-1">
-                            {([25, 50, 75, 100] as const).map((pct) => (
-                              <button
-                                key={pct}
-                                onClick={() => handlePercentSelect(pct)}
-                                className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all disabled:opacity-40"
-                              >
-                                {pct === 100 ? "MAX" : `${pct}%`}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Receive Preview Cards */}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="bg-[#070e1c] border border-white/5 rounded-xl p-3 flex flex-col gap-1">
-                          <span className="text-[10px] text-slate-500 font-semibold uppercase">USDC to Receive</span>
-                          <span className="text-sm font-bold text-white font-mono">
-                            {removeEstimates 
-                              ? parseFloat(formatUnits(removeEstimates.usdcExpectedRaw, 6)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })
-                              : "0.00"}{" "}
-                            USDC
-                          </span>
-                        </div>
-                        <div className="bg-[#070e1c] border border-white/5 rounded-xl p-3 flex flex-col gap-1">
-                          <span className="text-[10px] text-slate-500 font-semibold uppercase">EURC to Receive</span>
-                          <span className="text-sm font-bold text-white font-mono">
-                            {removeEstimates 
-                              ? parseFloat(formatUnits(removeEstimates.eurcExpectedRaw, 6)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })
-                              : "0.00"}{" "}
-                            EURC
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Remove Preview / Quote Details */}
-                      {removeEstimates && (
-                        <div className="rounded-2xl border border-white/5 bg-[#070e1c] p-4.5 space-y-2 text-xs">
-                          <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                            <span className="font-semibold text-slate-300">Quote Details</span>
-                            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                              Live Quote
-                            </span>
-                          </div>
-
-                          <div className="space-y-1.5 pt-1">
-                            <div className="flex justify-between items-center">
-                              <span className="text-slate-400">Selected Pool Units</span>
-                              <span className="text-white font-mono font-medium">{lpInput} Units</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-slate-400">Expected USDC</span>
-                              <span className="text-white font-mono font-medium">{formatUnits(removeEstimates.usdcExpectedRaw, 6)} USDC</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-slate-400">Expected EURC</span>
-                              <span className="text-white font-mono font-medium">{formatUnits(removeEstimates.eurcExpectedRaw, 6)} EURC</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-slate-400">Minimum USDC</span>
-                              <span className="text-white font-mono font-medium">{formatUnits(removeEstimates.minUsdcRaw, 6)} USDC</span>
-                            </div>
-                            <div className="flex justify-between items-center">
-                              <span className="text-slate-400">Minimum EURC</span>
-                              <span className="text-white font-mono font-medium">{formatUnits(removeEstimates.minEurcRaw, 6)} EURC</span>
-                            </div>
-
-                            <div className="pt-1.5 border-t border-white/5 text-[10px] text-slate-500 flex items-center gap-1">
-                              <Clock className="h-3 w-3 text-purple-400 shrink-0" />
-                              <span>Slippage: 1% | Deadline: 20 minutes</span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-
-                      <Button
-                        disabled={!isRemoveValid || txStatus !== "idle"}
-                        onClick={handleRemoveLiquidity}
-                        className={cn(
-                          "w-full text-sm font-bold py-3.5 h-12 rounded-xl transition-all duration-300 active:scale-[0.98]",
-                          "bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf] hover:from-[#3b7cff] hover:via-[#8c3ed9] hover:to-[#6a1cb0]",
-                          "text-white shadow-[0_4px_14px_rgba(157,78,221,0.3)] hover:shadow-[0_4px_20px_rgba(157,78,221,0.5)]",
-                          (!isRemoveValid || txStatus !== "idle") && "opacity-50 cursor-not-allowed hover:shadow-none hover:from-[#4f8cff] hover:via-[#9d4edd] hover:to-[#7b2cbf]"
-                        )}
-                      >
-                        Remove Liquidity
+                        {isSwitching ? "Switching..." : `Switch to ${activeConfig.name}`}
                       </Button>
                     </div>
                   )}
 
-                  {/* Dynamic Status panel (below action buttons) */}
-                  {txStatus !== "idle" && (
-                    <div className="border-t border-white/5 pt-3.5 mt-2 space-y-2.5">
-                      <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
-                        <span>Transaction Status</span>
-                        {txStatus === "failed" && (
-                          <span className="text-[10px] font-medium text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20">Failed</span>
-                        )}
-                        {txStatus === "success" && (
-                          <span className="text-[10px] font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">Success</span>
-                        )}
+                  {!activeConfig.isDeployed ? (
+                    /* Base Sepolia In-Preparation Notice */
+                    <div className="rounded-2xl border border-blue-500/20 bg-blue-500/5 p-6 text-center space-y-4 my-2">
+                      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-500/10 border border-blue-500/20 text-blue-400">
+                        <Clock className="h-6 w-6" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <h3 className="text-base font-bold text-white">Base Sepolia Pool is being prepared</h3>
+                        <p className="text-xs text-slate-300 max-w-md mx-auto leading-relaxed">
+                          The Base Sepolia USDC/EURC liquidity pool is currently being configured. Liquidity actions (Add / Remove) will become available after the Base Sepolia pool contracts are deployed.
+                        </p>
+                      </div>
+                      <div className="pt-2 flex flex-wrap items-center justify-center gap-2 text-xs text-slate-400 font-mono">
+                        <span className="bg-[#070e1c] border border-white/5 px-2.5 py-1 rounded-md">USDC: {activeConfig.tokens.USDC.address.slice(0, 6)}...{activeConfig.tokens.USDC.address.slice(-4)}</span>
+                        <span className="bg-[#070e1c] border border-white/5 px-2.5 py-1 rounded-md">EURC: {activeConfig.tokens.EURC.address.slice(0, 6)}...{activeConfig.tokens.EURC.address.slice(-4)}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Active Network (Arc Testnet) Interaction Form */
+                    <>
+                      {/* Tab Switcher */}
+                      <div className="flex rounded-xl bg-[#070e1c]/80 p-1 border border-white/5 mb-6">
+                        <button
+                          onClick={() => setActiveTab("add")}
+                          className={cn(
+                            "flex-1 py-2 text-xs font-bold rounded-lg transition-all duration-200 cursor-pointer",
+                            activeTab === "add"
+                              ? "bg-purple-600 text-white shadow-lg shadow-purple-600/20"
+                              : "text-slate-400 hover:text-white hover:bg-white/5"
+                          )}
+                        >
+                          Add Liquidity
+                        </button>
+                        <button
+                          onClick={() => setActiveTab("remove")}
+                          className={cn(
+                            "flex-1 py-2 text-xs font-bold rounded-lg transition-all duration-200 cursor-pointer",
+                            activeTab === "remove"
+                              ? "bg-purple-600 text-white shadow-lg shadow-purple-600/20"
+                              : "text-slate-400 hover:text-white hover:bg-white/5"
+                          )}
+                        >
+                          Remove Liquidity
+                        </button>
                       </div>
 
-                      <div className="flex items-center gap-3 bg-[#070e1c] border border-white/5 rounded-xl p-3 text-slate-300">
-                        {txStatus !== "success" && txStatus !== "failed" && (
-                          <Loader2 className="h-4 w-4 animate-spin text-purple-400 shrink-0" />
-                        )}
-                        <div className="text-xs space-y-1">
-                          <p className="font-semibold text-white">{confirmStage || "Executing transaction..."}</p>
-                          {txStatus === "success" && <p className="text-[10px] text-emerald-400 font-medium">Transaction completed successfully!</p>}
-                          {txStatus === "failed" && txError && <p className="text-[10px] text-rose-400 font-medium">{txError}</p>}
-                        </div>
-                      </div>
+                      {activeTab === "add" ? (
+                        <div className="space-y-4">
+                          {/* USDC Input Panel */}
+                          <div className="bg-[#070e1c] border border-white/5 rounded-2xl p-5 space-y-3.5 transition-all duration-200 focus-within:border-purple-500/30">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">DEPOSIT</span>
+                              <div className="flex items-center gap-2 text-slate-500 font-mono">
+                                <span>Balance: {parseFloat(walletUsdcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</span>
+                                <button
+                                  onClick={handleUsdcMax}
+                                  className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all disabled:opacity-40 cursor-pointer"
+                                >
+                                  MAX
+                                </button>
+                              </div>
+                            </div>
 
-                      {txHash && (
-                        <div className="flex justify-between items-center text-[10px] text-slate-500 pt-2 border-t border-white/5">
-                          <span>Transaction Hash</span>
-                          <a
-                            href={`https://testnet.arcscan.app/tx/${txHash}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-purple-400 hover:text-white flex items-center gap-1 transition-all font-mono"
+                            <div className="flex justify-between items-center gap-4 pt-1">
+                              <div className="flex-1 min-w-0">
+                                <input
+                                  type="text"
+                                  value={usdcInput}
+                                  onChange={(e) => handleUsdcInputChange(e.target.value)}
+                                  placeholder="0.00"
+                                  className="w-full bg-transparent text-4xl font-bold text-white placeholder-slate-700 focus:outline-none transition-all font-mono"
+                                />
+                              </div>
+
+                              <div className="shrink-0">
+                                <div className="flex items-center bg-[#070f21] border border-white/8 rounded-full pl-2.5 pr-4 py-2 text-white select-none">
+                                  <TokenLogo symbol="USDC" />
+                                  <span className="font-bold text-sm tracking-wider ml-2">USDC</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Middle Icon */}
+                          <div className="flex justify-center -my-4.5 relative z-10">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#070e1c] border border-white/10 text-slate-400 hover:text-white hover:border-purple-500/50 hover:shadow-[0_0_10px_rgba(157,78,221,0.4)] transition-all duration-200">
+                              <Plus className="h-3.5 w-3.5 text-purple-400" />
+                            </div>
+                          </div>
+
+                          {/* EURC Input Panel */}
+                          <div className="bg-[#070e1c] border border-white/5 rounded-2xl p-5 space-y-3.5 transition-all duration-200 focus-within:border-purple-500/30">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">DEPOSIT</span>
+                              <div className="flex items-center gap-2 text-slate-500 font-mono">
+                                <span>Balance: {parseFloat(walletEurcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</span>
+                                <button
+                                  onClick={handleEurcMax}
+                                  className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all disabled:opacity-40 cursor-pointer"
+                                >
+                                  MAX
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="flex justify-between items-center gap-4 pt-1">
+                              <div className="flex-1 min-w-0">
+                                <input
+                                  type="text"
+                                  value={eurcInput}
+                                  onChange={(e) => handleEurcInputChange(e.target.value)}
+                                  placeholder="0.00"
+                                  className="w-full bg-transparent text-4xl font-bold text-white placeholder-slate-700 focus:outline-none transition-all font-mono"
+                                />
+                              </div>
+
+                              <div className="shrink-0">
+                                <div className="flex items-center bg-[#070f21] border border-white/8 rounded-full pl-2.5 pr-4 py-2 text-white select-none">
+                                  <TokenLogo symbol="EURC" />
+                                  <span className="font-bold text-sm tracking-wider ml-2">EURC</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Add Preview / Quote Details */}
+                          {addEstimates && (
+                            <div className="rounded-2xl border border-white/5 bg-[#070e1c] p-4.5 space-y-2 text-xs">
+                              <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                                <span className="font-semibold text-slate-300">Quote Details</span>
+                                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                  Live Quote
+                                </span>
+                              </div>
+
+                              <div className="space-y-1.5 pt-1">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-400">Pool Ratio</span>
+                                  <span className="text-white font-mono font-medium">1 USDC ≈ {getRatioString()} EURC</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-400">Expected USDC</span>
+                                  <span className="text-white font-mono font-medium">{formatUnits(addEstimates.usdcAmountRaw, activeConfig.tokens.USDC.decimals)} USDC</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-400">Expected EURC</span>
+                                  <span className="text-white font-mono font-medium">{formatUnits(addEstimates.eurcAmountRaw, activeConfig.tokens.EURC.decimals)} EURC</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-400">Minimum USDC</span>
+                                  <span className="text-white font-mono font-medium">{formatUnits(addEstimates.minUsdcRaw, activeConfig.tokens.USDC.decimals)} USDC</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-400">Minimum EURC</span>
+                                  <span className="text-white font-mono font-medium">{formatUnits(addEstimates.minEurcRaw, activeConfig.tokens.EURC.decimals)} EURC</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-400">Estimated LP Units</span>
+                                  <div className="text-right">
+                                    <span className="font-mono text-white font-bold block">
+                                      {(Number(addEstimates.estimatedLPRaw) / 1000000).toFixed(6)} Units
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 block font-mono">
+                                      ({formatUnits(addEstimates.estimatedLPRaw, 18)} UNI-V2)
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="pt-1.5 border-t border-white/5 text-[10px] text-slate-500 flex items-center gap-1">
+                                  <Clock className="h-3 w-3 text-purple-400 shrink-0" />
+                                  <span>Slippage: 1% | Deadline: 20 minutes</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          <Button
+                            disabled={!isAddValid || txStatus !== "idle"}
+                            onClick={handleAddLiquidity}
+                            className={cn(
+                              "w-full text-sm font-bold py-3.5 h-12 rounded-xl transition-all duration-300 active:scale-[0.98] cursor-pointer",
+                              "bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf] hover:from-[#3b7cff] hover:via-[#8c3ed9] hover:to-[#6a1cb0]",
+                              "text-white shadow-[0_4px_14px_rgba(157,78,221,0.3)] hover:shadow-[0_4px_20px_rgba(157,78,221,0.5)]",
+                              (!isAddValid || txStatus !== "idle") && "opacity-50 cursor-not-allowed hover:shadow-none hover:from-[#4f8cff] hover:via-[#9d4edd] hover:to-[#7b2cbf]"
+                            )}
                           >
-                            {txHash.slice(0, 8)}...{txHash.slice(-6)}{" "}
-                            <ExternalLink className="h-3 w-3" />
-                          </a>
+                            Add Liquidity
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {/* LP Input Panel */}
+                          <div className="bg-[#070e1c] border border-white/5 rounded-2xl p-5 space-y-3.5 transition-all duration-200 focus-within:border-purple-500/30">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">LP Pool Units to Remove</span>
+                              <div className="flex items-center gap-2 text-slate-500 font-mono">
+                                <span>Max: {(Number(poolData.userLPBalanceRaw) / 1000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} Units</span>
+                              </div>
+                            </div>
+
+                            <div className="flex justify-between items-center gap-4 pt-1">
+                              <div className="flex-1 min-w-0">
+                                <input
+                                  type="text"
+                                  value={lpInput}
+                                  onChange={(e) => handleLpInputChange(e.target.value)}
+                                  placeholder="0.00"
+                                  className="w-full bg-transparent text-4xl font-bold text-white placeholder-slate-700 focus:outline-none transition-all font-mono"
+                                />
+                              </div>
+
+                              <div className="shrink-0 flex gap-1">
+                                {([25, 50, 75, 100] as const).map((pct) => (
+                                  <button
+                                    key={pct}
+                                    onClick={() => handlePercentSelect(pct)}
+                                    className="rounded-md bg-[#000000] border border-white/10 hover:bg-white/5 px-2.5 py-1 text-[10px] font-bold text-white transition-all disabled:opacity-40 cursor-pointer"
+                                  >
+                                    {pct === 100 ? "MAX" : `${pct}%`}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Receive Preview Cards */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="bg-[#070e1c] border border-white/5 rounded-xl p-3 flex flex-col gap-1">
+                              <span className="text-[10px] text-slate-500 font-semibold uppercase">USDC to Receive</span>
+                              <span className="text-sm font-bold text-white font-mono">
+                                {removeEstimates
+                                  ? parseFloat(formatUnits(removeEstimates.usdcExpectedRaw, activeConfig.tokens.USDC.decimals)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })
+                                  : "0.00"}{" "}
+                                USDC
+                              </span>
+                            </div>
+                            <div className="bg-[#070e1c] border border-white/5 rounded-xl p-3 flex flex-col gap-1">
+                              <span className="text-[10px] text-slate-500 font-semibold uppercase">EURC to Receive</span>
+                              <span className="text-sm font-bold text-white font-mono">
+                                {removeEstimates
+                                  ? parseFloat(formatUnits(removeEstimates.eurcExpectedRaw, activeConfig.tokens.EURC.decimals)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })
+                                  : "0.00"}{" "}
+                                EURC
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Remove Preview / Quote Details */}
+                          {removeEstimates && (
+                            <div className="rounded-2xl border border-white/5 bg-[#070e1c] p-4.5 space-y-2 text-xs">
+                              <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                                <span className="font-semibold text-slate-300">Quote Details</span>
+                                <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                  Live Quote
+                                </span>
+                              </div>
+
+                              <div className="space-y-1.5 pt-1">
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-400">Selected Pool Units</span>
+                                  <span className="text-white font-mono font-medium">{lpInput} Units</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-400">Expected USDC</span>
+                                  <span className="text-white font-mono font-medium">{formatUnits(removeEstimates.usdcExpectedRaw, activeConfig.tokens.USDC.decimals)} USDC</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-400">Expected EURC</span>
+                                  <span className="text-white font-mono font-medium">{formatUnits(removeEstimates.eurcExpectedRaw, activeConfig.tokens.EURC.decimals)} EURC</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-400">Minimum USDC</span>
+                                  <span className="text-white font-mono font-medium">{formatUnits(removeEstimates.minUsdcRaw, activeConfig.tokens.USDC.decimals)} USDC</span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-slate-400">Minimum EURC</span>
+                                  <span className="text-white font-mono font-medium">{formatUnits(removeEstimates.minEurcRaw, activeConfig.tokens.EURC.decimals)} EURC</span>
+                                </div>
+
+                                <div className="pt-1.5 border-t border-white/5 text-[10px] text-slate-500 flex items-center gap-1">
+                                  <Clock className="h-3 w-3 text-purple-400 shrink-0" />
+                                  <span>Slippage: 1% | Deadline: 20 minutes</span>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          <Button
+                            disabled={!isRemoveValid || txStatus !== "idle"}
+                            onClick={handleRemoveLiquidity}
+                            className={cn(
+                              "w-full text-sm font-bold py-3.5 h-12 rounded-xl transition-all duration-300 active:scale-[0.98] cursor-pointer",
+                              "bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf] hover:from-[#3b7cff] hover:via-[#8c3ed9] hover:to-[#6a1cb0]",
+                              "text-white shadow-[0_4px_14px_rgba(157,78,221,0.3)] hover:shadow-[0_4px_20px_rgba(157,78,221,0.5)]",
+                              (!isRemoveValid || txStatus !== "idle") && "opacity-50 cursor-not-allowed hover:shadow-none hover:from-[#4f8cff] hover:via-[#9d4edd] hover:to-[#7b2cbf]"
+                            )}
+                          >
+                            Remove Liquidity
+                          </Button>
                         </div>
                       )}
-                    </div>
+
+                      {/* Dynamic Status panel (below action buttons) */}
+                      {txStatus !== "idle" && (
+                        <div className="border-t border-white/5 pt-3.5 mt-2 space-y-2.5">
+                          <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
+                            <span>Transaction Status</span>
+                            {txStatus === "failed" && (
+                              <span className="text-[10px] font-medium text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20">Failed</span>
+                            )}
+                            {txStatus === "success" && (
+                              <span className="text-[10px] font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20">Success</span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center gap-3 bg-[#070e1c] border border-white/5 rounded-xl p-3 text-slate-300">
+                            {txStatus !== "success" && txStatus !== "failed" && (
+                              <Loader2 className="h-4 w-4 animate-spin text-purple-400 shrink-0" />
+                            )}
+                            <div className="text-xs space-y-1">
+                              <p className="font-semibold text-white">{confirmStage || "Executing transaction..."}</p>
+                              {txStatus === "success" && <p className="text-[10px] text-emerald-400 font-medium">Transaction completed successfully!</p>}
+                              {txStatus === "failed" && txError && <p className="text-[10px] text-rose-400 font-medium">{txError}</p>}
+                            </div>
+                          </div>
+
+                          {txHash && (
+                            <div className="flex justify-between items-center text-[10px] text-slate-500 pt-2 border-t border-white/5">
+                              <span>Transaction Hash</span>
+                              <a
+                                href={`${activeConfig.blockExplorerUrl}/tx/${txHash}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-purple-400 hover:text-white flex items-center gap-1 transition-all font-mono"
+                              >
+                                {txHash.slice(0, 8)}...{txHash.slice(-6)}{" "}
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                 </CardContent>
               </Card>
@@ -929,37 +1095,49 @@ export default function PoolPage() {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-bold flex items-center justify-between text-white">
                     <span>Pool Overview</span>
-                    <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">Active</Badge>
+                    {activeConfig.isDeployed ? (
+                      <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">Active</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-amber-400 border-amber-500/30 bg-amber-500/10">In Preparation</Badge>
+                    )}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3.5 text-xs">
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400">USDC Reserve:</span>
                     <span className="font-semibold text-white font-mono">
-                      {parseFloat(poolData.reserve0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} USDC
+                      {activeConfig.isDeployed
+                        ? `${parseFloat(poolData.reserve0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} USDC`
+                        : "— (Pending Deployment)"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400">EURC Reserve:</span>
                     <span className="font-semibold text-white font-mono">
-                      {parseFloat(poolData.reserve1).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} EURC
+                      {activeConfig.isDeployed
+                        ? `${parseFloat(poolData.reserve1).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} EURC`
+                        : "— (Pending Deployment)"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400">Total Pool Units:</span>
                     <span className="font-semibold text-white font-mono">
-                      {(Number(poolData.totalSupplyRaw) / 1000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} Units
+                      {activeConfig.isDeployed
+                        ? `${(Number(poolData.totalSupplyRaw) / 1000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })} Units`
+                        : "—"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-slate-400">Current Ratio:</span>
                     <span className="font-semibold text-white font-mono">
-                      1 USDC = {getRatioString()} EURC
+                      {activeConfig.isDeployed
+                        ? `1 USDC = ${getRatioString()} EURC`
+                        : "1 USDC = 1.0000 EURC (Target)"}
                     </span>
                   </div>
                   <div className="flex justify-between items-center pt-2.5 border-t border-white/5">
                     <span className="text-slate-400">Network:</span>
-                    <span className="font-semibold text-white">Arc Testnet (5042002)</span>
+                    <span className="font-semibold text-white">{activeConfig.name} ({activeConfig.id})</span>
                   </div>
                 </CardContent>
               </Card>
@@ -977,9 +1155,34 @@ export default function PoolPage() {
                     <div className="rounded-xl border border-dashed border-white/10 p-4 text-center">
                       <p className="text-slate-400">Wallet disconnected.</p>
                     </div>
-                  ) : !isArcTestnet ? (
-                    <div className="rounded-xl border border-dashed border-red-500/20 bg-red-500/5 p-4 text-center">
-                      <p className="text-red-400 font-semibold">Wrong Network</p>
+                  ) : !isWalletOnSelectedNetwork ? (
+                    <div className="rounded-xl border border-dashed border-amber-500/20 bg-amber-500/5 p-4 text-center space-y-2">
+                      <p className="text-amber-400 font-semibold">Wrong Network</p>
+                      <p className="text-xs text-slate-400">Switch your wallet to {activeConfig.name} to view position.</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={isSwitching}
+                        onClick={handleSwitchToSelectedNetwork}
+                        className="mt-1 h-7 text-xs border-amber-500/30 hover:bg-amber-500/20 text-white cursor-pointer"
+                      >
+                        {isSwitching ? "Switching..." : `Switch to ${activeConfig.name}`}
+                      </Button>
+                    </div>
+                  ) : !activeConfig.isDeployed ? (
+                    <div className="rounded-xl border border-dashed border-white/10 p-4 text-center space-y-2">
+                      <p className="text-slate-300 font-semibold">No Position on {activeConfig.name}</p>
+                      <p className="text-xs text-slate-400">Pool is currently being configured. Positions will appear here once contracts are deployed.</p>
+                      <div className="pt-2 border-t border-white/5 text-left space-y-1.5 text-xs text-slate-400 font-mono">
+                        <div className="flex justify-between">
+                          <span>Wallet USDC:</span>
+                          <span className="text-white">{parseFloat(walletUsdcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Wallet EURC:</span>
+                          <span className="text-white">{parseFloat(walletEurcBalance).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })}</span>
+                        </div>
+                      </div>
                     </div>
                   ) : (
                     <>
@@ -1020,7 +1223,7 @@ export default function PoolPage() {
                             </div>
                             <div className="flex justify-between">
                               <span>LP Token Address:</span>
-                              <span className="text-white truncate max-w-[120px]" title={PAIR_ADDRESS}>{PAIR_ADDRESS}</span>
+                              <span className="text-white truncate max-w-[120px]" title={activeConfig.pairAddress || ""}>{activeConfig.pairAddress || "Not deployed"}</span>
                             </div>
                           </div>
                         </details>
