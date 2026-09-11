@@ -13,6 +13,7 @@ import { usePoolData } from "@/hooks/use-pool-data";
 import { TokenLogo } from "@/components/bridge/swap-form";
 import { useWriteContract, useSwitchChain } from "wagmi";
 import { arcPublicClient } from "@/lib/arc-client";
+import { basePublicClient, clearBaseBalanceCache } from "@/lib/base-client";
 import { safeArcReadContract, sanitizeArcError, clearArcReadCache } from "@/lib/arc-read-infra";
 import { parseUnits, formatUnits, erc20Abi } from "viem";
 import { cn } from "@/lib/utils";
@@ -104,15 +105,18 @@ export default function PoolPage() {
     isWalletOnSelectedNetwork
   );
 
-  const publicClient = arcPublicClient;
+  const activePublicClient = selectedNetwork === "Base" ? basePublicClient : arcPublicClient;
   const { writeContractAsync } = useWriteContract();
 
-  // Helper to read contracts with automatic retry on rate limiting
+  // Helper to read contracts using the appropriate network client
   const safeReadContract = useCallback(async <T,>(
     args: Parameters<typeof safeArcReadContract>[0]
   ): Promise<T> => {
+    if (selectedNetwork === "Base") {
+      return basePublicClient.readContract(args as Parameters<typeof basePublicClient.readContract>[0]) as Promise<T>;
+    }
     return safeArcReadContract<T>(args, { cachePolicy: "none", forceRefresh: true }) as Promise<T>;
-  }, []);
+  }, [selectedNetwork]);
  
   // Clean error message to hide raw RPC endpoints or stack traces from users
   const sanitizeErrorMessage = useCallback((err: unknown): string => {
@@ -120,8 +124,16 @@ export default function PoolPage() {
     if (errMsg.includes("User rejected") || errMsg.toLowerCase().includes("user rejected")) {
       return "Transaction rejected by wallet signature.";
     }
+    if (selectedNetwork === "Base") {
+      if (errMsg.includes("revert") || errMsg.includes("execution reverted")) {
+        const match = errMsg.match(/reverted with the following reason:\s*([^\n]+)/i) ||
+                      errMsg.match(/execution reverted:\s*([^\n]+)/i);
+        return match && match[1] ? `Transaction reverted: ${match[1].trim()}` : "Transaction reverted on-chain.";
+      }
+      return err instanceof Error ? err.message : "An unexpected error occurred.";
+    }
     return sanitizeArcError(err);
-  }, []);
+  }, [selectedNetwork]);
 
   // Connected token balances derived from unified poolData hook
   const walletUsdcBalance = poolData?.walletUSDCBalance ?? "0.00";
@@ -350,7 +362,7 @@ export default function PoolPage() {
       }
     }
 
-    if (!addEstimates || !publicClient) return;
+    if (!addEstimates || !activePublicClient) return;
 
     setTxError(null);
     setTxHash("");
@@ -408,8 +420,12 @@ export default function PoolPage() {
           chainId: targetChainId
         });
         setConfirmStage("Confirming USDC approval on-chain...");
-        await publicClient.waitForTransactionReceipt({ hash: approveHash });
-        clearArcReadCache(`arc:${usdcAddress}`);
+        await activePublicClient.waitForTransactionReceipt({ hash: approveHash });
+        if (selectedNetwork === "Base") {
+          clearBaseBalanceCache();
+        } else {
+          clearArcReadCache(`arc:${usdcAddress}`);
+        }
       }
  
       // Step 2: Check and Approve EURC
@@ -431,8 +447,12 @@ export default function PoolPage() {
           chainId: targetChainId
         });
         setConfirmStage("Confirming EURC approval on-chain...");
-        await publicClient.waitForTransactionReceipt({ hash: approveHash });
-        clearArcReadCache(`arc:${eurcAddress}`);
+        await activePublicClient.waitForTransactionReceipt({ hash: approveHash });
+        if (selectedNetwork === "Base") {
+          clearBaseBalanceCache();
+        } else {
+          clearArcReadCache(`arc:${eurcAddress}`);
+        }
       }
  
       // Step 3: Add Liquidity Call
@@ -460,13 +480,17 @@ export default function PoolPage() {
       setTxHash(hash);
       setTxStatus("confirming");
       setConfirmStage("Confirming transaction on-chain...");
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      const receipt = await activePublicClient.waitForTransactionReceipt({ hash });
  
       if (receipt.status === "success") {
         setTxStatus("success");
-        clearArcReadCache(`arc:${usdcAddress}`);
-        clearArcReadCache(`arc:${eurcAddress}`);
-        clearArcReadCache(`arc:${pairAddress}`);
+        if (selectedNetwork === "Base") {
+          clearBaseBalanceCache();
+        } else {
+          clearArcReadCache(`arc:${usdcAddress}`);
+          clearArcReadCache(`arc:${eurcAddress}`);
+          clearArcReadCache(`arc:${pairAddress}`);
+        }
         await refreshPoolData();
         await refreshUsdc();
         await refreshEurc();
@@ -508,7 +532,7 @@ export default function PoolPage() {
       }
     }
 
-    if (rawLPToRemove === BigInt(0) || !removeEstimates || !publicClient) return;
+    if (rawLPToRemove === BigInt(0) || !removeEstimates || !activePublicClient) return;
 
     setTxError(null);
     setTxHash("");
@@ -541,8 +565,12 @@ export default function PoolPage() {
           chainId: targetChainId
         });
         setConfirmStage("Confirming LP token approval on-chain...");
-        await publicClient.waitForTransactionReceipt({ hash: approveHash });
-        clearArcReadCache(`arc:${pairAddress}`);
+        await activePublicClient.waitForTransactionReceipt({ hash: approveHash });
+        if (selectedNetwork === "Base") {
+          clearBaseBalanceCache();
+        } else {
+          clearArcReadCache(`arc:${pairAddress}`);
+        }
       }
  
       // Step 2: Remove Liquidity Call
@@ -569,13 +597,17 @@ export default function PoolPage() {
       setTxHash(hash);
       setTxStatus("confirming");
       setConfirmStage("Confirming transaction on-chain...");
-      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+      const receipt = await activePublicClient.waitForTransactionReceipt({ hash });
  
       if (receipt.status === "success") {
         setTxStatus("success");
-        clearArcReadCache(`arc:${usdcAddress}`);
-        clearArcReadCache(`arc:${eurcAddress}`);
-        clearArcReadCache(`arc:${pairAddress}`);
+        if (selectedNetwork === "Base") {
+          clearBaseBalanceCache();
+        } else {
+          clearArcReadCache(`arc:${usdcAddress}`);
+          clearArcReadCache(`arc:${eurcAddress}`);
+          clearArcReadCache(`arc:${pairAddress}`);
+        }
         await refreshPoolData();
         await refreshUsdc();
         await refreshEurc();

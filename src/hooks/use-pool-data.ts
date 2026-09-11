@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { formatUnits, erc20Abi, Address } from "viem";
 import { safeArcReadContract, sanitizeArcError } from "@/lib/arc-read-infra";
 import { POOL_CHAINS, SupportedPoolChain } from "@/config/pool-config";
-import { fetchBaseTokenBalanceDeduped } from "@/lib/base-client";
+import { fetchBaseTokenBalanceDeduped, basePublicClient } from "@/lib/base-client";
 
 const PAIR_ABI = [
   {
@@ -99,57 +99,107 @@ async function fetchPoolData(
     };
   }
 
-  // Deployed network (Arc Testnet)
+  // Deployed network
   try {
     const pairAddress = chainConfig.pairAddress;
     const usdcAddress = chainConfig.tokens.USDC.address;
     const eurcAddress = chainConfig.tokens.EURC.address;
 
-    // 1. Reserves
-    const reservesPromise = safeArcReadContract<readonly [bigint, bigint, number]>({
-      address: pairAddress,
-      abi: PAIR_ABI,
-      functionName: "getReserves",
-    }, { cachePolicy: "shared", forceRefresh });
+    let reservesPromise: Promise<readonly [bigint, bigint, number]>;
+    let supplyPromise: Promise<bigint>;
+    let lpBalancePromise: Promise<bigint> = Promise.resolve(BigInt(0));
+    let usdcBalancePromise: Promise<bigint> = Promise.resolve(BigInt(0));
+    let eurcBalancePromise: Promise<bigint> = Promise.resolve(BigInt(0));
 
-    // 2. Total Supply
-    const supplyPromise = safeArcReadContract<bigint>({
-      address: pairAddress,
-      abi: PAIR_ABI,
-      functionName: "totalSupply",
-    }, { cachePolicy: "shared", forceRefresh });
-
-    // 3. User LP Balance
-    let lpBalancePromise = Promise.resolve(BigInt(0));
-    if (userAddress && isWalletOnSelectedChain) {
-      lpBalancePromise = safeArcReadContract<bigint>({
+    if (chain === "Base") {
+      // 1. Reserves
+      reservesPromise = basePublicClient.readContract({
         address: pairAddress,
         abi: PAIR_ABI,
-        functionName: "balanceOf",
-        args: [userAddress],
-      }, { cachePolicy: "wallet", forceRefresh });
-    }
+        functionName: "getReserves",
+      });
 
-    // 4. User USDC Balance
-    let usdcBalancePromise = Promise.resolve(BigInt(0));
-    if (userAddress && isWalletOnSelectedChain) {
-      usdcBalancePromise = safeArcReadContract<bigint>({
-        address: usdcAddress,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [userAddress],
-      }, { cachePolicy: "wallet", forceRefresh });
-    }
+      // 2. Total Supply
+      supplyPromise = basePublicClient.readContract({
+        address: pairAddress,
+        abi: PAIR_ABI,
+        functionName: "totalSupply",
+      });
 
-    // 5. User EURC Balance
-    let eurcBalancePromise = Promise.resolve(BigInt(0));
-    if (userAddress && isWalletOnSelectedChain) {
-      eurcBalancePromise = safeArcReadContract<bigint>({
-        address: eurcAddress,
-        abi: erc20Abi,
-        functionName: "balanceOf",
-        args: [userAddress],
-      }, { cachePolicy: "wallet", forceRefresh });
+      // 3. User LP Balance
+      if (userAddress && isWalletOnSelectedChain) {
+        lpBalancePromise = basePublicClient.readContract({
+          address: pairAddress,
+          abi: PAIR_ABI,
+          functionName: "balanceOf",
+          args: [userAddress],
+        });
+      }
+
+      // 4. User USDC Balance
+      if (userAddress && isWalletOnSelectedChain) {
+        usdcBalancePromise = basePublicClient.readContract({
+          address: usdcAddress,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [userAddress],
+        });
+      }
+
+      // 5. User EURC Balance
+      if (userAddress && isWalletOnSelectedChain) {
+        eurcBalancePromise = basePublicClient.readContract({
+          address: eurcAddress,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [userAddress],
+        });
+      }
+    } else {
+      // Arc Testnet
+      // 1. Reserves
+      reservesPromise = safeArcReadContract<readonly [bigint, bigint, number]>({
+        address: pairAddress,
+        abi: PAIR_ABI,
+        functionName: "getReserves",
+      }, { cachePolicy: "shared", forceRefresh });
+
+      // 2. Total Supply
+      supplyPromise = safeArcReadContract<bigint>({
+        address: pairAddress,
+        abi: PAIR_ABI,
+        functionName: "totalSupply",
+      }, { cachePolicy: "shared", forceRefresh });
+
+      // 3. User LP Balance
+      if (userAddress && isWalletOnSelectedChain) {
+        lpBalancePromise = safeArcReadContract<bigint>({
+          address: pairAddress,
+          abi: PAIR_ABI,
+          functionName: "balanceOf",
+          args: [userAddress],
+        }, { cachePolicy: "wallet", forceRefresh });
+      }
+
+      // 4. User USDC Balance
+      if (userAddress && isWalletOnSelectedChain) {
+        usdcBalancePromise = safeArcReadContract<bigint>({
+          address: usdcAddress,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [userAddress],
+        }, { cachePolicy: "wallet", forceRefresh });
+      }
+
+      // 5. User EURC Balance
+      if (userAddress && isWalletOnSelectedChain) {
+        eurcBalancePromise = safeArcReadContract<bigint>({
+          address: eurcAddress,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [userAddress],
+        }, { cachePolicy: "wallet", forceRefresh });
+      }
     }
 
     const [reserves, supply, lpBalance, usdcBalance, eurcBalance] = await Promise.all([
@@ -193,6 +243,9 @@ async function fetchPoolData(
       isDeployed: true,
     };
   } catch (err) {
+    if (chain === "Base") {
+      throw new Error(err instanceof Error ? err.message : "Failed to load Base pool data.");
+    }
     throw new Error(sanitizeArcError(err));
   }
 }
