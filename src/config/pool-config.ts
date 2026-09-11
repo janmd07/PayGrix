@@ -52,10 +52,10 @@ export const POOL_CHAINS: Record<SupportedPoolChain, PoolChainConfig> = {
     name: "Base Sepolia",
     chainKey: "Base",
     blockExplorerUrl: "https://sepolia.basescan.org",
-    factoryAddress: null,
-    routerAddress: null,
-    pairAddress: null,
-    isDeployed: false,
+    factoryAddress: "0x5aA79b302b67D64973c89d5e413079a56EAA6E32",
+    routerAddress: "0x915765FeC4BB3B3ccaC54295ef904202E00bbBBb",
+    pairAddress: "0xD4faB53906567C8c708Ad876f365B2d08cBf9A16",
+    isDeployed: true,
     tokens: {
       USDC: {
         address: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
