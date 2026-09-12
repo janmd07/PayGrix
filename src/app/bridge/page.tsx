@@ -1,10 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { HelpCircle } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useBridgeBalance } from "@/hooks/use-bridge-balance";
 import { useBridge } from "@/hooks/use-bridge";
 import { useEurcBridge } from "@/hooks/use-eurc-bridge";
@@ -12,7 +10,6 @@ import { useSolanaBridge } from "@/hooks/use-solana-bridge";
 import { BridgeAsset, getCctpDomain, IRIS_SANDBOX_BASE } from "@/config/bridge-assets";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
-import { BalanceCard } from "@/components/bridge/balance-card";
 import { TransferHistory, BridgeTransfer } from "@/components/bridge/transfer-history";
 import { cn } from "@/lib/utils";
 import dynamic from "next/dynamic";
@@ -553,8 +550,6 @@ export default function BridgePage() {
     eurcResetBridgeStatus();
   };
 
-  const isGenLayerRoute = sourceChain === "GenLayer Bradbury" || destinationChain === "GenLayer Bradbury";
-
   return (
     <AppShell>
       <PageHeader
@@ -589,29 +584,30 @@ export default function BridgePage() {
         </button>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        {/* Left: Form Widget */}
+      {activeTab === "bridge" ? (
         <div className="space-y-6">
-          {activeTab === "bridge" ? (
-            <BridgeForm
-              balance={balance}
-              symbol={symbol}
-              isLoadingBalance={isLoading}
-              sourceChain={sourceChain}
-              destinationChain={destinationChain}
-              onSourceChainChange={handleSourceChainChange}
-              onDestinationChainChange={handleDestinationChainChange}
-              status={bridgeStatus}
-              sourceTxHash={sourceTxHash}
-              destTxHash={destTxHash}
-              error={bridgeError}
-              onBridge={handleBridge}
-              isConnected={isConnected}
-              onRefresh={refreshBalance}
-              selectedAsset={selectedAsset}
-              onAssetChange={handleAssetChange}
-            />
-          ) : (
+          <BridgeForm
+            balance={balance}
+            symbol={symbol}
+            isLoadingBalance={isLoading}
+            sourceChain={sourceChain}
+            destinationChain={destinationChain}
+            onSourceChainChange={handleSourceChainChange}
+            onDestinationChainChange={handleDestinationChainChange}
+            status={bridgeStatus}
+            sourceTxHash={sourceTxHash}
+            destTxHash={destTxHash}
+            error={bridgeError}
+            onBridge={handleBridge}
+            isConnected={isConnected}
+            onRefresh={refreshBalance}
+            selectedAsset={selectedAsset}
+            onAssetChange={handleAssetChange}
+          />
+        </div>
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
+          <div className="space-y-6">
             <SwapForm
               balanceUSDC={swapUsdcBalance}
               balanceEURC={swapEurcBalance}
@@ -622,76 +618,9 @@ export default function BridgePage() {
               onNetworkChange={setSelectedSwapNetwork}
               onSwapSuccess={handleSwapSuccess}
             />
-          )}
-        </div>
+          </div>
 
-        {/* Right: Balance & Information */}
-        <div className="space-y-6">
-          {activeTab === "bridge" ? (
-            <>
-              <BalanceCard
-                chain={sourceChain}
-                balance={balance}
-                symbol={symbol}
-                isLoading={isLoading}
-                onRefresh={refreshBalance}
-              />
-
-              <Card className="border border-white/10 bg-[#060f24]/50 backdrop-blur-md">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                    <HelpCircle className={cn("h-4 w-4", isGenLayerRoute ? "text-purple-400" : "text-primary")} />
-                    {isGenLayerRoute ? "How GenLayer Adjudication Works" : "How Bridging Works"}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3.5 text-xs text-slate-400 leading-5">
-                  {isGenLayerRoute ? (
-                    <>
-                      <div className="flex gap-2">
-                        <div className="h-1.5 w-1.5 rounded-full bg-purple-500 shrink-0 mt-2" />
-                        <p>
-                          GenLayer Bradbury executes Intelligent Contracts powered by non-deterministic LLM evaluation and validator equivalence consensus.
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <div className="h-1.5 w-1.5 rounded-full bg-purple-500 shrink-0 mt-2" />
-                        <p>
-                          Base Sepolia acts as the Settlement Layer, securing USDC escrow collateral while disputes are evaluated on GenLayer.
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <div className="h-1.5 w-1.5 rounded-full bg-purple-500 shrink-0 mt-2" />
-                        <p>
-                          Once validator consensus is reached, the finalized verdict triggers automated collateral release or refund on Base Sepolia.
-                        </p>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex gap-2">
-                        <div className="h-1.5 w-1.5 rounded-full bg-primary shrink-0 mt-2" />
-                        <p>
-                          USDC transfers use the Circle Cross-Chain Transfer Protocol (CCTP) to safely burn on the source network and mint on the destination network.
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <div className="h-1.5 w-1.5 rounded-full bg-primary shrink-0 mt-2" />
-                        <p>
-                          No slippage or exchange pools: all transfers are minted 1:1, meaning you receive exactly the amount of USDC you sent.
-                        </p>
-                      </div>
-                      <div className="flex gap-2">
-                        <div className="h-1.5 w-1.5 rounded-full bg-primary shrink-0 mt-2" />
-                        <p>
-                          Wallet balances update automatically upon block confirmation. Keep an eye on network status icons for real-time congestion warnings.
-                        </p>
-                      </div>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            </>
-          ) : (
+          <div className="space-y-6">
             <SwapBalanceCard
               usdcBalance={swapUsdcBalance}
               eurcBalance={swapEurcBalance}
@@ -701,9 +630,9 @@ export default function BridgePage() {
               onRefresh={handleRefreshSwapBalances}
               network={selectedSwapNetwork}
             />
-          )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Bottom: History */}
       <div className="mt-6">
