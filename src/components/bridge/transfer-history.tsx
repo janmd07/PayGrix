@@ -10,6 +10,7 @@ export type BridgeTransfer = {
   fromChain: string;
   toChain: string;
   amount: string;
+  token?: "USDC" | "EURC";
   status: "Completed" | "Pending" | "Failed";
   date: string;
   sourceTx?: string;
@@ -119,12 +120,16 @@ export function TransferHistory({ transfers, isConnected = false }: TransferHist
                       </a>
                     )}
                   </div>
-                  <div className="font-semibold text-white">
-                    {parseFloat(tx.amount).toLocaleString(undefined, {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 6,
-                    })}{" "}
-                    USDC
+                  <div className="font-semibold text-white flex items-center gap-1.5">
+                    <span>
+                      {parseFloat(tx.amount).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 6,
+                      })}
+                    </span>
+                    <span className={tx.token === "EURC" ? "text-purple-400 font-bold" : "text-primary font-bold"}>
+                      {tx.token || "USDC"}
+                    </span>
                   </div>
                   <div>
                     <Badge

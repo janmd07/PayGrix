@@ -26,6 +26,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { useGenlayerBridge } from "@/hooks/use-genlayer-bridge";
 import { isAddress } from "viem";
+import { BridgeAsset } from "@/config/bridge-assets";
 
 const CHAINS = ["Arc Testnet", "Base Sepolia", "Arbitrum Sepolia", "Solana Devnet", "GenLayer Bradbury"];
 
@@ -104,6 +105,8 @@ interface BridgeFormProps {
   onBridge: (amount: string) => void;
   isConnected: boolean;
   onRefresh?: () => void;
+  selectedAsset?: BridgeAsset;
+  onAssetChange?: (asset: BridgeAsset) => void;
 }
 
 export function BridgeForm({
@@ -121,6 +124,8 @@ export function BridgeForm({
   onBridge,
   isConnected,
   onRefresh,
+  selectedAsset = "USDC",
+  onAssetChange,
 }: BridgeFormProps) {
   const [amount, setAmount] = useState<string>("");
   const [recipientAddress, setRecipientAddress] = useState<string>("");
@@ -139,15 +144,19 @@ export function BridgeForm({
   } = useGenlayerBridge();
 
   const [activeDropdown, setActiveDropdown] = useState<"source" | "destination" | null>(null);
+  const [isAssetMenuOpen, setIsAssetMenuOpen] = useState<boolean>(false);
   const [failedLogos, setFailedLogos] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    if (!activeDropdown) return;
+    if (!activeDropdown && !isAssetMenuOpen) return;
 
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
       if (!target.closest(".chain-selector-container")) {
         setActiveDropdown(null);
+      }
+      if (!target.closest(".asset-dropdown-container")) {
+        setIsAssetMenuOpen(false);
       }
     };
 
@@ -155,7 +164,7 @@ export function BridgeForm({
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [activeDropdown]);
+  }, [activeDropdown, isAssetMenuOpen]);
 
   const phantomWallet = wallets.find((w) => w.adapter.name === "Phantom");
   const isPhantomNotDetected = phantomWallet?.readyState === "NotDetected";
@@ -239,6 +248,8 @@ export function BridgeForm({
       setActiveDropdown(null);
     };
 
+    const availableChains = selectedAsset === "EURC" ? ["Base Sepolia", "Arc Testnet"] : CHAINS;
+
     return (
       <div className="relative shrink-0 chain-selector-container">
         <button
@@ -287,7 +298,7 @@ export function BridgeForm({
             role="listbox"
             className="absolute top-full mt-2 left-0 z-50 min-w-[200px] bg-[#070f21] border border-white/10 rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] p-1.5 animate-in fade-in slide-in-from-top-1 duration-100"
           >
-            {CHAINS.map((c) => {
+            {availableChains.map((c) => {
               const isOptionSelected = c === value;
               const optionHasFailed = failedLogos[c];
               const optionLogoUrl = CHAIN_DETAILS[c]?.logo;
@@ -353,10 +364,10 @@ export function BridgeForm({
     if (!isValidAmount) return "Enter Amount";
     if (status === "preparing") return "Preparing...";
     if (status === "waiting-wallet") return "Waiting for Wallet...";
-    if (status === "bridging") return "Bridging USDC...";
+    if (status === "bridging") return `Bridging ${symbol}...`;
     if (status === "completed") return "Bridge Completed";
     if (status === "failed") return "Bridge Failed";
-    return "Bridge USDC";
+    return `Bridge ${symbol}`;
   };
 
   return (
@@ -381,20 +392,70 @@ export function BridgeForm({
               ) : (
                 <>
                   <Coins className="h-5 w-5 text-indigo-400 animate-pulse" />
-                  Bridge USDC
+                  {`Bridge ${symbol}`}
                 </>
               )}
             </CardTitle>
-            {isGenLayerRoute && (
-              <Badge variant="outline" className="text-[10px] bg-purple-500/10 border-purple-500/30 text-purple-300 font-mono">
-                Consensus Layer
-              </Badge>
-            )}
+            <div className="flex items-center gap-2">
+              {/* Asset Selector Dropdown: [ USDC ▼ ] / [ EURC ] */}
+              <div className="relative asset-dropdown-container">
+                <button
+                  type="button"
+                  onClick={() => setIsAssetMenuOpen((prev) => !prev)}
+                  disabled={isSelectDisabled}
+                  className="flex items-center gap-2 bg-[#070f21] border border-white/10 hover:border-primary/40 rounded-full pl-2 pr-3 py-1 text-xs font-bold text-white transition-all shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <img
+                    src={selectedAsset === "EURC" ? "/tokens/eurc.png" : "/tokens/usdc.png"}
+                    alt={selectedAsset}
+                    className="w-4 h-4 rounded-full object-contain"
+                  />
+                  <span>{selectedAsset}</span>
+                  <ChevronDown
+                    className={cn(
+                      "h-3.5 w-3.5 text-slate-400 transition-transform duration-200",
+                      isAssetMenuOpen && "rotate-180 text-white"
+                    )}
+                  />
+                </button>
+                {isAssetMenuOpen && (
+                  <div className="absolute right-0 top-full mt-1.5 z-50 min-w-[140px] bg-[#070f21] border border-white/10 rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] p-1.5 animate-in fade-in slide-in-from-top-1">
+                    {(["USDC", "EURC"] as BridgeAsset[]).map((ast) => (
+                      <button
+                        key={ast}
+                        type="button"
+                        onClick={() => {
+                          onAssetChange?.(ast);
+                          setIsAssetMenuOpen(false);
+                        }}
+                        className={cn(
+                          "flex items-center gap-2 w-full px-2.5 py-1.5 text-xs font-semibold rounded-lg text-slate-300 hover:bg-[#0d1b3a] hover:text-white transition-colors text-left cursor-pointer",
+                          selectedAsset === ast && "bg-[#11244e] text-white font-bold border border-white/5"
+                        )}
+                      >
+                        <img
+                          src={ast === "EURC" ? "/tokens/eurc.png" : "/tokens/usdc.png"}
+                          alt={ast}
+                          className="w-4 h-4 rounded-full object-contain"
+                        />
+                        <span>{ast}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {isGenLayerRoute && (
+                <Badge variant="outline" className="text-[10px] bg-purple-500/10 border-purple-500/30 text-purple-300 font-mono">
+                  Consensus Layer
+                </Badge>
+              )}
+            </div>
           </div>
           <CardDescription className="text-xs text-slate-400">
             {isGenLayerRoute
               ? "Decentralized dispute adjudication on GenLayer Bradbury with USDC settlement secured on Base Sepolia."
-              : "Transfer USDC tokens across testnets instantly."}
+              : `Transfer ${symbol} tokens across testnets instantly.`}
           </CardDescription>
         </CardHeader>
 
@@ -474,14 +535,18 @@ export function BridgeForm({
                     }
                     className="bg-transparent text-2xl font-bold font-mono text-white placeholder-slate-600 focus:outline-none w-full text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
-                  <div className="flex items-center gap-1.5 bg-white/5 border border-white/8 rounded-full px-2.5 py-1 select-none shrink-0">
+                  <div
+                    onClick={() => setIsAssetMenuOpen((prev) => !prev)}
+                    className="flex items-center gap-1.5 bg-white/5 border border-white/8 hover:border-primary/40 rounded-full px-2.5 py-1 select-none shrink-0 cursor-pointer transition-colors"
+                  >
                     <img
-                      src="/tokens/usdc.png"
+                      src={selectedAsset === "EURC" ? "/tokens/eurc.png" : "/tokens/usdc.png"}
                       alt={symbol}
                       className="w-5 h-5 object-contain bg-transparent"
                       style={{ aspectRatio: "1/1" }}
                     />
                     <span className="text-xs font-bold text-slate-200">{symbol}</span>
+                    <ChevronDown className="h-3 w-3 text-slate-400" />
                   </div>
                 </div>
               </div>
@@ -531,7 +596,7 @@ export function BridgeForm({
                   </span>
                   <div className="flex items-center gap-1.5 bg-white/5 border border-white/8 rounded-full px-2.5 py-1 select-none shrink-0">
                     <img
-                      src="/tokens/usdc.png"
+                      src={selectedAsset === "EURC" ? "/tokens/eurc.png" : "/tokens/usdc.png"}
                       alt={symbol}
                       className="w-5 h-5 object-contain bg-transparent"
                       style={{ aspectRatio: "1/1" }}

@@ -7,7 +7,9 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useBridgeBalance } from "@/hooks/use-bridge-balance";
 import { useBridge } from "@/hooks/use-bridge";
+import { useEurcBridge } from "@/hooks/use-eurc-bridge";
 import { useSolanaBridge } from "@/hooks/use-solana-bridge";
+import { BridgeAsset } from "@/config/bridge-assets";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { BalanceCard } from "@/components/bridge/balance-card";
@@ -37,6 +39,7 @@ export default function BridgePage() {
   const [selectedSwapNetwork, setSelectedSwapNetwork] = useState<SupportedSwapChain>("Arc");
   
   // Bridge-specific states and hooks
+  const [selectedAsset, setSelectedAsset] = useState<BridgeAsset>("USDC");
   const [sourceChain, setSourceChain] = useState<string>("Arc Testnet");
   const [destinationChain, setDestinationChain] = useState<string>("Base Sepolia");
   const [transfers, setTransfers] = useState<BridgeTransfer[]>([]);
@@ -52,7 +55,7 @@ export default function BridgePage() {
 
   // Determine active address for balance checks
   const activeAddress = sourceChain === "Solana Devnet" ? (solanaPublicKey?.toBase58() as `0x${string}`) : address;
-  const { balance, symbol, isLoading, refreshBalance } = useBridgeBalance(sourceChain, activeAddress);
+  const { balance, symbol, isLoading, refreshBalance } = useBridgeBalance(sourceChain, activeAddress, selectedAsset);
 
   // Existing EVM bridge hook
   const {
@@ -64,6 +67,16 @@ export default function BridgePage() {
     resetStatus: evmResetBridgeStatus,
   } = useBridge();
 
+  // Dedicated EURC CCTPx bridge hook
+  const {
+    status: eurcStatus,
+    sourceTxHash: eurcSourceTxHash,
+    destTxHash: eurcDestTxHash,
+    error: eurcError,
+    bridgeEURC,
+    resetStatus: eurcResetBridgeStatus,
+  } = useEurcBridge();
+
   // New Solana bridge hook
   const {
     status: solanaStatus,
@@ -74,11 +87,11 @@ export default function BridgePage() {
     resetStatus: solanaResetBridgeStatus,
   } = useSolanaBridge();
 
-  // Select active state based on route
-  const bridgeStatus = isSolanaRoute ? solanaStatus : evmStatus;
-  const sourceTxHash = isSolanaRoute ? solanaSourceTxHash : evmSourceTxHash;
-  const destTxHash = isSolanaRoute ? solanaDestTxHash : evmDestTxHash;
-  const bridgeError = isSolanaRoute ? solanaError : evmError;
+  // Select active state based on selected asset and route
+  const bridgeStatus = selectedAsset === "EURC" ? eurcStatus : (isSolanaRoute ? solanaStatus : evmStatus);
+  const sourceTxHash = selectedAsset === "EURC" ? eurcSourceTxHash : (isSolanaRoute ? solanaSourceTxHash : evmSourceTxHash);
+  const destTxHash = selectedAsset === "EURC" ? eurcDestTxHash : (isSolanaRoute ? solanaDestTxHash : evmDestTxHash);
+  const bridgeError = selectedAsset === "EURC" ? eurcError : (isSolanaRoute ? solanaError : evmError);
 
   // Swap-specific states and hooks
   const [swaps, setSwaps] = useState<SwapHistoryItem[]>([]);
@@ -317,7 +330,9 @@ export default function BridgePage() {
   const handleBridge = async (amount: string) => {
     try {
       let result;
-      if (isSolanaRoute) {
+      if (selectedAsset === "EURC") {
+        result = await bridgeEURC(amount, sourceChain, destinationChain);
+      } else if (isSolanaRoute) {
         if (!isHybridSolanaRoute) {
           alert("Phase 1 supports Solana Devnet only with Arc Testnet.");
           return;
@@ -341,6 +356,7 @@ export default function BridgePage() {
           fromChain: sourceChain,
           toChain: destinationChain,
           amount: amount,
+          token: selectedAsset,
           status: "Completed",
           date: new Date().toLocaleString(),
           sourceTx: burnStep?.txHash || sourceTxHash,
@@ -410,6 +426,23 @@ export default function BridgePage() {
     refreshBalance();
   };
 
+  const handleAssetChange = (asset: BridgeAsset) => {
+    setSelectedAsset(asset);
+    if (asset === "EURC") {
+      if (sourceChain !== "Base Sepolia" && sourceChain !== "Arc Testnet") {
+        setSourceChain("Base Sepolia");
+        setDestinationChain("Arc Testnet");
+      } else if (destinationChain !== "Base Sepolia" && destinationChain !== "Arc Testnet") {
+        setDestinationChain(sourceChain === "Base Sepolia" ? "Arc Testnet" : "Base Sepolia");
+      } else if (sourceChain === destinationChain) {
+        setDestinationChain(sourceChain === "Base Sepolia" ? "Arc Testnet" : "Base Sepolia");
+      }
+    }
+    evmResetBridgeStatus();
+    solanaResetBridgeStatus();
+    eurcResetBridgeStatus();
+  };
+
   const handleSourceChainChange = (chain: string) => {
     setSourceChain(chain);
     if (chain === "GenLayer Bradbury" && destinationChain !== "Base Sepolia") {
@@ -417,6 +450,7 @@ export default function BridgePage() {
     }
     evmResetBridgeStatus();
     solanaResetBridgeStatus();
+    eurcResetBridgeStatus();
   };
 
   const handleDestinationChainChange = (chain: string) => {
@@ -426,6 +460,7 @@ export default function BridgePage() {
     }
     evmResetBridgeStatus();
     solanaResetBridgeStatus();
+    eurcResetBridgeStatus();
   };
 
   const isGenLayerRoute = sourceChain === "GenLayer Bradbury" || destinationChain === "GenLayer Bradbury";
@@ -435,7 +470,7 @@ export default function BridgePage() {
       <PageHeader
         eyebrow="Liquidity & Bridge"
         title="Liquidity Management"
-        description="Bridge USDC tokens between networks or swap stablecoins locally on Arc Testnet and Base."
+        description="Bridge USDC and EURC tokens between networks or swap stablecoins locally on Arc Testnet and Base."
       />
 
       {/* Tab Switcher */}
@@ -449,7 +484,7 @@ export default function BridgePage() {
               : "text-slate-400 hover:text-white hover:bg-white/5"
           )}
         >
-          Bridge USDC
+          Bridge
         </button>
         <button
           onClick={() => setActiveTab("swap")}
@@ -483,6 +518,8 @@ export default function BridgePage() {
               onBridge={handleBridge}
               isConnected={isConnected}
               onRefresh={refreshBalance}
+              selectedAsset={selectedAsset}
+              onAssetChange={handleAssetChange}
             />
           ) : (
             <SwapForm

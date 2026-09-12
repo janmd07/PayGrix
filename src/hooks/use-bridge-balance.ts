@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { createPublicClient, http, erc20Abi, formatUnits } from "viem";
 import { safeArcReadContract } from "@/lib/arc-read-infra";
 
+import { BridgeAsset, EURC_CHAIN_CONFIG } from "@/config/bridge-assets";
+
 const CHAIN_CONFIGS: Record<string, { rpc: string | string[]; usdc: `0x${string}` }> = {
   "Arc Testnet": {
     rpc: "https://rpc.testnet.arc.network",
@@ -23,13 +25,24 @@ const CHAIN_CONFIGS: Record<string, { rpc: string | string[]; usdc: `0x${string}
   },
 };
 
-export function useBridgeBalance(chain: string, address?: `0x${string}`) {
+export function useBridgeBalance(
+  chain: string,
+  address?: `0x${string}`,
+  asset: BridgeAsset = "USDC"
+) {
   const [balance, setBalance] = useState<string>("0.00");
   const [isLoading, setIsLoading] = useState<boolean>(false);
-  const symbol = "USDC";
+  const symbol = asset;
 
   const refreshBalance = useCallback(async (forceRefresh = false) => {
     if (!address) {
+      setBalance("0.00");
+      setIsLoading(false);
+      return;
+    }
+
+    // EURC only exists on Arc Testnet and Base Sepolia in Phase 3
+    if (asset === "EURC" && chain !== "Arc Testnet" && chain !== "Base Sepolia") {
       setBalance("0.00");
       setIsLoading(false);
       return;
@@ -42,13 +55,18 @@ export function useBridgeBalance(chain: string, address?: `0x${string}`) {
       return;
     }
 
+    const tokenAddress: `0x${string}` =
+      asset === "EURC"
+        ? EURC_CHAIN_CONFIG[chain as "Base Sepolia" | "Arc Testnet"].eurc
+        : config.usdc;
+
     setIsLoading(true);
     try {
       let balanceWei = BigInt(0);
 
       if (chain === "Arc Testnet") {
         balanceWei = await safeArcReadContract<bigint>({
-          address: config.usdc,
+          address: tokenAddress,
           abi: erc20Abi,
           functionName: "balanceOf",
           args: [address],
@@ -64,7 +82,7 @@ export function useBridgeBalance(chain: string, address?: `0x${string}`) {
               transport: http(rpcUrl, { timeout: 10_000 }),
             });
             balanceWei = await client.readContract({
-              address: config.usdc,
+              address: tokenAddress,
               abi: erc20Abi,
               functionName: "balanceOf",
               args: [address],
@@ -72,7 +90,7 @@ export function useBridgeBalance(chain: string, address?: `0x${string}`) {
             readSuccess = true;
             break;
           } catch (err) {
-            console.warn(`[useBridgeBalance] RPC read failed for ${chain} on ${rpcUrl}:`, err);
+            console.warn(`[useBridgeBalance] RPC read failed for ${chain} (${asset}) on ${rpcUrl}:`, err);
             lastErr = err;
           }
         }
@@ -82,20 +100,19 @@ export function useBridgeBalance(chain: string, address?: `0x${string}`) {
         }
       }
 
-      // USDC has 6 decimals on these chains
+      // Both USDC and EURC have 6 decimals on these chains
       const balanceStr = formatUnits(balanceWei, 6);
       setBalance(balanceStr);
     } catch (err) {
-      console.error("Error reading USDC balance across RPC endpoints:", err);
-      // Do not overwrite an existing valid balance with 0.00 when all RPCs fail
+      console.error(`Error reading ${asset} balance across RPC endpoints:`, err);
     } finally {
       setIsLoading(false);
     }
-  }, [chain, address]);
+  }, [chain, address, asset]);
 
   useEffect(() => {
     refreshBalance();
-  }, [chain, address, refreshBalance]);
+  }, [chain, address, asset, refreshBalance]);
 
   return {
     balance,
