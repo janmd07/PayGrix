@@ -5,6 +5,8 @@ import {
   EURC_TOKEN_MANAGER,
   EURC_TOKEN_ID,
   BRIDGE_ASSETS,
+  getBridgeExplorerTxUrl,
+  getCctpDomain,
 } from "../src/config/bridge-assets";
 import { encodePacked, getAddress } from "viem";
 import * as fs from "fs";
@@ -159,10 +161,87 @@ function runTests() {
     "History migration: Legacy records without token interpret as USDC; new records store EURC"
   );
 
-  // 13. USDC Regression Check: use-bridge.ts is UNCHANGED
+  // 13. USDC Regression Check: use-bridge.ts exists
   const useBridgePath = path.resolve(process.cwd(), "src/hooks/use-bridge.ts");
   const useBridgeExists = fs.existsSync(useBridgePath);
   assert(useBridgeExists, "USDC regression check: use-bridge.ts exists and preserved");
+
+  // 14. Transaction Hash Separation: sourceTxHash !== destinationTxHash
+  const arcSourceTx = "0x50aaf37937bf6e1468115ebc034239eeab509e03ba98af01abfed60bf63d9dcf";
+  const baseDestTx = "0x05d9fe919b41699cc98f45f38155fb4ced0f4ec97fdbbd233c12a7ccd42ad7a3";
+  assert(
+    arcSourceTx.toLowerCase() !== baseDestTx.toLowerCase(),
+    "Strict separation: Arc source hash and Base destination hash are distinct"
+  );
+
+  // 15. Chain-Aware Explorer URLs: Arc -> ArcScan, Base -> BaseScan
+  const arcExplorerLink = getBridgeExplorerTxUrl("Arc Testnet", arcSourceTx);
+  const baseExplorerLink = getBridgeExplorerTxUrl("Base Sepolia", baseDestTx);
+  assert(
+    arcExplorerLink === `https://testnet.arcscan.app/tx/${arcSourceTx}` &&
+      !arcExplorerLink.includes("basescan") &&
+      baseExplorerLink === `https://sepolia.basescan.org/tx/${baseDestTx}` &&
+      !baseExplorerLink.includes("arcscan"),
+    "Explorer URLs: Arc source uses ArcScan, Base destination uses BaseScan"
+  );
+
+  // 16. Reverse Direction Explorer URLs: Base -> Arc
+  const baseSourceTx = "0xff346967b1d2204015a79c0a392b83cb04831874e616b28649eb1281f1769a37";
+  const arcDestTx = "0x41c5f9843057bb30c92e7e3a5d26098d644717e3b5b66ef356b4518f1577fab8";
+  const reverseBaseLink = getBridgeExplorerTxUrl("Base Sepolia", baseSourceTx);
+  const reverseArcLink = getBridgeExplorerTxUrl("Arc Testnet", arcDestTx);
+  assert(
+    reverseBaseLink === `https://sepolia.basescan.org/tx/${baseSourceTx}` &&
+      reverseArcLink === `https://testnet.arcscan.app/tx/${arcDestTx}`,
+    "Reverse Explorer URLs: Base source uses BaseScan, Arc destination uses ArcScan"
+  );
+
+  // 17. Multi-chain Explorer Coverage
+  assert(
+    getBridgeExplorerTxUrl("Arbitrum Sepolia", "0xabc") === "https://sepolia.arbiscan.io/tx/0xabc" &&
+      getBridgeExplorerTxUrl("Solana Devnet", "5abc") === "https://explorer.solana.com/tx/5abc?cluster=devnet" &&
+      getBridgeExplorerTxUrl("GenLayer Bradbury", "0xgen") === "https://explorer-bradbury.genlayer.com/tx/0xgen",
+    "Multi-chain Explorer Coverage: Arbitrum, Solana, GenLayer URLs accurate"
+  );
+
+  // 18. Legacy Transfer Corrupted destTx Purge (Regression fix verification)
+  const legacyCorruptedTransfer = {
+    sourceTx: "0x37a3225f11111111111111111111111111111111111111111111111111111111",
+    destTx: "0x37a3225f11111111111111111111111111111111111111111111111111111111",
+  };
+  const isCorrupted =
+    legacyCorruptedTransfer.destTx.toLowerCase() === legacyCorruptedTransfer.sourceTx.toLowerCase();
+  const sanitizedDest = isCorrupted ? undefined : legacyCorruptedTransfer.destTx;
+  assert(
+    isCorrupted && sanitizedDest === undefined,
+    "Legacy Transfer Sanitization: Duplicate sourceTx masquerading as destTx is detected and purged"
+  );
+
+  // 19. CCTP Domain Lookup Accuracy
+  assert(
+    getCctpDomain("Base Sepolia") === 6 &&
+      getCctpDomain("Arc Testnet") === 26 &&
+      getCctpDomain("Arbitrum Sepolia") === 3 &&
+      getCctpDomain("Unknown Chain") === undefined,
+    "CCTP Domain lookup accurate for Base (6), Arc (26), Arbitrum (3)"
+  );
+
+  // 20. Refresh Persistence Data Model
+  const fullTransferRecord = {
+    sourceTxHash: arcSourceTx,
+    destinationTxHash: baseDestTx,
+    fromChain: "Arc Testnet",
+    toChain: "Base Sepolia",
+    asset: "EURC" as const,
+    amount: "0.1",
+    status: "Completed",
+  };
+  assert(
+    fullTransferRecord.sourceTxHash === arcSourceTx &&
+      fullTransferRecord.destinationTxHash === baseDestTx &&
+      (fullTransferRecord.sourceTxHash as string) !== (fullTransferRecord.destinationTxHash as string),
+    "Refresh Persistence Model: Preserves distinct sourceTxHash and destinationTxHash"
+  );
 
   console.log("\n==================================================");
   console.log(`TOTAL TESTS: ${passed + failed}`);

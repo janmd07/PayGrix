@@ -26,7 +26,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import { useGenlayerBridge } from "@/hooks/use-genlayer-bridge";
 import { isAddress } from "viem";
-import { BridgeAsset } from "@/config/bridge-assets";
+import { BridgeAsset, getBridgeExplorerTxUrl } from "@/config/bridge-assets";
 
 const CHAINS = ["Arc Testnet", "Base Sepolia", "Arbitrum Sepolia", "Solana Devnet", "GenLayer Bradbury"];
 
@@ -146,6 +146,59 @@ export function BridgeForm({
   const [activeDropdown, setActiveDropdown] = useState<"source" | "destination" | null>(null);
   const [isAssetMenuOpen, setIsAssetMenuOpen] = useState<boolean>(false);
   const [failedLogos, setFailedLogos] = useState<Record<string, boolean>>({});
+
+  // Clean candidate destination hash: never allow source hash to masquerade as destination
+  const isDuplicateHash = Boolean(
+    destTxHash &&
+    sourceTxHash &&
+    destTxHash.toLowerCase() === sourceTxHash.toLowerCase()
+  );
+  const validDestTxHash = isDuplicateHash ? undefined : (destTxHash || undefined);
+
+  // Refresh persistence: maintain last known bridge hashes across page refresh
+  const [persistedSourceTx, setPersistedSourceTx] = useState<string>("");
+  const [persistedDestTx, setPersistedDestTx] = useState<string>("");
+
+  useEffect(() => {
+    if (sourceTxHash) {
+      setPersistedSourceTx(sourceTxHash);
+      try {
+        sessionStorage.setItem("paygrix_last_source_tx", sourceTxHash);
+      } catch {}
+    } else {
+      try {
+        const saved = sessionStorage.getItem("paygrix_last_source_tx");
+        if (saved) setPersistedSourceTx(saved);
+      } catch {}
+    }
+  }, [sourceTxHash]);
+
+  useEffect(() => {
+    if (validDestTxHash) {
+      setPersistedDestTx(validDestTxHash);
+      try {
+        sessionStorage.setItem("paygrix_last_dest_tx", validDestTxHash);
+      } catch {}
+    } else {
+      try {
+        const saved = sessionStorage.getItem("paygrix_last_dest_tx");
+        if (saved && (!sourceTxHash || saved.toLowerCase() !== sourceTxHash.toLowerCase())) {
+          setPersistedDestTx(saved);
+        }
+      } catch {}
+    }
+  }, [validDestTxHash, sourceTxHash]);
+
+  const displaySourceTx = sourceTxHash || persistedSourceTx;
+  const displayDestTx =
+    validDestTxHash ||
+    (persistedDestTx &&
+    displaySourceTx &&
+    persistedDestTx.toLowerCase() !== displaySourceTx.toLowerCase()
+      ? persistedDestTx
+      : !displaySourceTx && persistedDestTx
+      ? persistedDestTx
+      : undefined);
 
   useEffect(() => {
     if (!activeDropdown && !isAssetMenuOpen) return;
@@ -1146,7 +1199,11 @@ export function BridgeForm({
                           status === "bridging" ? "bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]" :
                           status === "completed" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" : "bg-slate-600"
                         )} />
-                        <span>Bridging in progress</span>
+                        <span>
+                          {status === "bridging" && displaySourceTx
+                            ? "Source confirmed — waiting for destination"
+                            : "Bridging in progress"}
+                        </span>
                       </div>
 
                       <div className={cn("flex items-center gap-2 text-xs",
@@ -1167,37 +1224,63 @@ export function BridgeForm({
                   </div>
                 )}
 
-                {/* Explorer links */}
-                {(sourceTxHash || destTxHash) && (
-                  <div className="border-t border-white/5 pt-3 mt-1 flex flex-col gap-2 text-xs text-slate-400">
-                    {sourceTxHash && (
-                      <div className="flex justify-between items-center bg-white/[0.01] border border-white/5 rounded-xl px-3.5 py-2">
-                        <span className="text-slate-500">Source TX:</span>
-                        <a
-                          href={getExplorerTxUrl(sourceChain, sourceTxHash)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary hover:text-white flex items-center gap-1 transition-all font-mono font-medium"
-                        >
-                          {sourceTxHash.slice(0, 10)}...{sourceTxHash.slice(-8)}{" "}
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
+                {/* Explicit Two-Row Transaction Display */}
+                {(displaySourceTx || displayDestTx || ["bridging", "completed"].includes(status)) && (
+                  <div className="border-t border-white/5 pt-3 mt-1 flex flex-col gap-2.5 text-xs">
+                    {/* Source Transaction Row */}
+                    <div className="flex justify-between items-center bg-white/[0.02] border border-white/5 rounded-xl px-3.5 py-2.5">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[11px] font-medium text-slate-400">Source Transaction</span>
+                        <span className="text-xs text-slate-200 font-semibold">{sourceChain}</span>
                       </div>
-                    )}
-                    {destTxHash && (
-                      <div className="flex justify-between items-center bg-white/[0.01] border border-white/5 rounded-xl px-3.5 py-2">
-                        <span className="text-slate-500">Destination TX:</span>
-                        <a
-                          href={getExplorerTxUrl(destinationChain, destTxHash)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-primary hover:text-white flex items-center gap-1 transition-all font-mono font-medium"
-                        >
-                          {destTxHash.slice(0, 10)}...{destTxHash.slice(-8)}{" "}
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
+                      {displaySourceTx ? (
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs text-slate-300">
+                            {displaySourceTx.slice(0, 8)}...{displaySourceTx.slice(-6)}
+                          </span>
+                          <a
+                            href={getBridgeExplorerTxUrl(sourceChain, displaySourceTx)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:text-white flex items-center gap-1 transition-all font-medium text-xs bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-md"
+                          >
+                            <span>View on {sourceChain.includes("Arc") ? "ArcScan" : sourceChain.includes("Base") ? "BaseScan" : sourceChain.includes("Arbitrum") ? "Arbiscan" : sourceChain.includes("Solana") ? "Solana Explorer" : "Explorer"}</span>
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-500 italic">Pending source confirmation</span>
+                      )}
+                    </div>
+
+                    {/* Destination Transaction Row */}
+                    <div className="flex justify-between items-center bg-white/[0.02] border border-white/5 rounded-xl px-3.5 py-2.5">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-[11px] font-medium text-slate-400">Destination Transaction</span>
+                        <span className="text-xs text-slate-200 font-semibold">{destinationChain}</span>
                       </div>
-                    )}
+                      {displayDestTx ? (
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-xs text-slate-300">
+                            {displayDestTx.slice(0, 8)}...{displayDestTx.slice(-6)}
+                          </span>
+                          <a
+                            href={getBridgeExplorerTxUrl(destinationChain, displayDestTx)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary hover:text-white flex items-center gap-1 transition-all font-medium text-xs bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-md"
+                          >
+                            <span>View on {destinationChain.includes("Arc") ? "ArcScan" : destinationChain.includes("Base") ? "BaseScan" : destinationChain.includes("Arbitrum") ? "Arbiscan" : destinationChain.includes("Solana") ? "Solana Explorer" : "Explorer"}</span>
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5 text-amber-400/90 text-xs">
+                          <Loader2 className="h-3 w-3 animate-spin text-amber-400 shrink-0" />
+                          <span>Destination transaction pending</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </>

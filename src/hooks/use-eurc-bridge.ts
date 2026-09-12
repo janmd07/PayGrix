@@ -39,6 +39,8 @@ export interface EurcBridgeResult {
   state: "success" | "failed";
   error?: string;
   steps: BridgeStep[];
+  sourceTxHash?: string;
+  destTxHash?: string;
 }
 
 const arcTestnetChain = {
@@ -365,32 +367,102 @@ export function useEurcBridge() {
         }
 
         // 8. Confirm Destination Mint (Forwarded or Direct)
-        const destinationTx =
+        let resolvedDestTx: string | undefined = undefined;
+
+        const directCandidate =
           completedMsg.destinationMintTxHash || completedMsg.forwardTxHash;
+        if (
+          completedMsg.forwardState === "COMPLETE" &&
+          directCandidate &&
+          directCandidate.toLowerCase() !== burnTx.toLowerCase()
+        ) {
+          resolvedDestTx = directCandidate;
+        }
 
-        if (completedMsg.forwardState === "COMPLETE" && destinationTx) {
-          setDestTxHash(destinationTx);
-          steps.push({ name: "mint", txHash: destinationTx });
+        if (resolvedDestTx) {
+          setDestTxHash(resolvedDestTx);
+          steps.push({ name: "mint", txHash: resolvedDestTx });
         } else {
-          // Poll destination balance to detect forwarder completion
+          // Poll destination balance & Iris API to detect forwarder completion
           let forwarded = false;
-          for (let check = 1; check <= 12; check++) {
-            const destBalanceCurrent = await destPublic.readContract({
-              address: route.destinationEURC,
-              abi: erc20Abi,
-              functionName: "balanceOf",
-              args: [address],
-            });
-
-            if (destBalanceCurrent >= destBalanceBefore + parsedAmount) {
-              forwarded = true;
-              break;
+          for (let check = 1; check <= 15; check++) {
+            // Check Iris API for forwardTxHash
+            try {
+              const irisRes = await fetch(irisMsgUrl);
+              if (irisRes.ok) {
+                const irisData = (await irisRes.json()) as IrisMessageResponse;
+                const m = irisData?.messages?.[0];
+                const h = m?.forwardTxHash || m?.destinationMintTxHash;
+                if (
+                  h &&
+                  typeof h === "string" &&
+                  h.startsWith("0x") &&
+                  h.toLowerCase() !== burnTx.toLowerCase()
+                ) {
+                  resolvedDestTx = h;
+                  forwarded = true;
+                  break;
+                }
+              }
+            } catch {
+              // Ignore transient Iris query error
             }
+
+            // Check destination balance
+            try {
+              const destBalanceCurrent = await destPublic.readContract({
+                address: route.destinationEURC,
+                abi: erc20Abi,
+                functionName: "balanceOf",
+                args: [address],
+              });
+
+              if (destBalanceCurrent >= destBalanceBefore + parsedAmount) {
+                forwarded = true;
+                break;
+              }
+            } catch {
+              // Ignore transient RPC error
+            }
+
             await new Promise((r) => setTimeout(r, 4000));
           }
 
           if (forwarded) {
-            steps.push({ name: "mint", txHash: burnTx });
+            // Balance arrived! If Iris hasn't provided forwardTxHash yet, query Iris quickly
+            if (!resolvedDestTx) {
+              for (let fCheck = 1; fCheck <= 5; fCheck++) {
+                try {
+                  const irisRes = await fetch(irisMsgUrl);
+                  if (irisRes.ok) {
+                    const irisData = (await irisRes.json()) as IrisMessageResponse;
+                    const m = irisData?.messages?.[0];
+                    const h = m?.forwardTxHash || m?.destinationMintTxHash;
+                    if (
+                      h &&
+                      typeof h === "string" &&
+                      h.startsWith("0x") &&
+                      h.toLowerCase() !== burnTx.toLowerCase()
+                    ) {
+                      resolvedDestTx = h;
+                      break;
+                    }
+                  }
+                } catch {
+                  // Ignore
+                }
+                await new Promise((r) => setTimeout(r, 2000));
+              }
+            }
+
+            if (resolvedDestTx) {
+              setDestTxHash(resolvedDestTx);
+              steps.push({ name: "mint", txHash: resolvedDestTx });
+            } else {
+              // Balance arrived but forwardTxHash not yet indexed by Iris.
+              // CRITICAL: NEVER set burnTx as the mint hash!
+              steps.push({ name: "mint" });
+            }
           } else {
             // Fallback: Direct mint via destination MessageTransmitterV2
             setStatus("waiting-wallet");
@@ -418,6 +490,7 @@ export function useEurcBridge() {
               ],
             });
 
+            resolvedDestTx = mintTx;
             setDestTxHash(mintTx);
             steps.push({ name: "mint", txHash: mintTx });
             setStatus("bridging");
@@ -432,6 +505,8 @@ export function useEurcBridge() {
         return {
           state: "success",
           steps,
+          sourceTxHash: burnTx,
+          destTxHash: resolvedDestTx,
         };
       } catch (err: unknown) {
         console.error("EURC bridge execution error:", err);

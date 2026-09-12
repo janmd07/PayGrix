@@ -132,3 +132,32 @@ export function resolveEurcBridgeRoute(
     destRpcUrl: dst.rpcUrl,
   };
 }
+
+export const BRIDGE_EXPLORER_URLS: Record<string, string> = {
+  "Arc Testnet": "https://testnet.arcscan.app",
+  "Base Sepolia": "https://sepolia.basescan.org",
+  "Arbitrum Sepolia": "https://sepolia.arbiscan.io",
+  "Solana Devnet": "https://explorer.solana.com",
+  "GenLayer Bradbury": "https://explorer-bradbury.genlayer.com",
+};
+
+export function getBridgeExplorerUrl(chain: string): string {
+  return BRIDGE_EXPLORER_URLS[chain] || "https://testnet.arcscan.app";
+}
+
+export function getBridgeExplorerTxUrl(chain: string, txHash: string): string {
+  if (chain === "Solana Devnet") {
+    return `https://explorer.solana.com/tx/${txHash}?cluster=devnet`;
+  }
+  if (chain === "GenLayer Bradbury") {
+    return `https://explorer-bradbury.genlayer.com/tx/${txHash}`;
+  }
+  return `${getBridgeExplorerUrl(chain)}/tx/${txHash}`;
+}
+
+export function getCctpDomain(chain: string): number | undefined {
+  if (chain === "Base Sepolia" || chain === "Base") return 6;
+  if (chain === "Arc Testnet" || chain === "Arc") return 26;
+  if (chain === "Arbitrum Sepolia" || chain === "Arbitrum") return 3;
+  return undefined;
+}

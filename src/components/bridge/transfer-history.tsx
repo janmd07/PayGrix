@@ -4,6 +4,7 @@ import { History, ExternalLink, Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ConnectWalletButton } from "@/components/wallet/connect-wallet-button";
+import { getBridgeExplorerTxUrl } from "@/config/bridge-assets";
 
 export type BridgeTransfer = {
   id: string;
@@ -11,10 +12,13 @@ export type BridgeTransfer = {
   toChain: string;
   amount: string;
   token?: "USDC" | "EURC";
+  asset?: "USDC" | "EURC";
   status: "Completed" | "Pending" | "Failed";
   date: string;
   sourceTx?: string;
+  sourceTxHash?: string;
   destTx?: string;
+  destinationTxHash?: string;
   walletAddress?: string;
   userAddress?: string;
   sender?: string;
@@ -24,16 +28,6 @@ export type BridgeTransfer = {
 interface TransferHistoryProps {
   transfers: BridgeTransfer[];
   isConnected?: boolean;
-}
-
-const EXPLORER_URLS: Record<string, string> = {
-  "Arc Testnet": "https://testnet.arcscan.app",
-  "Base Sepolia": "https://sepolia.basescan.org",
-  "Arbitrum Sepolia": "https://sepolia.arbiscan.io",
-};
-
-function getExplorerUrl(chain: string): string {
-  return EXPLORER_URLS[chain] || "https://testnet.arcscan.app";
 }
 
 export function TransferHistory({ transfers, isConnected = false }: TransferHistoryProps) {
@@ -87,50 +81,63 @@ export function TransferHistory({ transfers, isConnected = false }: TransferHist
               </div>
 
               {/* Rows */}
-              {transfers.map((tx) => (
-                <div
-                  key={tx.id}
-                  className="grid grid-cols-[1.2fr_1.2fr_1fr_1fr_1.2fr] items-center border border-white/5 px-4 py-3 text-xs text-white hover:bg-white/[0.02] rounded-xl transition-all"
-                >
-                  <div>
-                    <div className="font-medium text-slate-300">{tx.fromChain}</div>
-                    {tx.sourceTx && (
-                      <a
-                        href={`${getExplorerUrl(tx.fromChain)}/tx/${tx.sourceTx}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[10px] text-primary hover:text-white flex items-center gap-0.5 mt-0.5 transition-all font-mono"
-                      >
-                        {tx.sourceTx.slice(0, 6)}...{tx.sourceTx.slice(-4)}{" "}
-                        <ExternalLink className="h-2.5 w-2.5 shrink-0" />
-                      </a>
-                    )}
-                  </div>
-                  <div>
-                    <div className="font-medium text-slate-300">{tx.toChain}</div>
-                    {tx.destTx && (
-                      <a
-                        href={`${getExplorerUrl(tx.toChain)}/tx/${tx.destTx}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-[10px] text-primary hover:text-white flex items-center gap-0.5 mt-0.5 transition-all font-mono"
-                      >
-                        {tx.destTx.slice(0, 6)}...{tx.destTx.slice(-4)}{" "}
-                        <ExternalLink className="h-2.5 w-2.5 shrink-0" />
-                      </a>
-                    )}
-                  </div>
-                  <div className="font-semibold text-white flex items-center gap-1.5">
-                    <span>
-                      {parseFloat(tx.amount).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 6,
-                      })}
-                    </span>
-                    <span className={tx.token === "EURC" ? "text-purple-400 font-bold" : "text-primary font-bold"}>
-                      {tx.token || "USDC"}
-                    </span>
-                  </div>
+              {transfers.map((tx) => {
+                const sourceHash = tx.sourceTxHash || tx.sourceTx;
+                const rawDestHash = tx.destinationTxHash || tx.destTx;
+                const isDuplicate = Boolean(
+                  rawDestHash && sourceHash && rawDestHash.toLowerCase() === sourceHash.toLowerCase()
+                );
+                const destHash = isDuplicate ? undefined : (rawDestHash || undefined);
+                const tokenSymbol = tx.token || tx.asset || "USDC";
+
+                return (
+                  <div
+                    key={tx.id}
+                    className="grid grid-cols-[1.2fr_1.2fr_1fr_1fr_1.2fr] items-center border border-white/5 px-4 py-3 text-xs text-white hover:bg-white/[0.02] rounded-xl transition-all"
+                  >
+                    <div>
+                      <div className="font-medium text-slate-300">{tx.fromChain}</div>
+                      {sourceHash ? (
+                        <a
+                          href={getBridgeExplorerTxUrl(tx.fromChain, sourceHash)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] text-primary hover:text-white flex items-center gap-0.5 mt-0.5 transition-all font-mono"
+                        >
+                          {sourceHash.slice(0, 6)}...{sourceHash.slice(-4)}{" "}
+                          <ExternalLink className="h-2.5 w-2.5 shrink-0" />
+                        </a>
+                      ) : (
+                        <span className="text-[10px] text-slate-500 italic mt-0.5 block">—</span>
+                      )}
+                    </div>
+                    <div>
+                      <div className="font-medium text-slate-300">{tx.toChain}</div>
+                      {destHash ? (
+                        <a
+                          href={getBridgeExplorerTxUrl(tx.toChain, destHash)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] text-primary hover:text-white flex items-center gap-0.5 mt-0.5 transition-all font-mono"
+                        >
+                          {destHash.slice(0, 6)}...{destHash.slice(-4)}{" "}
+                          <ExternalLink className="h-2.5 w-2.5 shrink-0" />
+                        </a>
+                      ) : (
+                        <span className="text-[10px] text-amber-400/80 italic mt-0.5 block">Pending</span>
+                      )}
+                    </div>
+                    <div className="font-semibold text-white flex items-center gap-1.5">
+                      <span>
+                        {parseFloat(tx.amount).toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 6,
+                        })}
+                      </span>
+                      <span className={tokenSymbol === "EURC" ? "text-purple-400 font-bold" : "text-primary font-bold"}>
+                        {tokenSymbol}
+                      </span>
+                    </div>
                   <div>
                     <Badge
                       variant={
@@ -147,7 +154,8 @@ export function TransferHistory({ transfers, isConnected = false }: TransferHist
                   </div>
                   <div className="text-slate-400">{tx.date}</div>
                 </div>
-              ))}
+              );
+            })}
             </div>
           </div>
         )}

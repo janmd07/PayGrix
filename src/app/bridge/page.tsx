@@ -9,7 +9,7 @@ import { useBridgeBalance } from "@/hooks/use-bridge-balance";
 import { useBridge } from "@/hooks/use-bridge";
 import { useEurcBridge } from "@/hooks/use-eurc-bridge";
 import { useSolanaBridge } from "@/hooks/use-solana-bridge";
-import { BridgeAsset } from "@/config/bridge-assets";
+import { BridgeAsset, getCctpDomain, IRIS_SANDBOX_BASE } from "@/config/bridge-assets";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { BalanceCard } from "@/components/bridge/balance-card";
@@ -175,7 +175,30 @@ export default function BridgePage() {
       if (savedTransfers) {
         const parsed = JSON.parse(savedTransfers);
         if (Array.isArray(parsed)) {
-          allTransfers = parsed;
+          let sanitized = false;
+          allTransfers = parsed.map((item) => {
+            const sHash = item.sourceTxHash || item.sourceTx;
+            const dHash = item.destinationTxHash || item.destTx;
+            const isCorrupted = Boolean(
+              dHash && sHash && dHash.toLowerCase() === sHash.toLowerCase()
+            );
+            if (isCorrupted) {
+              sanitized = true;
+            }
+            const cleanDest = isCorrupted ? undefined : dHash;
+            return {
+              ...item,
+              sourceTx: sHash,
+              sourceTxHash: sHash,
+              destTx: cleanDest,
+              destinationTxHash: cleanDest,
+            };
+          });
+          if (sanitized) {
+            try {
+              localStorage.setItem("bridge_transfers", JSON.stringify(allTransfers));
+            } catch {}
+          }
         }
       }
     } catch (err) {
@@ -254,6 +277,42 @@ export default function BridgePage() {
           }
         } catch {
           // Transaction not found or pruned; do not guess ownership
+        }
+      }
+
+      // Asynchronously resolve missing destination hashes for CCTP / EURC transfers via Iris
+      const pendingDestTransfers = allTransfers.filter((item) => {
+        const sHash = item.sourceTxHash || item.sourceTx;
+        const dHash = item.destinationTxHash || item.destTx;
+        const domain = getCctpDomain(item.fromChain);
+        return Boolean(sHash && !dHash && domain !== undefined);
+      });
+
+      for (const item of pendingDestTransfers) {
+        if (!isMounted) return;
+        const sHash = item.sourceTxHash || item.sourceTx!;
+        const domain = getCctpDomain(item.fromChain);
+        if (domain === undefined) continue;
+
+        try {
+          const res = await fetch(`${IRIS_SANDBOX_BASE}/v2/messages/${domain}?transactionHash=${sHash}`);
+          if (res.ok) {
+            const data = await res.json();
+            const msg = data?.messages?.[0];
+            const candidate = msg?.forwardTxHash || msg?.destinationMintTxHash;
+            if (
+              candidate &&
+              typeof candidate === "string" &&
+              candidate.startsWith("0x") &&
+              candidate.toLowerCase() !== sHash.toLowerCase()
+            ) {
+              item.destTx = candidate;
+              item.destinationTxHash = candidate;
+              transfersModified = true;
+            }
+          }
+        } catch {
+          // Transient Iris lookup failure; will retry on subsequent mount
         }
       }
 
@@ -350,6 +409,25 @@ export default function BridgePage() {
         const burnStep = result.steps?.find((s: BridgeStep) => s.name === "burn" || s.name === "execute");
         const mintStep = result.steps?.find((s: BridgeStep) => s.name === "mint" || s.name === "claim");
 
+        const realSourceHash =
+          burnStep?.txHash ||
+          (result as { sourceTxHash?: string })?.sourceTxHash ||
+          sourceTxHash ||
+          undefined;
+
+        let realDestHash: string | undefined = undefined;
+        const candidateDestHash =
+          mintStep?.txHash ||
+          (result as { destTxHash?: string })?.destTxHash ||
+          destTxHash;
+
+        if (
+          candidateDestHash &&
+          (!realSourceHash || candidateDestHash.toLowerCase() !== realSourceHash.toLowerCase())
+        ) {
+          realDestHash = candidateDestHash;
+        }
+
         const currentWallet = (sourceChain === "Solana Devnet" ? activeAddress : address) || address;
         const newTransfer: BridgeTransfer = {
           id: Math.random().toString(36).substring(2, 9),
@@ -357,15 +435,27 @@ export default function BridgePage() {
           toChain: destinationChain,
           amount: amount,
           token: selectedAsset,
+          asset: selectedAsset,
           status: "Completed",
           date: new Date().toLocaleString(),
-          sourceTx: burnStep?.txHash || sourceTxHash,
-          destTx: mintStep?.txHash || destTxHash,
+          sourceTx: realSourceHash,
+          sourceTxHash: realSourceHash,
+          destTx: realDestHash,
+          destinationTxHash: realDestHash,
           walletAddress: currentWallet,
           userAddress: currentWallet,
           sender: currentWallet,
           initiator: currentWallet,
         };
+
+        try {
+          if (realSourceHash) {
+            sessionStorage.setItem("paygrix_last_source_tx", realSourceHash);
+          }
+          if (realDestHash) {
+            sessionStorage.setItem("paygrix_last_dest_tx", realDestHash);
+          }
+        } catch {}
 
         try {
           const savedTransfers = localStorage.getItem("bridge_transfers");
