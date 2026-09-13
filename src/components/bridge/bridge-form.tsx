@@ -454,7 +454,7 @@ export function BridgeForm({
 
   return (
     <div className="space-y-6">
-      <Card className="border border-white/10 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_8px_32px_rgba(6,15,36,0.5)]">
+      <Card className="border border-white/10 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_8px_32px_rgba(6,15,36,0.5)] w-full max-w-[500px] mx-auto">
         {/* Elegant top gradient accent line */}
         <div className={cn(
           "absolute top-0 left-0 right-0 h-[2px]",
@@ -493,7 +493,7 @@ export function BridgeForm({
 
         <CardContent className="space-y-4">
           {/* Centered Compact Bridge Widget */}
-          <div className="mx-auto w-full max-w-[500px] space-y-4">
+          <div className="w-full space-y-4">
 
             {/* Top row: Refresh button (if available) */}
             {onRefresh && (
