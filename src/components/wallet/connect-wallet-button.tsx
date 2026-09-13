@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { useConnect, type Connector } from "wagmi";
+import Image from "next/image";
 
 import {
   Wallet,
@@ -27,22 +28,17 @@ interface ConnectWalletButtonProps {
 
 type WalletId = "metaMask" | "okxWallet" | "rabby" | "coinbaseWallet" | "phantom";
 
-// Branded SVG Icons for the 5 wallets
+// Branded Icons for the 5 wallets
 function MetaMaskIcon({ className = "h-6 w-6" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 32 32" className={className} fill="none">
-      <path
-        d="M28.02 16.03l-2.61-9.97-8.1 3.86 3.12 6.55-5.43 2.16-5.43-2.16 3.12-6.55-8.1-3.86-2.61 9.97 4.9 7.82 2.72 4.15h11.82l2.72-4.15 4.9-7.82z"
-        fill="#E2761B"
-        stroke="#E2761B"
-        strokeWidth="0.5"
-      />
-      <path d="M3.98 16.03l4.9 7.82 2.72 4.15 1.4-6.41-4.12-5.56H3.98z" fill="#E4761B" />
-      <path d="M28.02 16.03l-4.9 7.82-2.72 4.15-1.4-6.41 4.12-5.56h4.9z" fill="#E4761B" />
-      <path d="M10.2 16.03l2.8 5.56 3 1.5 3-1.5 2.8-5.56-2.8-5.74L16 8.35l-3 1.94-2.8 5.74z" fill="#D7C1B3" />
-      <path d="M13 21.59l3 4.41 3-4.41-3-1.5-3 1.5z" fill="#233447" />
-      <path d="M9.27 6.06l6.73-2.56 6.73 2.56-6.73 3.36-6.73-3.36z" fill="#F6851B" />
-    </svg>
+    <Image
+      src="/wallets/metamask.png"
+      alt="MetaMask"
+      width={24}
+      height={24}
+      className={cn(className, "object-contain")}
+      unoptimized
+    />
   );
 }
 
@@ -61,27 +57,27 @@ function OkxWalletIcon({ className = "h-6 w-6" }: { className?: string }) {
 
 function RabbyWalletIcon({ className = "h-6 w-6" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 32 32" className={className} fill="none">
-      <rect width="32" height="32" rx="8" fill="#8697FF" />
-      <path
-        d="M9 22.5c0-4.14 3.36-7.5 7.5-7.5s7.5 3.36 7.5 7.5v.5H9v-.5z"
-        fill="#FFFFFF"
-      />
-      <circle cx="12.5" cy="11.5" r="2.5" fill="#FFFFFF" />
-      <circle cx="19.5" cy="11.5" r="2.5" fill="#FFFFFF" />
-      <path d="M12 11h1v2h-1zM19 11h1v2h-1z" fill="#8697FF" />
-      <circle cx="16" cy="18" r="1.5" fill="#FF8D69" />
-    </svg>
+    <Image
+      src="/wallets/rabby.png"
+      alt="Rabby Wallet"
+      width={24}
+      height={24}
+      className={cn(className, "object-contain")}
+      unoptimized
+    />
   );
 }
 
 function CoinbaseWalletIcon({ className = "h-6 w-6" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 32 32" className={className} fill="none">
-      <rect width="32" height="32" rx="8" fill="#0052FF" />
-      <rect x="8.5" y="8.5" width="15" height="15" rx="3.5" fill="#FFFFFF" />
-      <rect x="12" y="12" width="8" height="8" rx="1.5" fill="#0052FF" />
-    </svg>
+    <Image
+      src="/wallets/coinbase.png"
+      alt="Coinbase Wallet"
+      width={24}
+      height={24}
+      className={cn(className, "object-contain")}
+      unoptimized
+    />
   );
 }
 
