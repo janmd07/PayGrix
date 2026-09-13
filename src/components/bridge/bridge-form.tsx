@@ -449,61 +449,11 @@ export function BridgeForm({
                 </>
               )}
             </CardTitle>
-            <div className="flex items-center gap-2">
-              {/* Asset Selector Dropdown: [ USDC ▼ ] / [ EURC ] */}
-              <div className="relative asset-dropdown-container">
-                <button
-                  type="button"
-                  onClick={() => setIsAssetMenuOpen((prev) => !prev)}
-                  disabled={isSelectDisabled}
-                  className="flex items-center gap-2 bg-[#070f21] border border-white/10 hover:border-primary/40 rounded-full pl-2 pr-3 py-1 text-xs font-bold text-white transition-all shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <img
-                    src={selectedAsset === "EURC" ? "/tokens/eurc.png" : "/tokens/usdc.png"}
-                    alt={selectedAsset}
-                    className="w-4 h-4 rounded-full object-contain"
-                  />
-                  <span>{selectedAsset}</span>
-                  <ChevronDown
-                    className={cn(
-                      "h-3.5 w-3.5 text-slate-400 transition-transform duration-200",
-                      isAssetMenuOpen && "rotate-180 text-white"
-                    )}
-                  />
-                </button>
-                {isAssetMenuOpen && (
-                  <div className="absolute right-0 top-full mt-1.5 z-50 min-w-[140px] bg-[#070f21] border border-white/10 rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] p-1.5 animate-in fade-in slide-in-from-top-1">
-                    {(["USDC", "EURC"] as BridgeAsset[]).map((ast) => (
-                      <button
-                        key={ast}
-                        type="button"
-                        onClick={() => {
-                          onAssetChange?.(ast);
-                          setIsAssetMenuOpen(false);
-                        }}
-                        className={cn(
-                          "flex items-center gap-2 w-full px-2.5 py-1.5 text-xs font-semibold rounded-lg text-slate-300 hover:bg-[#0d1b3a] hover:text-white transition-colors text-left cursor-pointer",
-                          selectedAsset === ast && "bg-[#11244e] text-white font-bold border border-white/5"
-                        )}
-                      >
-                        <img
-                          src={ast === "EURC" ? "/tokens/eurc.png" : "/tokens/usdc.png"}
-                          alt={ast}
-                          className="w-4 h-4 rounded-full object-contain"
-                        />
-                        <span>{ast}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {isGenLayerRoute && (
-                <Badge variant="outline" className="text-[10px] bg-purple-500/10 border-purple-500/30 text-purple-300 font-mono">
-                  Consensus Layer
-                </Badge>
-              )}
-            </div>
+            {isGenLayerRoute && (
+              <Badge variant="outline" className="text-[10px] bg-purple-500/10 border-purple-500/30 text-purple-300 font-mono">
+                Consensus Layer
+              </Badge>
+            )}
           </div>
           <CardDescription className="text-xs text-slate-400">
             {isGenLayerRoute
@@ -588,18 +538,53 @@ export function BridgeForm({
                     }
                     className="bg-transparent text-2xl font-bold font-mono text-white placeholder-slate-600 focus:outline-none w-full text-right [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                   />
-                  <div
-                    onClick={() => setIsAssetMenuOpen((prev) => !prev)}
-                    className="flex items-center gap-1.5 bg-white/5 border border-white/8 hover:border-primary/40 rounded-full px-2.5 py-1 select-none shrink-0 cursor-pointer transition-colors"
-                  >
-                    <img
-                      src={selectedAsset === "EURC" ? "/tokens/eurc.png" : "/tokens/usdc.png"}
-                      alt={symbol}
-                      className="w-5 h-5 object-contain bg-transparent"
-                      style={{ aspectRatio: "1/1" }}
-                    />
-                    <span className="text-xs font-bold text-slate-200">{symbol}</span>
-                    <ChevronDown className="h-3 w-3 text-slate-400" />
+                  <div className="relative asset-dropdown-container">
+                    <div
+                      onClick={() => !isSelectDisabled && setIsAssetMenuOpen((prev) => !prev)}
+                      className={cn(
+                        "flex items-center gap-1.5 bg-white/5 border border-white/8 hover:border-primary/40 rounded-full px-2.5 py-1 select-none shrink-0 cursor-pointer transition-colors",
+                        isSelectDisabled && "opacity-50 cursor-not-allowed pointer-events-none"
+                      )}
+                    >
+                      <img
+                        src={selectedAsset === "EURC" ? "/tokens/eurc.png" : "/tokens/usdc.png"}
+                        alt={symbol}
+                        className="w-5 h-5 object-contain bg-transparent"
+                        style={{ aspectRatio: "1/1" }}
+                      />
+                      <span className="text-xs font-bold text-slate-200">{symbol}</span>
+                      <ChevronDown
+                        className={cn(
+                          "h-3 w-3 text-slate-400 transition-transform duration-200",
+                          isAssetMenuOpen && "rotate-180 text-white"
+                        )}
+                      />
+                    </div>
+                    {isAssetMenuOpen && (
+                      <div className="absolute right-0 top-full mt-1.5 z-50 min-w-[140px] bg-[#070f21] border border-white/10 rounded-xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] p-1.5 animate-in fade-in slide-in-from-top-1">
+                        {(["USDC", "EURC"] as BridgeAsset[]).map((ast) => (
+                          <button
+                            key={ast}
+                            type="button"
+                            onClick={() => {
+                              onAssetChange?.(ast);
+                              setIsAssetMenuOpen(false);
+                            }}
+                            className={cn(
+                              "flex items-center gap-2 w-full px-2.5 py-1.5 text-xs font-semibold rounded-lg text-slate-300 hover:bg-[#0d1b3a] hover:text-white transition-colors text-left cursor-pointer",
+                              selectedAsset === ast && "bg-[#11244e] text-white font-bold border border-white/5"
+                            )}
+                          >
+                            <img
+                              src={ast === "EURC" ? "/tokens/eurc.png" : "/tokens/usdc.png"}
+                              alt={ast}
+                              className="w-4 h-4 rounded-full object-contain"
+                            />
+                            <span>{ast}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
