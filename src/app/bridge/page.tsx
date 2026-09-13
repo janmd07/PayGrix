@@ -136,7 +136,18 @@ export default function BridgePage() {
   };
 
   useEffect(() => {
-    if (!isConnected || !address) {
+    evmResetBridgeStatus();
+    solanaResetBridgeStatus();
+    eurcResetBridgeStatus();
+  }, [isConnected, address, solanaPublicKey, sourceChain, evmResetBridgeStatus, solanaResetBridgeStatus, eurcResetBridgeStatus]);
+
+  useEffect(() => {
+    const hasActiveWallet = Boolean(
+      (sourceChain === "Solana Devnet" ? (solanaPublicKey && activeAddress) : (isConnected && address)) ||
+      (isConnected && address)
+    );
+
+    if (!hasActiveWallet) {
       setTransfers([]);
       setSwaps([]);
       return;
@@ -446,12 +457,17 @@ export default function BridgePage() {
         };
 
         try {
-          if (realSourceHash) {
-            sessionStorage.setItem("paygrix_last_source_tx", realSourceHash);
+          if (currentWallet) {
+            const wKey = currentWallet.toLowerCase();
+            if (realSourceHash) {
+              sessionStorage.setItem(`paygrix_last_source_tx_${wKey}`, realSourceHash);
+            }
+            if (realDestHash) {
+              sessionStorage.setItem(`paygrix_last_dest_tx_${wKey}`, realDestHash);
+            }
           }
-          if (realDestHash) {
-            sessionStorage.setItem("paygrix_last_dest_tx", realDestHash);
-          }
+          sessionStorage.removeItem("paygrix_last_source_tx");
+          sessionStorage.removeItem("paygrix_last_dest_tx");
         } catch {}
 
         try {

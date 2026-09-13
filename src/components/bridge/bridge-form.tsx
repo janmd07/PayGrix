@@ -129,7 +129,7 @@ export function BridgeForm({
 }: BridgeFormProps) {
   const [amount, setAmount] = useState<string>("");
   const [recipientAddress, setRecipientAddress] = useState<string>("");
-  const { availableConnector, connect, switchChainAsync } = useArcWallet();
+  const { address, availableConnector, connect, switchChainAsync } = useArcWallet();
   const { connected: isSolanaConnected, wallets, publicKey, disconnect } = useWallet();
 
   const {
@@ -147,6 +147,16 @@ export function BridgeForm({
   const [isAssetMenuOpen, setIsAssetMenuOpen] = useState<boolean>(false);
   const [failedLogos, setFailedLogos] = useState<Record<string, boolean>>({});
 
+  const activeWalletAddress = (
+    sourceChain === "Solana Devnet"
+      ? (publicKey?.toBase58() || address)
+      : (address || publicKey?.toBase58())
+  )?.toLowerCase();
+
+  const isCurrentWalletConnected = Boolean(
+    activeWalletAddress && ((isConnected && address) || (isSolanaConnected && publicKey))
+  );
+
   // Clean candidate destination hash: never allow source hash to masquerade as destination
   const isDuplicateHash = Boolean(
     destTxHash &&
@@ -155,50 +165,69 @@ export function BridgeForm({
   );
   const validDestTxHash = isDuplicateHash ? undefined : (destTxHash || undefined);
 
-  // Refresh persistence: maintain last known bridge hashes across page refresh
+  // Refresh persistence: maintain last known bridge hashes across page refresh scoped strictly to connected wallet
   const [persistedSourceTx, setPersistedSourceTx] = useState<string>("");
   const [persistedDestTx, setPersistedDestTx] = useState<string>("");
 
   useEffect(() => {
+    // When no wallet is connected, never display or retain any persisted tx data
+    if (!isCurrentWalletConnected || !activeWalletAddress) {
+      setPersistedSourceTx("");
+      setPersistedDestTx("");
+      try {
+        sessionStorage.removeItem("paygrix_last_source_tx");
+        sessionStorage.removeItem("paygrix_last_dest_tx");
+      } catch {}
+      return;
+    }
+
+    const sourceKey = `paygrix_last_source_tx_${activeWalletAddress}`;
+    const destKey = `paygrix_last_dest_tx_${activeWalletAddress}`;
+
     if (sourceTxHash) {
       setPersistedSourceTx(sourceTxHash);
       try {
-        sessionStorage.setItem("paygrix_last_source_tx", sourceTxHash);
+        sessionStorage.setItem(sourceKey, sourceTxHash);
       } catch {}
     } else {
       try {
-        const saved = sessionStorage.getItem("paygrix_last_source_tx");
-        if (saved) setPersistedSourceTx(saved);
-      } catch {}
+        const saved = sessionStorage.getItem(sourceKey);
+        setPersistedSourceTx(saved || "");
+      } catch {
+        setPersistedSourceTx("");
+      }
     }
-  }, [sourceTxHash]);
 
-  useEffect(() => {
     if (validDestTxHash) {
       setPersistedDestTx(validDestTxHash);
       try {
-        sessionStorage.setItem("paygrix_last_dest_tx", validDestTxHash);
+        sessionStorage.setItem(destKey, validDestTxHash);
       } catch {}
     } else {
       try {
-        const saved = sessionStorage.getItem("paygrix_last_dest_tx");
+        const saved = sessionStorage.getItem(destKey);
         if (saved && (!sourceTxHash || saved.toLowerCase() !== sourceTxHash.toLowerCase())) {
           setPersistedDestTx(saved);
+        } else {
+          setPersistedDestTx("");
         }
-      } catch {}
+      } catch {
+        setPersistedDestTx("");
+      }
     }
-  }, [validDestTxHash, sourceTxHash]);
+  }, [isCurrentWalletConnected, activeWalletAddress, sourceTxHash, validDestTxHash]);
 
-  const displaySourceTx = sourceTxHash || persistedSourceTx;
+  const displaySourceTx = isCurrentWalletConnected ? (sourceTxHash || persistedSourceTx || undefined) : undefined;
+  const rawDestTx = isCurrentWalletConnected ? (validDestTxHash || persistedDestTx || undefined) : undefined;
   const displayDestTx =
-    validDestTxHash ||
-    (persistedDestTx &&
+    isCurrentWalletConnected &&
+    rawDestTx &&
     displaySourceTx &&
-    persistedDestTx.toLowerCase() !== displaySourceTx.toLowerCase()
-      ? persistedDestTx
-      : !displaySourceTx && persistedDestTx
-      ? persistedDestTx
-      : undefined);
+    rawDestTx.toLowerCase() !== displaySourceTx.toLowerCase()
+      ? rawDestTx
+      : isCurrentWalletConnected && !displaySourceTx && rawDestTx
+      ? rawDestTx
+      : undefined;
 
   useEffect(() => {
     if (!activeDropdown && !isAssetMenuOpen) return;
@@ -815,7 +844,7 @@ export function BridgeForm({
                 </div>
 
                 {/* Transaction Status Tracker */}
-                {genlayerBridgeStatus === "waiting-approval" && (
+                {isCurrentWalletConnected && genlayerBridgeStatus === "waiting-approval" && (
                   <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-3.5 space-y-1.5 text-xs text-blue-300">
                     <div className="flex items-center gap-2 font-semibold">
                       <Loader2 className="h-4 w-4 animate-spin text-blue-400" />
@@ -834,7 +863,7 @@ export function BridgeForm({
                   </div>
                 )}
 
-                {(genlayerBridgeStatus === "bridging" || genlayerBridgeStatus === "waiting-bridge-confirmation") && (
+                {isCurrentWalletConnected && (genlayerBridgeStatus === "bridging" || genlayerBridgeStatus === "waiting-bridge-confirmation") && (
                   <div className="rounded-xl border border-purple-500/30 bg-purple-500/10 p-3.5 space-y-1.5 text-xs text-purple-300">
                     <div className="flex items-center gap-2 font-semibold">
                       <Loader2 className="h-4 w-4 animate-spin text-purple-400" />
@@ -853,7 +882,7 @@ export function BridgeForm({
                   </div>
                 )}
 
-                {genlayerBridgeStatus === "completed" && (
+                {isCurrentWalletConnected && genlayerBridgeStatus === "completed" && (
                   <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 space-y-2.5 text-xs text-slate-200">
                     <div className="flex items-center gap-2 text-emerald-400 font-semibold">
                       <CheckCircle2 className="h-4 w-4 text-emerald-400" />
@@ -1136,7 +1165,7 @@ export function BridgeForm({
                 </Button>
 
                 {/* Status section */}
-                {status !== "idle" && (
+                {isCurrentWalletConnected && status !== "idle" && (
                   <div className="border-t border-white/5 pt-4 mt-2 space-y-3">
                     <div className="text-xs font-semibold text-slate-400 mb-1 flex items-center justify-between">
                       <span>Bridge Status</span>
@@ -1210,7 +1239,7 @@ export function BridgeForm({
                 )}
 
                 {/* Explicit Two-Row Transaction Display */}
-                {(displaySourceTx || displayDestTx || ["bridging", "completed"].includes(status)) && (
+                {isCurrentWalletConnected && (displaySourceTx || displayDestTx || ["bridging", "completed"].includes(status)) && (
                   <div className="border-t border-white/5 pt-3 mt-1 flex flex-col gap-2.5 text-xs">
                     {/* Source Transaction Row */}
                     <div className="flex justify-between items-center bg-white/[0.02] border border-white/5 rounded-xl px-3.5 py-2.5">
