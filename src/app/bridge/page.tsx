@@ -25,7 +25,6 @@ import { basePublicClient } from "@/lib/base-client";
 
 // Swap integrations
 import { SwapForm } from "@/components/bridge/swap-form";
-import { SwapBalanceCard } from "@/components/bridge/swap-balance-card";
 import { SwapHistory } from "@/components/bridge/swap-history";
 import { useTokenBalance } from "@/hooks/use-token-balance";
 import { SwapHistoryItem } from "@/hooks/use-swap";
@@ -622,31 +621,17 @@ export default function BridgePage() {
           />
         </div>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-          <div className="space-y-6">
-            <SwapForm
-              balanceUSDC={swapUsdcBalance}
-              balanceEURC={swapEurcBalance}
-              balanceCirBTC={swapCirBtcBalance}
-              balanceETH={swapEthBalance}
-              isLoadingBalance={isLoadingUsdc || isLoadingEurc || isLoadingCirBtc || isLoadingEth}
-              selectedNetwork={selectedSwapNetwork}
-              onNetworkChange={setSelectedSwapNetwork}
-              onSwapSuccess={handleSwapSuccess}
-            />
-          </div>
-
-          <div className="space-y-6">
-            <SwapBalanceCard
-              usdcBalance={swapUsdcBalance}
-              eurcBalance={swapEurcBalance}
-              cirbtcBalance={swapCirBtcBalance}
-              ethBalance={swapEthBalance}
-              isLoading={isLoadingUsdc || isLoadingEurc || isLoadingCirBtc || isLoadingEth}
-              onRefresh={handleRefreshSwapBalances}
-              network={selectedSwapNetwork}
-            />
-          </div>
+        <div className="space-y-6">
+          <SwapForm
+            balanceUSDC={swapUsdcBalance}
+            balanceEURC={swapEurcBalance}
+            balanceCirBTC={swapCirBtcBalance}
+            balanceETH={swapEthBalance}
+            isLoadingBalance={isLoadingUsdc || isLoadingEurc || isLoadingCirBtc || isLoadingEth}
+            selectedNetwork={selectedSwapNetwork}
+            onNetworkChange={setSelectedSwapNetwork}
+            onSwapSuccess={handleSwapSuccess}
+          />
         </div>
       )}
 

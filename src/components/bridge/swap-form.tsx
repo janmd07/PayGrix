@@ -353,7 +353,7 @@ export function SwapForm({
 
   return (
     <div className="space-y-6">
-      <Card className="border border-white/10 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_8px_32px_rgba(6,15,36,0.5)]">
+      <Card className="border border-white/10 bg-[#060f24]/60 backdrop-blur-lg relative overflow-hidden shadow-[0_8px_32px_rgba(6,15,36,0.5)] w-full max-w-[500px] mx-auto">
         {/* Elegant top gradient accent line */}
         <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf]" />
 
@@ -407,7 +407,7 @@ export function SwapForm({
 
         <CardContent className="space-y-4">
           {/* Centered Compact Swap Widget */}
-          <div className="mx-auto w-full max-w-[500px] space-y-4">
+          <div className="w-full space-y-4">
             {/* Top row: Last updated indicator & refresh icon button */}
             <div className="flex justify-end items-center gap-2 text-xs text-slate-500 font-mono pr-1">
               <span>Last updated: {lastUpdated || "--:--:--"}</span>
