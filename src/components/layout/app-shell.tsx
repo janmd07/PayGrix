@@ -262,36 +262,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               );
             })}
           </nav>
-
-          {/* Footer info */}
-          <div
-            className="m-3 space-y-3 rounded-xl p-4"
-            style={{
-              background: "rgba(37, 99, 255, 0.06)",
-              border: "1px solid rgba(79, 140, 255, 0.15)",
-            }}
-          >
-            <Badge variant="outline" className="text-xs">Testnet Environment</Badge>
-            <p className="text-xs leading-5 text-[#b7c4d6]">
-              Payroll execution is intentionally not implemented yet.
-            </p>
-            <div className="pt-2.5 border-t border-[#4f8cff]/10 flex items-center">
-              <a
-                href="https://x.com/janmd07"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-[11px] text-[#b7c4d6] hover:text-white transition-all group font-medium w-full justify-between"
-              >
-                <span>Built by janmd</span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#6d5dfc]/10 border border-[#6d5dfc]/20 text-[#4f8cff] group-hover:bg-[#6d5dfc]/20 group-hover:border-[#6d5dfc]/40 shadow-[0_0_10px_rgba(109,93,252,0.1)] transition-all duration-300">
-                  <svg className="h-2.5 w-2.5 text-[#4f8cff] fill-current" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                  </svg>
-                  Follow on X
-                </span>
-              </a>
-            </div>
-          </div>
         </div>
       </aside>
 
@@ -484,44 +454,29 @@ export function AppShell({ children }: { children: ReactNode }) {
                 );
               })}
             </nav>
-
-            {/* Drawer Footer info */}
-            <div
-              className="m-3 space-y-3 rounded-xl p-3.5"
-              style={{
-                background: "rgba(37, 99, 255, 0.06)",
-                border: "1px solid rgba(79, 140, 255, 0.15)",
-              }}
-            >
-              <div className="flex items-center justify-between">
-                <Badge variant="outline" className="text-xs">Testnet Environment</Badge>
-              </div>
-              <p className="text-[11px] leading-relaxed text-[#b7c4d6]">
-                Payroll execution is intentionally not implemented yet.
-              </p>
-              <div className="pt-2 border-t border-[#4f8cff]/10 flex items-center">
-                <a
-                  href="https://x.com/janmd07"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-[11px] text-[#b7c4d6] hover:text-white transition-all group font-medium w-full justify-between"
-                >
-                  <span>Built by janmd</span>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#6d5dfc]/10 border border-[#6d5dfc]/20 text-[#4f8cff] group-hover:bg-[#6d5dfc]/20 group-hover:border-[#6d5dfc]/40 shadow-[0_0_10px_rgba(109,93,252,0.1)] transition-all duration-300">
-                    <svg className="h-2.5 w-2.5 text-[#4f8cff] fill-current" viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                    </svg>
-                    Follow on X
-                  </span>
-                </a>
-              </div>
-            </div>
           </aside>
         </div>
 
         {/* Page content */}
         <main className="px-4 py-6 sm:px-6 lg:px-8 w-full max-w-full min-w-0 overflow-x-hidden">
           <UnsupportedNetworkWarning />
+
+          {/* Important Status Banner: Testnet Environment & Operational State */}
+          <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3 text-xs backdrop-blur-md">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <Badge variant="outline" className="text-[11px] font-semibold border-blue-500/30 text-blue-400 bg-blue-500/10 shrink-0">
+                Testnet Environment
+              </Badge>
+              <span className="text-slate-300">
+                PayGrix operates on Arc Testnet &amp; Base Sepolia. Payroll execution is intentionally not implemented yet.
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0 text-[11px] text-slate-400">
+              <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>Testnet Rails Active</span>
+            </div>
+          </div>
+
           {children}
         </main>
       </div>

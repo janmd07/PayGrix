@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { MagneticButton } from "@/components/ui/magnetic-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { BackgroundEffects } from "@/components/landing/background/BackgroundEffects";
 
 /* ─────────────────────────────────────────────────────────
@@ -1297,47 +1298,215 @@ export default function LandingPage() {
       </section>
 
       {/* ══════════════════════════════════════════════
-          FOOTER SECTION
+          RESOURCES & FOOTER SECTION
           ══════════════════════════════════════════════ */}
-      <div className="section-divider mx-auto max-w-5xl" />
-      <footer className="bg-background border-t border-slate-200/5 dark:border-slate-800/20">
-        <div className="mx-auto max-w-7xl px-4 py-7 sm:px-6 lg:px-8 flex flex-col items-center justify-between gap-4 sm:flex-row">
-          <div className="flex items-center gap-3">
-             <div
-               className="h-7 w-7 rounded-lg flex items-center justify-center"
-               style={{
-                 background: "linear-gradient(135deg, #4f8cff 0%, #6d5dfc 50%, #d65dfc 100%)",
-                 boxShadow: "0 0 14px rgba(109,93,252,0.40)",
-               }}
-             >
-              <span className="text-white text-[10px] font-extrabold">A</span>
-            </div>
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <p className="text-xs text-slate-400">
-                 PayGrix · Arc Testnet · Chain ID 5042002
+      <div className="section-divider mx-auto max-w-7xl" />
+      <footer className="relative z-30 border-t border-slate-800/60 bg-[#020617]/95 backdrop-blur-xl">
+        <div className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 gap-10 lg:grid-cols-12 lg:gap-8">
+            {/* PayGrix Brand & Info */}
+            <div className="space-y-4 lg:col-span-4">
+              <div className="flex items-center gap-3">
+                <div
+                  className="h-8 w-8 rounded-xl flex items-center justify-center relative overflow-hidden"
+                  style={{
+                    background: "linear-gradient(135deg, #4f8cff 0%, #6d5dfc 50%, #d65dfc 100%)",
+                    boxShadow: "0 0 16px rgba(109,93,252,0.45)",
+                  }}
+                >
+                  <span className="text-white text-xs font-black tracking-wider">A</span>
+                </div>
+                <span className="text-lg font-bold tracking-tight text-white">PayGrix</span>
+              </div>
+              <p className="text-sm leading-relaxed text-slate-400 max-w-sm">
+                Stablecoin payroll infrastructure for crypto-native teams. Structured cycles, treasury clarity, and on-chain payment readiness on Arc Testnet.
               </p>
-              <div className="flex items-center gap-1.5">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                <p className="text-xs text-slate-500 font-medium">Testnet connected</p>
+              <div className="flex flex-wrap items-center gap-2.5 pt-2">
+                <a
+                  href="https://x.com/janmd07"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="X / Twitter"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs text-slate-300 hover:text-white hover:border-[#4f8cff]/40 hover:bg-[#4f8cff]/10 transition-all duration-200"
+                >
+                  <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                  </svg>
+                  <span>@janmd07</span>
+                </a>
+                <a
+                  href="https://github.com/janmd07/PayGrix"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="GitHub Repository"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs text-slate-300 hover:text-white hover:border-[#4f8cff]/40 hover:bg-[#4f8cff]/10 transition-all duration-200"
+                >
+                  <svg className="h-3.5 w-3.5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+                    <path fillRule="evenodd" clipRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.53 1.032 1.53 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+                  </svg>
+                  <span>GitHub</span>
+                </a>
+              </div>
+            </div>
+
+            {/* Product Links */}
+            <div className="space-y-3 lg:col-span-2">
+              <p className="text-xs font-semibold tracking-wider text-slate-200 uppercase">
+                Product
+              </p>
+              <ul className="space-y-2.5 text-sm">
+                <li>
+                  <Link href="/dashboard" className="text-slate-400 hover:text-[#4f8cff] transition-colors">
+                    Dashboard
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/payroll" className="text-slate-400 hover:text-[#4f8cff] transition-colors">
+                    Payroll
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/treasury" className="text-slate-400 hover:text-[#4f8cff] transition-colors">
+                    Treasury
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/bridge" className="text-slate-400 hover:text-[#4f8cff] transition-colors">
+                    Bridge
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/pay" className="text-slate-400 hover:text-[#4f8cff] transition-colors">
+                    Swap
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/pool" className="text-slate-400 hover:text-[#4f8cff] transition-colors">
+                    Pool
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/lending" className="text-slate-400 hover:text-[#4f8cff] transition-colors">
+                    Lending
+                  </Link>
+                </li>
+              </ul>
+            </div>
+
+            {/* Resources Links */}
+            <div className="space-y-3 lg:col-span-2">
+              <p className="text-xs font-semibold tracking-wider text-slate-200 uppercase">
+                Resources
+              </p>
+              <ul className="space-y-2.5 text-sm">
+                <li>
+                  <a
+                    href="https://github.com/janmd07/PayGrix"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-slate-400 hover:text-[#4f8cff] transition-colors"
+                  >
+                    <span>GitHub</span>
+                    <ArrowUpRight className="h-3.5 w-3.5 text-slate-500" />
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="https://testnet.arcscan.app"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-slate-400 hover:text-[#4f8cff] transition-colors"
+                  >
+                    <span>Arc Explorer</span>
+                    <ArrowUpRight className="h-3.5 w-3.5 text-slate-500" />
+                  </a>
+                </li>
+                <li>
+                  <a
+                    href="https://x.com/janmd07"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 text-slate-400 hover:text-[#4f8cff] transition-colors"
+                  >
+                    <span>X / Updates</span>
+                    <ArrowUpRight className="h-3.5 w-3.5 text-slate-500" />
+                  </a>
+                </li>
+                <li>
+                  <Link href="/settings" className="text-slate-400 hover:text-[#4f8cff] transition-colors">
+                    Settings
+                  </Link>
+                </li>
+              </ul>
+            </div>
+
+            {/* Testnet Environment Section (Naturally Integrated) */}
+            <div className="lg:col-span-4">
+              <div
+                className="rounded-2xl p-5 border relative overflow-hidden"
+                style={{
+                  background: "linear-gradient(135deg, rgba(37, 99, 255, 0.08) 0%, rgba(109, 93, 252, 0.04) 100%)",
+                  borderColor: "rgba(79, 140, 255, 0.20)",
+                  boxShadow: "0 8px 32px -8px rgba(37, 99, 255, 0.15)",
+                }}
+              >
+                <div className="flex items-center justify-between gap-2 mb-3">
+                  <Badge variant="outline" className="text-xs font-semibold">
+                    Testnet Environment
+                  </Badge>
+                  <div className="flex items-center gap-1.5 text-xs text-slate-400">
+                    <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+                    <span className="text-[11px] font-medium text-emerald-400">Rails Active</span>
+                  </div>
+                </div>
+
+                <p className="text-xs leading-relaxed text-slate-300 mb-4">
+                  PayGrix operates on Arc Testnet &amp; Base Sepolia. Payroll execution is intentionally not implemented yet.
+                </p>
+
+                <div className="pt-3 border-t border-[#4f8cff]/10 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+                  <span className="font-mono text-slate-400">Arc Testnet · Chain ID 5042002</span>
+                  <a
+                    href="https://testnet.arcscan.app"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[#4f8cff] hover:underline inline-flex items-center gap-1"
+                  >
+                    ArcScan <ArrowUpRight className="h-2.5 w-2.5" />
+                  </a>
+                </div>
               </div>
             </div>
           </div>
-          <div className="flex items-center">
-            <a
-              href="https://x.com/janmd07"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-xs text-slate-400 hover:text-white transition-all group font-medium"
-            >
-              <span>Built by janmd</span>
-              <span className="text-slate-600">•</span>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#6d5dfc]/10 border border-[#6d5dfc]/20 text-[#4f8cff] group-hover:bg-[#6d5dfc]/20 group-hover:border-[#6d5dfc]/40 shadow-[0_0_10px_rgba(109,93,252,0.1)] transition-all duration-300">
-                <svg className="h-2.5 w-2.5 text-[#4f8cff] fill-current" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-                </svg>
-                Follow on X
-              </span>
-            </a>
+
+          {/* Bottom sub-footer row */}
+          <div className="mt-12 pt-6 border-t border-slate-800/60 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <p>PayGrix · Arc Testnet · Chain ID 5042002</p>
+              <span className="hidden sm:inline text-slate-700">•</span>
+              <div className="flex items-center gap-1.5">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-slate-400 font-medium">Testnet connected</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <a
+                href="https://x.com/janmd07"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 text-xs text-slate-400 hover:text-white transition-all group font-medium"
+              >
+                <span>Built by janmd</span>
+                <span className="text-slate-600">•</span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#6d5dfc]/10 border border-[#6d5dfc]/20 text-[#4f8cff] group-hover:bg-[#6d5dfc]/20 group-hover:border-[#6d5dfc]/40 shadow-[0_0_10px_rgba(109,93,252,0.1)] transition-all duration-300">
+                  <svg className="h-2.5 w-2.5 text-[#4f8cff] fill-current" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                  </svg>
+                  Follow on X
+                </span>
+              </a>
+            </div>
           </div>
         </div>
       </footer>
