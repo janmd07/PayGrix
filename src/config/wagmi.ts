@@ -3,6 +3,7 @@ import { injected } from "wagmi/connectors";
 import { defineChain } from "viem";
 
 import { arcTestnet } from "@/config/arc-testnet";
+import { arcMainnet } from "@/config/arc-mainnet";
 
 export const baseSepolia = defineChain({
   id: 84532,
@@ -116,7 +117,7 @@ export const genlayerBradbury = defineChain({
 });
 
 export const wagmiConfig = createConfig({
-  chains: [arcTestnet, baseSepolia, arbitrumSepolia, mainnet, base, genlayerBradbury],
+  chains: [arcTestnet, baseSepolia, arbitrumSepolia, mainnet, base, genlayerBradbury, arcMainnet],
   connectors: [
     injected({ target: "metaMask" }),
     injected({ target: "okxWallet" }),
@@ -136,6 +137,7 @@ export const wagmiConfig = createConfig({
     [mainnet.id]: http(mainnet.rpcUrls.default.http[0]),
     [base.id]: http(base.rpcUrls.default.http[0]),
     [genlayerBradbury.id]: http(genlayerBradbury.rpcUrls.default.http[0]),
+    [arcMainnet.id]: http(arcMainnet.rpcUrls.default.http[0]),
   },
   ssr: true,
 });
