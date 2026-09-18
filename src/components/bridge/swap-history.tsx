@@ -64,8 +64,11 @@ export function SwapHistory({ swaps, isConnected = false }: SwapHistoryProps) {
               {/* Rows */}
               {swaps.map((tx) => {
                 const isBaseTx = tx.network === "Base";
+                const isArcMainnetTx = tx.network === "ArcMainnet";
                 const explorerUrl = isBaseTx
                   ? `https://sepolia.basescan.org/tx/${tx.txHash}`
+                  : isArcMainnetTx
+                  ? `https://explorer.arc.io/tx/${tx.txHash}`
                   : `https://testnet.arcscan.app/tx/${tx.txHash}`;
 
                 return (
@@ -78,9 +81,11 @@ export function SwapHistory({ swaps, isConnected = false }: SwapHistoryProps) {
                         "text-[10px] font-semibold px-2 py-0.5 rounded-full border",
                         isBaseTx
                           ? "bg-blue-500/10 text-blue-400 border-blue-500/20"
+                          : isArcMainnetTx
+                          ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
                           : "bg-purple-500/10 text-purple-400 border-purple-500/20"
                       )}>
-                        {isBaseTx ? "Base Sepolia" : "Arc"}
+                        {isBaseTx ? "Base Sepolia" : isArcMainnetTx ? "Arc Mainnet" : "Arc Testnet"}
                       </span>
                     </div>
 

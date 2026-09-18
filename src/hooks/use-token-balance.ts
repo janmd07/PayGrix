@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { formatUnits } from "viem";
 import { fetchTokenBalanceDeduped } from "@/lib/arc-client";
+import { fetchArcMainnetTokenBalanceDeduped } from "@/lib/arc-mainnet-client";
 import { fetchBaseTokenBalanceDeduped, fetchBaseNativeBalanceDeduped } from "@/lib/base-client";
 import { SWAP_CHAINS, SupportedSwapChain } from "@/config/swap-config";
 
@@ -22,14 +23,14 @@ export function useTokenBalance(
     }
 
     // cirBTC only exists on Arc Testnet
-    if (network === "Base" && tokenSymbol === "cirBTC") {
+    if ((network === "Base" || network === "ArcMainnet") && tokenSymbol === "cirBTC") {
       setBalance("0.00");
       setIsLoading(false);
       return;
     }
 
     // ETH only exists on Base Sepolia in swap
-    if (network === "Arc" && tokenSymbol === "ETH") {
+    if ((network === "Arc" || network === "ArcMainnet") && tokenSymbol === "ETH") {
       setBalance("0.00");
       setIsLoading(false);
       return;
@@ -49,6 +50,8 @@ export function useTokenBalance(
         balanceWei = await fetchBaseNativeBalanceDeduped(address);
       } else if (network === "Base") {
         balanceWei = await fetchBaseTokenBalanceDeduped(tokenConfig.address, address);
+      } else if (network === "ArcMainnet") {
+        balanceWei = await fetchArcMainnetTokenBalanceDeduped(tokenConfig.address, address);
       } else {
         balanceWei = await fetchTokenBalanceDeduped(tokenConfig.address, address);
       }

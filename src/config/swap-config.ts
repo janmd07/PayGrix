@@ -1,9 +1,9 @@
-export type SupportedSwapChain = "Arc" | "Base";
+export type SupportedSwapChain = "Arc" | "ArcMainnet" | "Base";
 
 export interface SwapChainConfig {
   id: number;
   name: string;
-  chainKey: string; // for API routes ("Arc_Testnet" | "Base")
+  chainKey: string; // for API routes ("Arc_Testnet" | "Base" | "Arc_Mainnet")
   rpcUrls: string[];
   blockExplorerUrl: string;
   routerAddress: `0x${string}`;
@@ -42,6 +42,29 @@ export const SWAP_CHAINS: Record<SupportedSwapChain, SwapChainConfig> = {
         address: "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF",
         decimals: 8,
         symbol: "cirBTC",
+      },
+    },
+  },
+  ArcMainnet: {
+    id: 5042,
+    name: "Arc Mainnet",
+    chainKey: "Arc_Mainnet",
+    rpcUrls: ["https://rpc.mainnet.arc.io"],
+    blockExplorerUrl: "https://explorer.arc.io",
+    routerAddress: "0x4fca4a51ab4f23a7447b3284fbd7d73289a89fb1", // Universal Router (V4)
+    quoterAddress: "0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94", // Quoter (V4)
+    poolAddress: "0xeb0fd02fb8044d5514fb6e165ee134fd547eff0378bb33b76f4b81d8b03bd1ae",
+    feeTier: 500, // 0.05% Uniswap V4 pool
+    tokens: {
+      USDC: {
+        address: "0x3600000000000000000000000000000000000000",
+        decimals: 6,
+        symbol: "USDC",
+      },
+      EURC: {
+        address: "0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1",
+        decimals: 6,
+        symbol: "EURC",
       },
     },
   },

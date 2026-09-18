@@ -465,15 +465,17 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3 text-xs backdrop-blur-md">
             <div className="flex flex-wrap items-center gap-2.5">
               <Badge variant="outline" className="text-[11px] font-semibold border-blue-500/30 text-blue-400 bg-blue-500/10 shrink-0">
-                Testnet Environment
+                {pathname === "/swap" ? "Live Quotes" : "Testnet Environment"}
               </Badge>
               <span className="text-slate-300">
-                PayGrix operates on Arc Testnet &amp; Base Sepolia. Payroll execution is intentionally not implemented yet.
+                {pathname === "/swap"
+                  ? "Arc Mainnet quotes are live. Mainnet execution is not enabled yet."
+                  : "PayGrix operates on Arc Testnet & Base Sepolia. Payroll execution is intentionally not implemented yet."}
               </span>
             </div>
             <div className="flex items-center gap-2 shrink-0 text-[11px] text-slate-400">
-              <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Testnet Rails Active</span>
+              <span className={cn("inline-block h-2 w-2 rounded-full", pathname === "/swap" ? "bg-amber-400" : "bg-emerald-400 animate-pulse")} />
+              <span>{pathname === "/swap" ? "Mainnet Quotes Active (Read-Only)" : "Testnet Rails Active"}</span>
             </div>
           </div>
 

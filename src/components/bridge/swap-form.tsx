@@ -75,15 +75,15 @@ import { SupportedSwapChain, SWAP_CHAINS } from "@/config/swap-config";
 
 function SwapChainLogo({ chain }: { chain: SupportedSwapChain }) {
   const [hasFailed, setHasFailed] = useState(false);
-  const logoUrl = chain === "Arc" ? "/chains/arc.png" : "/chains/base.png";
-  const alt = chain === "Arc" ? "Arc Testnet" : "Base Sepolia";
+  const logoUrl = chain === "Base" ? "/chains/base.png" : "/chains/arc.png";
+  const alt = chain === "Arc" ? "Arc Testnet" : chain === "ArcMainnet" ? "Arc Mainnet" : "Base Sepolia";
 
   if (hasFailed) {
     return (
       <span
         className={cn(
           "h-2 w-2 rounded-full shrink-0",
-          chain === "Arc" ? "bg-purple-400" : "bg-blue-400"
+          chain === "Arc" ? "bg-purple-400" : chain === "ArcMainnet" ? "bg-emerald-400" : "bg-blue-400"
         )}
       />
     );
@@ -149,6 +149,11 @@ export function SwapForm({
     if (net === "Arc") {
       if (tokenIn === "ETH") setTokenIn("USDC");
       if (tokenOut === "ETH") setTokenOut("EURC");
+    }
+    // If switching to ArcMainnet, ensure tokens are USDC and EURC
+    if (net === "ArcMainnet") {
+      if (tokenIn !== "USDC" && tokenIn !== "EURC") setTokenIn("USDC");
+      if (tokenOut !== "USDC" && tokenOut !== "EURC") setTokenOut("EURC");
     }
     setAmount("");
     setHasQuote(false);
@@ -260,7 +265,11 @@ export function SwapForm({
   const isSelectDisabled = isSwapDisabled || status === "swapping" || status === "waiting-wallet";
 
   const availableOptions: ("USDC" | "EURC" | "cirBTC" | "ETH")[] =
-    currentNetwork === "Base" ? ["ETH", "USDC", "EURC"] : ["USDC", "EURC", "cirBTC"];
+    currentNetwork === "Base"
+      ? ["ETH", "USDC", "EURC"]
+      : currentNetwork === "ArcMainnet"
+      ? ["USDC", "EURC"]
+      : ["USDC", "EURC", "cirBTC"];
 
   const renderTokenSelector = (
     value: "USDC" | "EURC" | "cirBTC" | "ETH",
@@ -367,32 +376,48 @@ export function SwapForm({
               <CardDescription className="text-xs text-slate-400">
                 {currentNetwork === "Base"
                   ? "Swap ETH, USDC, and EURC same-chain on Base Sepolia with on-chain Uniswap v3."
+                  : currentNetwork === "ArcMainnet"
+                  ? "Live read-only quotes for USDC & EURC on Arc Mainnet via Uniswap V4."
                   : "Swap stablecoins and cirBTC same-chain on Arc Testnet instantly."}
               </CardDescription>
             </div>
 
-            {/* Chain Selector: Arc vs Base Sepolia */}
-            <div className="flex items-center gap-1 p-1 bg-[#070e1c] rounded-xl border border-white/10 shrink-0 self-start sm:self-auto">
+            {/* Chain Selector: Arc Testnet vs Arc Mainnet vs Base Sepolia */}
+            <div className="flex flex-wrap items-center gap-1 p-1 bg-[#070e1c] rounded-xl border border-white/10 shrink-0 self-start sm:self-auto">
               <button
                 type="button"
                 onClick={() => handleNetworkChange("Arc")}
                 disabled={status === "swapping" || status === "waiting-wallet"}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
+                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
                   currentNetwork === "Arc"
                     ? "bg-purple-600/90 text-white shadow-[0_0_12px_rgba(168,85,247,0.4)] border border-purple-400/30"
                     : "text-slate-400 hover:text-white hover:bg-white/5"
                 )}
               >
                 <SwapChainLogo chain="Arc" />
-                Arc
+                Arc Testnet
+              </button>
+              <button
+                type="button"
+                onClick={() => handleNetworkChange("ArcMainnet")}
+                disabled={status === "swapping" || status === "waiting-wallet"}
+                className={cn(
+                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
+                  currentNetwork === "ArcMainnet"
+                    ? "bg-emerald-600/90 text-white shadow-[0_0_12px_rgba(16,185,129,0.4)] border border-emerald-400/30"
+                    : "text-slate-400 hover:text-white hover:bg-white/5"
+                )}
+              >
+                <SwapChainLogo chain="ArcMainnet" />
+                Arc Mainnet
               </button>
               <button
                 type="button"
                 onClick={() => handleNetworkChange("Base")}
                 disabled={status === "swapping" || status === "waiting-wallet"}
                 className={cn(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
+                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
                   currentNetwork === "Base"
                     ? "bg-[#0052FF] text-white shadow-[0_0_12px_rgba(0,82,255,0.4)] border border-blue-400/30"
                     : "text-slate-400 hover:text-white hover:bg-white/5"
@@ -630,8 +655,24 @@ export function SwapForm({
                   ? "Insufficient Balance"
                   : status === "estimating"
                   ? "Estimating..."
+                  : currentNetwork === "ArcMainnet"
+                  ? "Get Arc Mainnet Quote"
                   : "Get Quote"}
               </Button>
+            ) : currentNetwork === "ArcMainnet" ? (
+              <div className="space-y-2.5">
+                <Button
+                  type="button"
+                  disabled={true}
+                  variant="outline"
+                  className="w-full text-xs font-semibold py-3.5 rounded-xl border-amber-500/30 bg-amber-500/10 text-amber-300 cursor-not-allowed opacity-90"
+                >
+                  Arc Mainnet Execution Disabled (Quote Only)
+                </Button>
+                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-center text-xs text-amber-300/90">
+                  Arc Mainnet quotes are live. Mainnet execution is not enabled yet.
+                </div>
+              </div>
             ) : (
               <Button
                 type="button"

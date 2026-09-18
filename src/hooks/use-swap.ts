@@ -183,6 +183,10 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
         console.error("[SWAP] Failed to read provider chain ID:", err);
       }
 
+      if (network === "ArcMainnet") {
+        throw new Error("Arc Mainnet swap execution is not enabled yet. Read-only quotes are active.");
+      }
+
       // ==========================================
       // BRANCH 1: BASE SEPOLIA SWAP
       // ==========================================
