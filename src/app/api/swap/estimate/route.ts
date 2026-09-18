@@ -3,6 +3,7 @@ import { createPublicClient, http, parseAbi, encodePacked } from "viem";
 import { arcTestnet } from "@/config/arc-testnet";
 import { SWAP_CHAINS } from "@/config/swap-config";
 import { basePublicClient } from "@/lib/base-client";
+import { getArcMainnetV4Quote } from "@/lib/arc-mainnet-quote";
 
 // Arc Testnet Configuration
 const ARC_USDC_ADDRESS = SWAP_CHAINS.Arc.tokens.USDC.address.toLowerCase();
@@ -229,8 +230,47 @@ export async function GET(request: Request) {
     }
   }
 
+  // ROUTE 3: ARC MAINNET (Uniswap V4 Quoter - Read-Only Simulation)
+  if (tokenInChain === "Arc_Mainnet" && tokenOutChain === "Arc_Mainnet") {
+    try {
+      const rawAmountIn = BigInt(amount);
+      const slipBps = parseInt(slippageBps, 10) || 100;
+
+      const quoteResult = await getArcMainnetV4Quote({
+        tokenInAddress,
+        tokenOutAddress,
+        amountIn: rawAmountIn,
+        slippageBps: slipBps,
+      });
+
+      return NextResponse.json({
+        quote: {
+          estimatedAmount: quoteResult.amountOut.toString(),
+          minAmount: quoteResult.minAmountOut.toString(),
+          gasEstimate: quoteResult.gasEstimate.toString(),
+          executionPrice: quoteResult.executionPrice,
+          route: quoteResult.route,
+        },
+        fees: [
+          {
+            token: "USDC",
+            amount: "0.00",
+            type: "swap",
+          },
+        ],
+      });
+    } catch (err) {
+      console.error("Error fetching on-chain DEX quote from Uniswap V4 Quoter on Arc Mainnet:", err);
+      const message = err instanceof Error ? err.message : "Failed to fetch Arc Mainnet quote.";
+      return NextResponse.json(
+        { error: message },
+        { status: 404 }
+      );
+    }
+  }
+
   return NextResponse.json(
-    { error: "Unsupported chain. Supported chains are Arc_Testnet and Base." },
+    { error: "Unsupported chain. Supported chains are Arc_Testnet, Base, and Arc_Mainnet." },
     { status: 400 }
   );
 }
