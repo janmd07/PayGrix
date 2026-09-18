@@ -88,8 +88,21 @@ export default function DashboardPage() {
 
   useEffect(() => {
     setMounted(true);
-    // Load contributors
-    const storedContributors = localStorage.getItem("arc_contributors");
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    if (!isConnected || !address) {
+      setContributors([]);
+      setBatches([]);
+      return;
+    }
+
+    const normalizedAddress = address.toLowerCase();
+
+    // Load contributors scoped to connected wallet
+    const storedContributors = localStorage.getItem(`arc_contributors_${normalizedAddress}`);
     if (storedContributors) {
       try {
         setContributors(JSON.parse(storedContributors));
@@ -97,9 +110,12 @@ export default function DashboardPage() {
         setContributors([]);
         setStorageError(true);
       }
+    } else {
+      setContributors([]);
     }
-    // Load batches
-    const storedBatches = localStorage.getItem("arc_payroll_batches");
+
+    // Load batches scoped to connected wallet
+    const storedBatches = localStorage.getItem(`arc_payroll_batches_${normalizedAddress}`);
     if (storedBatches) {
       try {
         setBatches(JSON.parse(storedBatches));
@@ -107,8 +123,10 @@ export default function DashboardPage() {
         setBatches([]);
         setStorageError(true);
       }
+    } else {
+      setBatches([]);
     }
-  }, []);
+  }, [isConnected, address, mounted]);
 
   const getNextScheduledPayrollDetails = (activeList: Contributor[]) => {
     if (activeList.length === 0) {

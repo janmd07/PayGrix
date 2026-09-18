@@ -104,7 +104,7 @@ export default function ContributorsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<string>("All");
   const [storageError, setStorageError] = useState(false);
-  const { isConnected } = useArcWallet();
+  const { isConnected, address } = useArcWallet();
   
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -122,8 +122,22 @@ export default function ContributorsPage() {
 
   useEffect(() => {
     setMounted(true);
-    const stored = localStorage.getItem("arc_contributors");
-    if (stored) {
+  }, []);
+
+  useEffect(() => {
+    if (!mounted) return;
+
+    if (!isConnected || !address) {
+      setContributors([]);
+      return;
+    }
+
+    const storageKey = `arc_contributors_${address.toLowerCase()}`;
+    const stored = localStorage.getItem(storageKey);
+    if (!stored) {
+      setContributors(DEFAULT_CONTRIBUTORS);
+      localStorage.setItem(storageKey, JSON.stringify(DEFAULT_CONTRIBUTORS));
+    } else {
       try {
         setContributors(JSON.parse(stored));
       } catch {
@@ -131,28 +145,14 @@ export default function ContributorsPage() {
         setStorageError(true);
       }
     }
-  }, []);
-
-  useEffect(() => {
-    if (isConnected && mounted) {
-      const stored = localStorage.getItem("arc_contributors");
-      if (!stored) {
-        setContributors(DEFAULT_CONTRIBUTORS);
-        localStorage.setItem("arc_contributors", JSON.stringify(DEFAULT_CONTRIBUTORS));
-      } else {
-        try {
-          setContributors(JSON.parse(stored));
-        } catch {
-          setContributors([]);
-          setStorageError(true);
-        }
-      }
-    }
-  }, [isConnected, mounted]);
+  }, [isConnected, address, mounted]);
 
   const saveRoster = (newRoster: Contributor[]) => {
     setContributors(newRoster);
-    localStorage.setItem("arc_contributors", JSON.stringify(newRoster));
+    if (address) {
+      const storageKey = `arc_contributors_${address.toLowerCase()}`;
+      localStorage.setItem(storageKey, JSON.stringify(newRoster));
+    }
   };
 
   const handleCopy = (id: string, address: string) => {

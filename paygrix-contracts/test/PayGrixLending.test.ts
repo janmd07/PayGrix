@@ -52,18 +52,20 @@ describe("PayGrixLending Smart Contract Unit Tests", function () {
     // Mint tokens for testing
     await cirBTC.mint(user1.address, 10n * ONE_BTC);
     await cirBTC.mint(user2.address, 10n * ONE_BTC);
+    await usdc.mint(owner.address, 1_000_000n * ONE_USDC);
     await usdc.mint(funder.address, 1_000_000n * ONE_USDC);
     await usdc.mint(liquidator.address, 1_000_000n * ONE_USDC);
 
     // Approve tokens
     await cirBTC.connect(user1).approve(await lending.getAddress(), ethers.MaxUint256);
     await cirBTC.connect(user2).approve(await lending.getAddress(), ethers.MaxUint256);
+    await usdc.connect(owner).approve(await lending.getAddress(), ethers.MaxUint256);
     await usdc.connect(funder).approve(await lending.getAddress(), ethers.MaxUint256);
     await usdc.connect(user1).approve(await lending.getAddress(), ethers.MaxUint256);
     await usdc.connect(liquidator).approve(await lending.getAddress(), ethers.MaxUint256);
 
-    // Initial pool funding (100,000 USDC)
-    await lending.connect(funder).fundPool(100_000n * ONE_USDC);
+    // Initial pool funding by owner (100,000 USDC)
+    await lending.connect(owner).fundPool(100_000n * ONE_USDC);
   });
 
   describe("1. Constructor & Configuration Validation", function () {
@@ -354,6 +356,21 @@ describe("PayGrixLending Smart Contract Unit Tests", function () {
         "ZeroAmount"
       );
     });
+
+    it("7.7 Non-owner attempting to call fundPool reverts", async function () {
+      await expect(
+        lending.connect(user1).fundPool(1_000n * ONE_USDC)
+      ).to.be.revertedWithCustomError(lending, "OwnableUnauthorizedAccount");
+    });
+
+    it("7.8 Owner can successfully fund pool", async function () {
+      await expect(
+        lending.connect(owner).fundPool(50_000n * ONE_USDC)
+      )
+        .to.emit(lending, "PoolFunded")
+        .withArgs(owner.address, 50_000n * ONE_USDC);
+      expect(await lending.poolLiquidity()).to.equal(150_000n * ONE_USDC);
+    });
   });
 
   describe("8. Production Oracle Adapter & Freshness Validation", function () {
@@ -505,6 +522,50 @@ describe("PayGrixLending Smart Contract Unit Tests", function () {
       const pos = await lending.getPosition(user1.address);
       expect(pos.collateral).to.equal(0n); // All collateral seized
       expect(pos.debt).to.equal(22_500n * ONE_USDC); // Remaining debt after partial insolvent liquidation
+    });
+
+    it("9.6 Regression: Borrower retains remaining unseized collateral when dust debt is fully repaid (pos.debt == 0) and can withdraw it", async function () {
+      // 1. Borrower (user2) deposits 1.0 cirBTC ($60,000 value)
+      await lending.connect(user2).depositCollateral(ONE_BTC);
+      // 2. Borrower borrows 50 USDC (debt <= 100 USDC dust threshold)
+      await lending.connect(user2).borrow(50n * ONE_USDC);
+
+      // Drop price to $60.00 USDC per BTC (60_000_000n base units)
+      // At $60/BTC: 1.0 cirBTC is worth $60. 50 USDC debt.
+      // Health factor = (60 * 0.75) / 50 = 0.9 (9000 bps < 10000) -> Liquidatable!
+      // Seizure: 50 * 1.05 = 52.50 USDC value = 52.5 / 60 = 0.875 cirBTC (87,500,000 base units).
+      // Remaining collateral = 100,000,000 - 87,500,000 = 12,500,000 base units (0.125 cirBTC).
+      await oracle.setPrice(60_000_000n);
+
+      const initialLiquidatorBtc = await cirBTC.balanceOf(liquidator.address);
+      const initialUser2Btc = await cirBTC.balanceOf(user2.address);
+
+      // 3. Liquidation repays the debt
+      const expectedSeizedCirBtc = 87_500_000n; // 0.875 cirBTC
+      await expect(lending.connect(liquidator).liquidate(user2.address, 50n * ONE_USDC))
+        .to.emit(lending, "PositionLiquidated")
+        .withArgs(user2.address, liquidator.address, 50n * ONE_USDC, expectedSeizedCirBtc, 500n);
+
+      // 4. pos.debt == 0
+      const pos = await lending.getPosition(user2.address);
+      expect(pos.debt).to.equal(0n);
+
+      // 5. Remaining unseized collateral is still recorded
+      const expectedRemainingCollateral = ONE_BTC - expectedSeizedCirBtc; // 12,500,000 base units
+      expect(pos.collateral).to.equal(expectedRemainingCollateral);
+
+      // Verify liquidator received exactly the intended seized collateral
+      expect(await cirBTC.balanceOf(liquidator.address)).to.equal(initialLiquidatorBtc + expectedSeizedCirBtc);
+
+      // 6. Borrower can withdraw the remaining collateral
+      await expect(lending.connect(user2).withdrawCollateral(expectedRemainingCollateral))
+        .to.emit(lending, "CollateralWithdrawn")
+        .withArgs(user2.address, expectedRemainingCollateral);
+
+      expect(await cirBTC.balanceOf(user2.address)).to.equal(initialUser2Btc + expectedRemainingCollateral);
+      const posAfter = await lending.getPosition(user2.address);
+      expect(posAfter.collateral).to.equal(0n);
+      expect(posAfter.debt).to.equal(0n);
     });
   });
 

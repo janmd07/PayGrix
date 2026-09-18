@@ -249,10 +249,6 @@ contract BaseSepoliaLending is Ownable, Pausable, ReentrancyGuard {
         pos.debt -= actualRepay;
         totalOutstandingDebt -= actualRepay;
 
-        if (pos.debt == 0) {
-            pos.collateral = 0;
-        }
-
         borrowToken.safeTransferFrom(msg.sender, address(this), actualRepay);
         collateralToken.safeTransfer(msg.sender, actualWeth);
 
@@ -261,7 +257,7 @@ contract BaseSepoliaLending is Ownable, Pausable, ReentrancyGuard {
 
     /// @notice Funds the lending pool with USDC liquidity
     /// @param amount Amount of USDC base units (6 decimals) to transfer into pool
-    function fundPool(uint256 amount) external nonReentrant {
+    function fundPool(uint256 amount) external onlyOwner nonReentrant {
         if (amount == 0) revert ZeroAmount();
 
         totalLenderDeposits += amount;

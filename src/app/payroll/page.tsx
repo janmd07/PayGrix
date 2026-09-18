@@ -105,6 +105,7 @@ type Contributor = {
 
 type PayrollBatch = {
   id: string;
+  creatorAddress?: string;
   month: string;
   recipientsCount: number;
   totalAmount: number;
@@ -353,32 +354,6 @@ export default function PayrollPage() {
 
   useEffect(() => {
     setMounted(true);
-    // Load contributors
-    const storedContributors = localStorage.getItem("arc_contributors");
-    if (storedContributors) {
-      try {
-        setContributors(JSON.parse(storedContributors));
-      } catch {
-        setContributors([]);
-        setStorageError(true);
-      }
-    }
-
-    // Load payroll batches
-    const storedBatches = localStorage.getItem("arc_payroll_batches");
-    if (storedBatches) {
-      try {
-        const parsed = JSON.parse(storedBatches);
-        setBatches(parsed);
-        if (parsed.length > 0) {
-          setActiveBatchId(parsed[0].id);
-        }
-      } catch {
-        setBatches([]);
-        setStorageError(true);
-      }
-    }
-
     // Generate weekly periods for current year
     const currentYear = new Date().getFullYear();
     const periods = generateWeeklyPeriods(currentYear);
@@ -392,9 +367,56 @@ export default function PayrollPage() {
     setSelectedWeeklyPeriodIndex(foundIndex !== -1 ? foundIndex : 0);
   }, []);
 
+  useEffect(() => {
+    if (!address) {
+      setContributors([]);
+      setBatches([]);
+      setActiveBatchId(null);
+      return;
+    }
+
+    const normalizedAddress = address.toLowerCase();
+
+    // Load contributors scoped to connected wallet
+    const storedContributors = localStorage.getItem(`arc_contributors_${normalizedAddress}`);
+    if (storedContributors) {
+      try {
+        setContributors(JSON.parse(storedContributors));
+      } catch {
+        setContributors([]);
+        setStorageError(true);
+      }
+    } else {
+      setContributors([]);
+    }
+
+    // Load payroll batches scoped to connected wallet
+    const storedBatches = localStorage.getItem(`arc_payroll_batches_${normalizedAddress}`);
+    if (storedBatches) {
+      try {
+        const parsed = JSON.parse(storedBatches);
+        setBatches(parsed);
+        if (parsed.length > 0) {
+          setActiveBatchId(parsed[0].id);
+        } else {
+          setActiveBatchId(null);
+        }
+      } catch {
+        setBatches([]);
+        setActiveBatchId(null);
+        setStorageError(true);
+      }
+    } else {
+      setBatches([]);
+      setActiveBatchId(null);
+    }
+  }, [address]);
+
   const saveBatches = (newBatches: PayrollBatch[]) => {
     setBatches(newBatches);
-    localStorage.setItem("arc_payroll_batches", JSON.stringify(newBatches));
+    if (address) {
+      localStorage.setItem(`arc_payroll_batches_${address.toLowerCase()}`, JSON.stringify(newBatches));
+    }
   };
 
   const handleCopy = (id: string, copyAddress: string) => {
@@ -548,6 +570,7 @@ export default function PayrollPage() {
 
     const newBatch: PayrollBatch = {
       id: `batch-${Date.now()}`,
+      creatorAddress: address?.toLowerCase(),
       month: batchName,
       recipientsCount: dueContributorsData.length,
       totalAmount,
@@ -667,6 +690,7 @@ export default function PayrollPage() {
 
     const newBatch: PayrollBatch = {
       id: `batch-${Date.now()}`,
+      creatorAddress: address?.toLowerCase(),
       month: batchName,
       recipientsCount: dueContributorsData.length,
       totalAmount,
@@ -730,6 +754,11 @@ export default function PayrollPage() {
   const handleExecutePayout = async () => {
     const activeBatch = batches.find(b => b.id === activeBatchId);
     if (!activeBatch || !address || isActionPending) return;
+
+    if (activeBatch.creatorAddress && activeBatch.creatorAddress.toLowerCase() !== address.toLowerCase()) {
+      setPayoutError("Unauthorized: Connected wallet does not match the batch creator wallet.");
+      return;
+    }
 
     setError(null);
     setSuccess(null);

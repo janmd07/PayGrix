@@ -79,7 +79,7 @@ function PayPageContent() {
 
   // Wallet state
   const { isConnected, address } = useAccount();
-  const { isArcTestnet, chainId } = useArcWallet();
+  const { isArcTestnet, chainId, switchToArcTestnetAsync, switchChainAsync } = useArcWallet();
   const publicClient = usePublicClient({ chainId: CHAIN_ID });
 
   // Balance state
@@ -672,6 +672,24 @@ function PayPageContent() {
   // Execute actual on-chain transaction
   const handleExecutePayment = async () => {
     if (!recipient || !amount || !address) return;
+
+    // Verify connected wallet is on Arc Testnet (chainId 5042002) before transaction execution
+    if (chainId !== CHAIN_ID) {
+      try {
+        if (switchToArcTestnetAsync) {
+          await switchToArcTestnetAsync();
+        } else if (switchChainAsync) {
+          await switchChainAsync({ chainId: CHAIN_ID });
+        } else {
+          throw new Error("Chain switching is not supported by your wallet.");
+        }
+      } catch (switchErr: unknown) {
+        console.warn("Chain switch to Arc Testnet failed or was rejected:", switchErr);
+        setTxError("Please switch your wallet network to Arc Testnet to submit this payment.");
+        setTxStatus("idle");
+        return;
+      }
+    }
 
     setTxError(null);
     setTxStatus("broadcasting");
