@@ -1023,7 +1023,7 @@ export default function LandingPage() {
                       <div
                         className="hidden sm:flex items-center gap-0.5 rounded-lg p-1 bg-slate-950/40 border border-slate-800/10"
                       >
-                        {["Payroll", "Contributors", "Treasury"].map((t, i) => (
+                        {["Payroll", "Contributors", "Payments"].map((t, i) => (
                           <button
                             key={t}
                             className="rounded-md px-3 py-1 text-xs font-medium transition-all"
@@ -1363,11 +1363,6 @@ export default function LandingPage() {
                 <li>
                   <Link href="/payroll" className="text-slate-400 hover:text-[#4f8cff] transition-colors">
                     Payroll
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/treasury" className="text-slate-400 hover:text-[#4f8cff] transition-colors">
-                    Treasury
                   </Link>
                 </li>
                 <li>

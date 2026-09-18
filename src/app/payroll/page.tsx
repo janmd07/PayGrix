@@ -22,7 +22,6 @@ import {
   FileText,
   Key,
   TrendingUp,
-  Wallet,
   Coins,
   UsersRound,
   FileSpreadsheet
@@ -1429,20 +1428,6 @@ export default function PayrollPage() {
                       <Plus className="h-4 w-4 text-[#6d5dfc] group-hover:scale-110 transition-transform" />
                       Add Contributor
                     </Link>
-                    <Link
-                      href="/treasury"
-                      className="flex items-center gap-2 p-3 rounded-xl border border-white/5 bg-white/[0.01] hover:bg-white/5 hover:border-white/10 text-xs font-medium text-slate-300 hover:text-white transition-all group"
-                    >
-                      <Wallet className="h-4 w-4 text-[#4f8cff] group-hover:scale-110 transition-transform" />
-                      View Treasury
-                    </Link>
-                    <Link
-                      href="/analytics"
-                      className="flex items-center gap-2 p-3 rounded-xl border border-white/5 bg-white/[0.01] hover:bg-white/5 hover:border-white/10 text-xs font-medium text-slate-300 hover:text-white transition-all group"
-                    >
-                      <TrendingUp className="h-4 w-4 text-emerald-400 group-hover:scale-110 transition-transform" />
-                      View Analytics
-                    </Link>
                     <button
                       onClick={() => setActiveGeneratorTab(activeGeneratorTab === "monthly" ? "weekly" : "monthly")}
                       className="flex items-center gap-2 p-3 rounded-xl border border-white/5 bg-white/[0.01] hover:bg-white/5 hover:border-white/10 text-xs font-medium text-slate-300 hover:text-white transition-all group text-left"
@@ -1469,7 +1454,7 @@ export default function PayrollPage() {
                       <div className="flex flex-col items-center justify-center py-6 text-center border border-dashed border-white/5 rounded-xl bg-white/[0.01] p-4">
                         <Coins className="h-6 w-6 text-slate-600 mb-1" />
                         <p className="text-[11px] text-slate-500">No payroll history yet.</p>
-                        <p className="text-[9px] text-slate-600 mt-0.5">Generate your first payroll run to see analytics.</p>
+                        <p className="text-[9px] text-slate-600 mt-0.5">Generate your first payroll run to see payout activity.</p>
                       </div>
                     ) : (
                       <div className="space-y-3.5">

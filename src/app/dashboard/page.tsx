@@ -286,7 +286,7 @@ export default function DashboardPage() {
             Welcome to PayGrix
           </h1>
           <p className="text-slate-400 text-sm sm:text-base leading-relaxed max-w-xl">
-            Manage contributors, schedule weekly and monthly stablecoin payouts, and monitor treasury operations from a single workspace.
+            Manage contributors, schedule weekly and monthly stablecoin payouts, and monitor payroll operations from a single workspace.
           </p>
         </div>
 
@@ -335,11 +335,11 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
 
-          {/* Treasury Balance */}
+          {/* Wallet Balance */}
           <Card className="glass-card-component overflow-hidden relative group">
             <CardContent className="p-6">
               <div className="flex justify-between items-start mb-4">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Treasury Balance</p>
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Wallet Balance</p>
                 <Wallet className="h-5 w-5 text-slate-400 group-hover:text-[#6d5dfc] transition-colors" />
               </div>
               <p className={cn(
@@ -355,7 +355,7 @@ export default function DashboardPage() {
                       : `${usdcBalanceFormatted.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDC`
                 }
               </p>
-              <p className="mt-1.5 text-xs text-slate-500 font-medium">Current treasury balance</p>
+              <p className="mt-1.5 text-xs text-slate-500 font-medium">Current wallet balance</p>
             </CardContent>
           </Card>
         </div>

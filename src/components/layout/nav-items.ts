@@ -2,11 +2,9 @@ import {
   BarChart3,
   Building2,
   CreditCard,
-  Landmark,
   Settings,
   UsersRound,
   ArrowLeftRight,
-  LineChart,
   QrCode,
   User,
   Coins,
@@ -25,11 +23,6 @@ export const navItems = [
     icon: QrCode,
   },
   {
-    title: "Analytics",
-    href: "/analytics",
-    icon: LineChart,
-  },
-  {
     title: "Profile",
     href: "/profile",
     icon: User,
@@ -43,11 +36,6 @@ export const navItems = [
     title: "Payroll",
     href: "/payroll",
     icon: CreditCard,
-  },
-  {
-    title: "Treasury",
-    href: "/treasury",
-    icon: Landmark,
   },
   {
     title: "Bridge",
