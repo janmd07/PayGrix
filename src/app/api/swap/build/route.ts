@@ -3,6 +3,7 @@ import { createPublicClient, http, encodeFunctionData, parseAbi, encodePacked } 
 import { arcTestnet } from "@/config/arc-testnet";
 import { SWAP_CHAINS } from "@/config/swap-config";
 import { basePublicClient } from "@/lib/base-client";
+import { buildArcMainnetV4Swap } from "@/lib/arc-mainnet-build";
 
 // Arc Testnet Configuration
 const ARC_USDC_ADDRESS = SWAP_CHAINS.Arc.tokens.USDC.address.toLowerCase();
@@ -20,6 +21,9 @@ const BASE_ROUTER_ADDRESS = SWAP_CHAINS.Base.routerAddress; // SwapRouter02
 const BASE_QUOTER_ADDRESS = SWAP_CHAINS.Base.quoterAddress!;
 const BASE_POOL_FEE = SWAP_CHAINS.Base.feeTier || 500;
 const BASE_ETH_USDC_FEE = 3000;
+
+// Arc Mainnet Configuration
+const ARC_MAINNET_CHAIN = "Arc_Mainnet";
 
 const arcRouterAbi = parseAbi([
   "function getAmountsOut(uint256 amountIn, address[] memory path) public view returns (uint256[] memory amounts)",
@@ -420,8 +424,30 @@ export async function POST(request: Request) {
     }
   }
 
+  // ROUTE 3: ARC MAINNET (Uniswap V4 Universal Router)
+  if (tokenInChain === ARC_MAINNET_CHAIN && tokenOutChain === ARC_MAINNET_CHAIN) {
+    try {
+      const buildResult = await buildArcMainnetV4Swap({
+        tokenInAddress,
+        tokenOutAddress,
+        tokenInChain,
+        tokenOutChain,
+        fromAddress,
+        toAddress,
+        amount,
+        slippageBps,
+      });
+
+      return NextResponse.json(buildResult);
+    } catch (err) {
+      console.error("Error building on-chain swap transaction for Arc Mainnet Uniswap V4:", err);
+      const errMsg = err instanceof Error ? err.message : "Failed to build transaction on Arc Mainnet.";
+      return NextResponse.json({ error: errMsg }, { status: 400 });
+    }
+  }
+
   return NextResponse.json(
-    { error: "Unsupported chain. Supported chains are Arc_Testnet and Base." },
+    { error: "Unsupported chain. Supported chains are Arc_Testnet, Arc_Mainnet, and Base." },
     { status: 400 }
   );
 }
