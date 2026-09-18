@@ -31,7 +31,7 @@ import { SwapHistoryItem } from "@/hooks/use-swap";
 import { SupportedSwapChain } from "@/config/swap-config";
 
 export default function BridgePage() {
-  const [activeTab, setActiveTab] = useState<"bridge" | "swap">("bridge");
+  const [activeTab, setActiveTab] = useState<"swap" | "bridge">("swap");
   const [selectedSwapNetwork, setSelectedSwapNetwork] = useState<SupportedSwapChain>("Arc");
   
   // Bridge-specific states and hooks
@@ -576,17 +576,6 @@ export default function BridgePage() {
       {/* Tab Switcher */}
       <div className="flex gap-2 border-b border-white/5 pb-4 mb-6">
         <button
-          onClick={() => setActiveTab("bridge")}
-          className={cn(
-            "px-4 py-2 text-sm font-semibold rounded-lg transition-all",
-            activeTab === "bridge"
-              ? "bg-primary text-white shadow-lg shadow-primary/20"
-              : "text-slate-400 hover:text-white hover:bg-white/5"
-          )}
-        >
-          Bridge
-        </button>
-        <button
           onClick={() => setActiveTab("swap")}
           className={cn(
             "px-4 py-2 text-sm font-semibold rounded-lg transition-all",
@@ -597,9 +586,33 @@ export default function BridgePage() {
         >
           Swap
         </button>
+        <button
+          onClick={() => setActiveTab("bridge")}
+          className={cn(
+            "px-4 py-2 text-sm font-semibold rounded-lg transition-all",
+            activeTab === "bridge"
+              ? "bg-primary text-white shadow-lg shadow-primary/20"
+              : "text-slate-400 hover:text-white hover:bg-white/5"
+          )}
+        >
+          Bridge
+        </button>
       </div>
 
-      {activeTab === "bridge" ? (
+      {activeTab === "swap" ? (
+        <div className="space-y-6">
+          <SwapForm
+            balanceUSDC={swapUsdcBalance}
+            balanceEURC={swapEurcBalance}
+            balanceCirBTC={swapCirBtcBalance}
+            balanceETH={swapEthBalance}
+            isLoadingBalance={isLoadingUsdc || isLoadingEurc || isLoadingCirBtc || isLoadingEth}
+            selectedNetwork={selectedSwapNetwork}
+            onNetworkChange={setSelectedSwapNetwork}
+            onSwapSuccess={handleSwapSuccess}
+          />
+        </div>
+      ) : (
         <div className="space-y-6">
           <BridgeForm
             balance={balance}
@@ -620,35 +633,22 @@ export default function BridgePage() {
             onAssetChange={handleAssetChange}
           />
         </div>
-      ) : (
-        <div className="space-y-6">
-          <SwapForm
-            balanceUSDC={swapUsdcBalance}
-            balanceEURC={swapEurcBalance}
-            balanceCirBTC={swapCirBtcBalance}
-            balanceETH={swapEthBalance}
-            isLoadingBalance={isLoadingUsdc || isLoadingEurc || isLoadingCirBtc || isLoadingEth}
-            selectedNetwork={selectedSwapNetwork}
-            onNetworkChange={setSelectedSwapNetwork}
-            onSwapSuccess={handleSwapSuccess}
-          />
-        </div>
       )}
 
       {/* Bottom: History */}
       <div className="mt-6">
-        {activeTab === "bridge" ? (
+        {activeTab === "swap" ? (
+          <SwapHistory
+            swaps={swaps}
+            isConnected={Boolean(isConnected && address)}
+          />
+        ) : (
           <TransferHistory
             transfers={transfers}
             isConnected={Boolean(
               (sourceChain === "Solana Devnet" ? solanaPublicKey : (isConnected && address)) ||
               (isConnected && address)
             )}
-          />
-        ) : (
-          <SwapHistory
-            swaps={swaps}
-            isConnected={Boolean(isConnected && address)}
           />
         )}
       </div>
