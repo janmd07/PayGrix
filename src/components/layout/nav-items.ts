@@ -5,6 +5,7 @@ import {
   Settings,
   UsersRound,
   ArrowLeftRight,
+  ArrowUpDown,
   QrCode,
   User,
   Coins,
@@ -36,6 +37,11 @@ export const navItems = [
     title: "Payroll",
     href: "/payroll",
     icon: CreditCard,
+  },
+  {
+    title: "Swap",
+    href: "/swap",
+    icon: ArrowUpDown,
   },
   {
     title: "Bridge",
