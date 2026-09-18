@@ -18,6 +18,10 @@ import {
   auditAndPrepareArcMainnetApprovals,
   ArcMainnetApprovalAuditAndPreparationResult,
 } from "@/lib/arc-mainnet-approval";
+import {
+  prepareArcMainnetReadiness,
+  ArcMainnetExecutionEnvelope,
+} from "@/lib/arc-mainnet-readiness";
 
 export type SwapStatus =
   | "idle"
@@ -625,6 +629,41 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
     });
   }, [address, connector, isConnected]);
 
+  const getArcMainnetReadiness = useCallback(async (
+    amountIn: string,
+    tokenIn: SwapToken,
+    tokenOut: SwapToken,
+    slippageBps: number = 100
+  ): Promise<ArcMainnetExecutionEnvelope | null> => {
+    if (!amountIn || parseFloat(amountIn) <= 0) return null;
+    if (!isConnected || !connector || !address) {
+      setError("Wallet not connected");
+      return null;
+    }
+    if (tokenIn !== "USDC" && tokenIn !== "EURC") return null;
+    if (tokenOut !== "USDC" && tokenOut !== "EURC") return null;
+
+    const provider = (await connector.getProvider()) as EIP1193Provider;
+    let providerChainId = 5042;
+    try {
+      const hexChainId = (await provider.request({ method: "eth_chainId" })) as string;
+      providerChainId = parseInt(hexChainId, 16);
+    } catch {
+      // fallback to 5042
+    }
+
+    const rawAmount = parseUnits(amountIn, 6).toString();
+    return await prepareArcMainnetReadiness({
+      fromAddress: address,
+      toAddress: address,
+      chainId: providerChainId,
+      tokenIn,
+      tokenOut,
+      amount: rawAmount,
+      slippageBps,
+    });
+  }, [address, connector, isConnected]);
+
   const resetSwapState = useCallback(() => {
     setStatus("idle");
     setEstimate(null);
@@ -640,6 +679,7 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
     getSwapEstimate,
     getArcMainnetPreflight,
     getArcMainnetApprovalAudit,
+    getArcMainnetReadiness,
     executeSwap,
     resetSwapState,
   };

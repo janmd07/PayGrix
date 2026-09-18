@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
-import { useSwap } from "@/hooks/use-swap";
+import { useSwap, SwapToken } from "@/hooks/use-swap";
 import { useEthMarketPrice } from "@/hooks/use-eth-market-price";
 
 export interface TokenLogoProps {
@@ -167,6 +167,9 @@ export function SwapForm({
   const [isLoadingStatus, setIsLoadingStatus] = useState<boolean>(false);
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [openSelectorSlot, setOpenSelectorSlot] = useState<"in" | "out" | null>(null);
+  const [arcMainnetReadinessState, setArcMainnetReadinessState] = useState<
+    "Quote Only" | "ERC20 Approval Required" | "Permit2 Approval Required" | "Both Approvals Required" | "Ready for Swap"
+  >("Quote Only");
 
   useEffect(() => {
     const now = new Date();
@@ -198,6 +201,7 @@ export function SwapForm({
     txHash,
     error,
     getSwapEstimate,
+    getArcMainnetApprovalAudit,
     executeSwap,
     resetSwapState,
   } = useSwap(currentNetwork);
@@ -220,6 +224,7 @@ export function SwapForm({
   // Recalculate quote if amount or tokens change
   useEffect(() => {
     setHasQuote(false);
+    setArcMainnetReadinessState("Quote Only");
     resetSwapState();
   }, [amount, tokenIn, tokenOut, currentNetwork, resetSwapState]);
 
@@ -250,6 +255,23 @@ export function SwapForm({
       setHasQuote(true);
       const now = new Date();
       setLastUpdated(now.toTimeString().split(" ")[0]);
+      if (currentNetwork === "ArcMainnet") {
+        getArcMainnetApprovalAudit(tokenIn as SwapToken, amount).then((audit) => {
+          if (audit) {
+            if (audit.audit.state === "BOTH_SUFFICIENT") {
+              setArcMainnetReadinessState("Ready for Swap");
+            } else if (audit.audit.state === "ERC20_APPROVAL_NEEDED") {
+              setArcMainnetReadinessState("ERC20 Approval Required");
+            } else if (audit.audit.state === "PERMIT2_APPROVAL_NEEDED") {
+              setArcMainnetReadinessState("Permit2 Approval Required");
+            } else {
+              setArcMainnetReadinessState("Both Approvals Required");
+            }
+          }
+        }).catch(() => {
+          setArcMainnetReadinessState("Quote Only");
+        });
+      }
     }
   };
 
@@ -667,10 +689,18 @@ export function SwapForm({
                   variant="outline"
                   className="w-full text-xs font-semibold py-3.5 rounded-xl border-amber-500/30 bg-amber-500/10 text-amber-300 cursor-not-allowed opacity-90"
                 >
-                  Arc Mainnet Execution Disabled (Quote Only)
+                  Arc Mainnet: {arcMainnetReadinessState} (Execution Disabled)
                 </Button>
                 <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-center text-xs text-amber-300/90">
-                  Arc Mainnet quotes are live. Mainnet execution is not enabled yet.
+                  {arcMainnetReadinessState === "Ready for Swap"
+                    ? "Readiness audit verified: swap is ready. On-chain execution is disabled in this phase."
+                    : arcMainnetReadinessState === "ERC20 Approval Required"
+                    ? "Readiness audit: ERC20 approval to Permit2 is required. On-chain execution is disabled."
+                    : arcMainnetReadinessState === "Permit2 Approval Required"
+                    ? "Readiness audit: Permit2 approval to Universal Router is required. On-chain execution is disabled."
+                    : arcMainnetReadinessState === "Both Approvals Required"
+                    ? "Readiness audit: ERC20 and Permit2 approvals are required. On-chain execution is disabled."
+                    : "Arc Mainnet quotes are live. Mainnet execution is not enabled yet."}
                 </div>
               </div>
             ) : (
