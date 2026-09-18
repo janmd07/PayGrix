@@ -211,7 +211,7 @@ export default function SwapPage() {
       <PageHeader
         eyebrow="Swap"
         title="Token Swap"
-        description="Swap stablecoins and tokens same-chain on Arc Testnet and Base Sepolia."
+        description="Swap stablecoins and tokens same-chain on Arc Mainnet, Arc Testnet, and Base Sepolia."
       />
 
       <div className="space-y-6">

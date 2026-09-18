@@ -10,6 +10,7 @@ import {
   AlertTriangle,
   ChevronDown,
   RefreshCw,
+  ShieldCheck,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -202,9 +203,16 @@ export function SwapForm({
     error,
     getSwapEstimate,
     getArcMainnetApprovalAudit,
+    executeArcMainnetErc20Approval,
+    executeArcMainnetPermit2Approval,
     executeSwap,
     resetSwapState,
   } = useSwap(currentNetwork);
+
+  const [isApprovingErc20, setIsApprovingErc20] = useState(false);
+  const [isApprovingPermit2, setIsApprovingPermit2] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [approvalError, setApprovalError] = useState<string | null>(null);
 
   const isEthOnBase = currentNetwork === "Base" && (tokenIn === "ETH" || tokenOut === "ETH");
   const { marketPrice: ethMarketPrice, source: ethPriceSource } = useEthMarketPrice(isEthOnBase);
@@ -281,6 +289,58 @@ export function SwapForm({
     if (result && result.txHash) {
       const outputVal = result.amountOut || estimate.estimatedOutput;
       onSwapSuccess(amount, outputVal, tokenIn, tokenOut, result.txHash, currentNetwork);
+    }
+  };
+
+  const handleArcMainnetErc20Approve = async () => {
+    if (!amount || parseFloat(amount) <= 0) return;
+    setApprovalError(null);
+    setIsApprovingErc20(true);
+    try {
+      await executeArcMainnetErc20Approval(tokenIn as "USDC" | "EURC", amount);
+      const audit = await getArcMainnetApprovalAudit(tokenIn as SwapToken, amount);
+      if (audit) {
+        if (audit.audit.state === "BOTH_SUFFICIENT") {
+          setArcMainnetReadinessState("Ready for Swap");
+        } else if (audit.audit.state === "PERMIT2_APPROVAL_NEEDED") {
+          setArcMainnetReadinessState("Permit2 Approval Required");
+        } else if (audit.audit.state === "ERC20_APPROVAL_NEEDED") {
+          setArcMainnetReadinessState("ERC20 Approval Required");
+        } else {
+          setArcMainnetReadinessState("Both Approvals Required");
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "ERC20 approval failed.";
+      setApprovalError(msg);
+    } finally {
+      setIsApprovingErc20(false);
+    }
+  };
+
+  const handleArcMainnetPermit2Approve = async () => {
+    if (!amount || parseFloat(amount) <= 0) return;
+    setApprovalError(null);
+    setIsApprovingPermit2(true);
+    try {
+      await executeArcMainnetPermit2Approval(tokenIn as "USDC" | "EURC", amount);
+      const audit = await getArcMainnetApprovalAudit(tokenIn as SwapToken, amount);
+      if (audit) {
+        if (audit.audit.state === "BOTH_SUFFICIENT") {
+          setArcMainnetReadinessState("Ready for Swap");
+        } else if (audit.audit.state === "PERMIT2_APPROVAL_NEEDED") {
+          setArcMainnetReadinessState("Permit2 Approval Required");
+        } else if (audit.audit.state === "ERC20_APPROVAL_NEEDED") {
+          setArcMainnetReadinessState("ERC20 Approval Required");
+        } else {
+          setArcMainnetReadinessState("Both Approvals Required");
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Permit2 approval failed.";
+      setApprovalError(msg);
+    } finally {
+      setIsApprovingPermit2(false);
     }
   };
 
@@ -683,25 +743,107 @@ export function SwapForm({
               </Button>
             ) : currentNetwork === "ArcMainnet" ? (
               <div className="space-y-2.5">
-                <Button
-                  type="button"
-                  disabled={true}
-                  variant="outline"
-                  className="w-full text-xs font-semibold py-3.5 rounded-xl border-amber-500/30 bg-amber-500/10 text-amber-300 cursor-not-allowed opacity-90"
-                >
-                  Arc Mainnet: {arcMainnetReadinessState} (Execution Disabled)
-                </Button>
-                <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-center text-xs text-amber-300/90">
-                  {arcMainnetReadinessState === "Ready for Swap"
-                    ? "Readiness audit verified: swap is ready. On-chain execution is disabled in this phase."
-                    : arcMainnetReadinessState === "ERC20 Approval Required"
-                    ? "Readiness audit: ERC20 approval to Permit2 is required. On-chain execution is disabled."
-                    : arcMainnetReadinessState === "Permit2 Approval Required"
-                    ? "Readiness audit: Permit2 approval to Universal Router is required. On-chain execution is disabled."
-                    : arcMainnetReadinessState === "Both Approvals Required"
-                    ? "Readiness audit: ERC20 and Permit2 approvals are required. On-chain execution is disabled."
-                    : "Arc Mainnet quotes are live. Mainnet execution is not enabled yet."}
-                </div>
+                {!isConnected ? (
+                  <Button
+                    type="button"
+                    variant="default"
+                    className="w-full text-sm font-bold py-3.5 rounded-xl bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf] text-white shadow-md hover:brightness-110"
+                    onClick={() => {
+                      if (availableConnector) {
+                        connect({ connector: availableConnector });
+                      } else {
+                        alert("Please connect your wallet using the button in the top header.");
+                      }
+                    }}
+                  >
+                    Connect Wallet
+                  </Button>
+                ) : isOverBalance ? (
+                  <Button
+                    type="button"
+                    disabled={true}
+                    variant="outline"
+                    className="w-full text-xs font-semibold py-3.5 rounded-xl border-rose-500/30 bg-rose-500/10 text-rose-300 cursor-not-allowed opacity-90"
+                  >
+                    Insufficient {tokenIn} Balance
+                  </Button>
+                ) : arcMainnetReadinessState === "Both Approvals Required" || arcMainnetReadinessState === "ERC20 Approval Required" ? (
+                  <div className="space-y-2">
+                    <Button
+                      type="button"
+                      disabled={isApprovingErc20 || isApprovingPermit2 || status === "waiting-wallet" || status === "approving"}
+                      variant="default"
+                      className="w-full text-xs font-bold py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-purple-600 hover:from-amber-600 hover:to-purple-700 text-white shadow-[0_4px_14px_rgba(245,158,11,0.3)] transition-all"
+                      onClick={handleArcMainnetErc20Approve}
+                    >
+                      {isApprovingErc20 || status === "approving"
+                        ? "Approving USDC for Permit2..."
+                        : status === "waiting-wallet"
+                        ? "Confirm in Wallet..."
+                        : "Approve USDC for Permit2"}
+                    </Button>
+                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-center text-xs text-amber-300/90 leading-normal">
+                      Exact approval: <span className="font-semibold text-white">{amount} {tokenIn}</span> to Permit2. Wallet signature required.
+                    </div>
+                  </div>
+                ) : arcMainnetReadinessState === "Permit2 Approval Required" ? (
+                  <div className="space-y-2">
+                    <Button
+                      type="button"
+                      disabled={isApprovingErc20 || isApprovingPermit2 || status === "waiting-wallet" || status === "approving"}
+                      variant="default"
+                      className="w-full text-xs font-bold py-3.5 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white shadow-[0_4px_14px_rgba(168,85,247,0.3)] transition-all"
+                      onClick={handleArcMainnetPermit2Approve}
+                    >
+                      {isApprovingPermit2 || status === "approving"
+                        ? "Approving Permit2 for Swap..."
+                        : status === "waiting-wallet"
+                        ? "Confirm in Wallet..."
+                        : "Approve Permit2 for Swap"}
+                    </Button>
+                    <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 px-3 py-2 text-center text-xs text-purple-300/90 leading-normal">
+                      Permit2 authorization for Universal Router (exact amount: <span className="font-semibold text-white">{amount} {tokenIn}</span>, valid 30 days). Wallet confirmation required.
+                    </div>
+                  </div>
+                ) : arcMainnetReadinessState === "Ready for Swap" ? (
+                  <div className="space-y-2">
+                    <Button
+                      type="button"
+                      disabled={status === "swapping" || status === "waiting-wallet"}
+                      variant="default"
+                      className={cn(
+                        "w-full text-sm font-bold py-3.5 rounded-xl transition-all duration-300 active:scale-[0.98]",
+                        "bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf] hover:from-[#3b7cff] hover:via-[#8c3ed9] hover:to-[#6a1cb0]",
+                        "text-white shadow-[0_4px_14px_rgba(157,78,221,0.3)] hover:shadow-[0_4px_20px_rgba(157,78,221,0.5)]"
+                      )}
+                      onClick={() => setShowConfirmModal(true)}
+                    >
+                      {status === "waiting-wallet"
+                        ? "Confirm in Wallet..."
+                        : status === "swapping"
+                        ? "Swapping..."
+                        : "Review Arc Mainnet Swap"}
+                    </Button>
+                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-center text-xs text-emerald-400 leading-normal">
+                      ✓ Allowances verified on-chain. Click to review and confirm swap before signing.
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    type="button"
+                    disabled={true}
+                    variant="outline"
+                    className="w-full text-xs font-semibold py-3.5 rounded-xl border-white/10 bg-white/5 text-slate-400"
+                  >
+                    Preparing Quote...
+                  </Button>
+                )}
+
+                {approvalError && (
+                  <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 leading-normal">
+                    {approvalError}
+                  </div>
+                )}
               </div>
             ) : (
               <Button
@@ -793,6 +935,8 @@ export function SwapForm({
                       href={
                         currentNetwork === "Base"
                           ? `https://sepolia.basescan.org/tx/${txHash}`
+                          : currentNetwork === "ArcMainnet"
+                          ? `https://explorer.arc.io/tx/${txHash}`
                           : `https://testnet.arcscan.app/tx/${txHash}`
                       }
                       target="_blank"
@@ -809,6 +953,87 @@ export function SwapForm({
           </div>
         </CardContent>
       </Card>
+
+      {/* 7. Arc Mainnet Final Confirmation Modal BEFORE Wallet Signature */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md bg-slate-900 border border-purple-500/30 rounded-2xl p-5 shadow-2xl space-y-4 font-sans">
+            <div className="flex items-center justify-between pb-2 border-b border-white/10">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-purple-400" />
+                Confirm Arc Mainnet Swap
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                className="text-slate-400 hover:text-white text-xs"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs text-slate-300">
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-slate-400">Network</span>
+                <span className="font-semibold text-white">Arc Mainnet (Chain ID 5042)</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-slate-400">Sell</span>
+                <span className="font-semibold text-white">{amount} {tokenIn}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-slate-400">Estimated Receive</span>
+                <span className="font-semibold text-emerald-400">{estimate?.estimatedOutput || "0.00"} {tokenOut}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-slate-400">Minimum Received</span>
+                <span className="font-semibold text-slate-200">{estimate?.stopLimit || "0.00"} {tokenOut}</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-slate-400">Slippage Tolerance</span>
+                <span className="font-semibold text-slate-200">1.0%</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-slate-400">Router</span>
+                <span className="font-mono text-[11px] text-purple-300">Arc Universal Router</span>
+              </div>
+              <div className="flex justify-between py-1 border-b border-white/5">
+                <span className="text-slate-400">Gas Estimate</span>
+                <span className="font-semibold text-slate-200">~154,200 gas units</span>
+              </div>
+              <div className="flex justify-between py-1">
+                <span className="text-slate-400">Transaction Value</span>
+                <span className="font-semibold text-white">0 {tokenIn}</span>
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-purple-500/10 border border-purple-500/20 p-2.5 text-[11px] text-purple-200 leading-relaxed">
+              Clicking &quot;Confirm Swap&quot; will request signature authorization in your connected wallet. No funds will move without your explicit wallet approval.
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-1/3 rounded-xl text-xs font-semibold py-2.5 border-white/10 text-slate-300 hover:bg-white/5"
+                onClick={() => setShowConfirmModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                className="w-2/3 rounded-xl text-xs font-bold py-2.5 bg-gradient-to-r from-[#4f8cff] to-[#9d4edd] text-white shadow-md hover:brightness-110"
+                onClick={async () => {
+                  setShowConfirmModal(false);
+                  await handleExecuteSwap();
+                }}
+              >
+                Confirm Swap
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

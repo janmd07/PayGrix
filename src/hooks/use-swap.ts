@@ -16,12 +16,24 @@ import {
 } from "@/lib/arc-mainnet-execution-preflight";
 import {
   auditAndPrepareArcMainnetApprovals,
+  auditArcMainnetAllowances,
+  prepareArcMainnetErc20ApprovalTx,
+  prepareArcMainnetPermit2ApprovalTx,
+  decodeAndValidateArcMainnetApprovalCalldata,
   ArcMainnetApprovalAuditAndPreparationResult,
 } from "@/lib/arc-mainnet-approval";
 import {
   prepareArcMainnetReadiness,
   ArcMainnetExecutionEnvelope,
 } from "@/lib/arc-mainnet-readiness";
+import { arcMainnetPublicClient } from "@/lib/arc-mainnet-client";
+import { ARC_MAINNET_UNISWAP_V4 } from "@/config/arc-mainnet";
+import {
+  buildArcMainnetV4Swap,
+  decodeAndValidateArcMainnetV4Calldata,
+} from "@/lib/arc-mainnet-build";
+import { getArcMainnetV4Quote } from "@/lib/arc-mainnet-quote";
+import { isAddress } from "viem";
 
 export type SwapStatus =
   | "idle"
@@ -156,7 +168,8 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
     amountIn: string,
     tokenIn: SwapToken,
     tokenOut: SwapToken,
-    networkOverride?: SupportedSwapChain
+    networkOverride?: SupportedSwapChain,
+    slippageBps: number = 100
   ) => {
     if (!amountIn || parseFloat(amountIn) <= 0) return null;
     setError(null);
@@ -195,8 +208,144 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
         console.error("[SWAP] Failed to read provider chain ID:", err);
       }
 
+      // ==========================================
+      // BRANCH 0: ARC MAINNET (UNISWAP V4) SWAP
+      // ==========================================
       if (network === "ArcMainnet") {
-        throw new Error("Arc Mainnet swap execution is not enabled yet. Read-only quotes are active.");
+        const targetChainId = 5042;
+
+        // STEP 2: Verify connected wallet chainId === 5042. If not: BLOCK execution.
+        // Do NOT automatically switch networks.
+        if (providerChainId !== targetChainId) {
+          throw new Error(
+            `Wrong network: Connected wallet chain ID is ${providerChainId ?? "unknown"}, but Arc Mainnet requires 5042. Please manually switch your wallet to Arc Mainnet.`
+          );
+        }
+
+        // STEP 3: Verify wallet address
+        if (!address || !isAddress(address)) {
+          throw new Error("Invalid or missing connected wallet address.");
+        }
+        const userAddress = address.toLowerCase() as `0x${string}`;
+
+        // Verify supported token pair
+        if (
+          (tokenIn !== "USDC" && tokenIn !== "EURC") ||
+          (tokenOut !== "USDC" && tokenOut !== "EURC") ||
+          tokenIn === tokenOut
+        ) {
+          throw new Error(`Unsupported token pair ${tokenIn} -> ${tokenOut} on Arc Mainnet. Supported: USDC <-> EURC.`);
+        }
+
+        // STEP 4: Verify ERC20 balance
+        const balance = await arcMainnetPublicClient.readContract({
+          address: tokenInAddress as `0x${string}`,
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [userAddress],
+        });
+        if (balance < rawAmount) {
+          throw new Error(
+            `Insufficient ${tokenIn} balance on Arc Mainnet. Required: ${amountIn} ${tokenIn}, available: ${(Number(balance) / 1e6).toFixed(6)} ${tokenIn}.`
+          );
+        }
+
+        // STEP 5 & 7: Verify on-chain allowances (do not execute without both satisfied)
+        const allowanceAudit = await auditArcMainnetAllowances({
+          token: tokenIn,
+          owner: userAddress,
+          requiredAmount: rawAmount.toString(),
+          chainId: 5042,
+        });
+
+        if (allowanceAudit.state !== "BOTH_SUFFICIENT") {
+          throw new Error(
+            `Allowances not satisfied for Arc Mainnet swap (${allowanceAudit.state}). Please approve USDC / Permit2 before confirming swap.`
+          );
+        }
+
+        // STEP 8: Request a FRESH Arc Mainnet V4 quote
+        const freshQuote = await getArcMainnetV4Quote({
+          tokenInAddress,
+          tokenOutAddress,
+          amountIn: rawAmount,
+          slippageBps,
+        });
+
+        if (freshQuote.minAmountOut <= BigInt(0)) {
+          throw new Error("Received non-positive output quote from Uniswap V4 Quoter.");
+        }
+
+        // STEP 9: Build fresh production calldata using buildArcMainnetV4Swap
+        const buildResult = await buildArcMainnetV4Swap({
+          tokenInAddress,
+          tokenOutAddress,
+          fromAddress: userAddress,
+          toAddress: userAddress,
+          amount: rawAmount.toString(),
+          slippageBps,
+        });
+
+        const finalCalldata = buildResult.transaction.data;
+
+        // STEP 10: Run final validation
+        const nowSec = BigInt(Math.floor(Date.now() / 1000));
+        decodeAndValidateArcMainnetV4Calldata(finalCalldata, {
+          expectedTokenIn: tokenInAddress as `0x${string}`,
+          expectedTokenOut: tokenOutAddress as `0x${string}`,
+          expectedAmountIn: rawAmount,
+          expectedAmountOutMinimum: freshQuote.minAmountOut,
+          expectedZeroForOne: tokenIn === "USDC",
+          minDeadline: nowSec - BigInt(60),
+        });
+
+        // STEP 11: Gas estimation against exact final transaction envelope
+        let gasEstimateHex: `0x${string}` | undefined;
+        try {
+          const estimatedGas = await arcMainnetPublicClient.estimateGas({
+            account: userAddress,
+            to: ARC_MAINNET_UNISWAP_V4.universalRouter,
+            data: finalCalldata,
+            value: BigInt(0),
+          });
+          gasEstimateHex = `0x${estimatedGas.toString(16)}` as `0x${string}`;
+        } catch (gasErr) {
+          console.warn("[SWAP ARC MAINNET] Gas estimation notice:", gasErr);
+        }
+
+        // Prompt wallet for signature
+        setStatus("waiting-wallet");
+        const swapTx = (await provider.request({
+          method: "eth_sendTransaction",
+          params: [
+            {
+              from: userAddress,
+              to: ARC_MAINNET_UNISWAP_V4.universalRouter,
+              data: finalCalldata,
+              value: "0x0",
+              ...(gasEstimateHex ? { gas: gasEstimateHex } : {}),
+            },
+          ],
+        })) as `0x${string}`;
+
+        setTxHash(swapTx);
+        setStatus("swapping");
+
+        // Wait for on-chain receipt
+        const receipt = await arcMainnetPublicClient.waitForTransactionReceipt({
+          hash: swapTx,
+          timeout: 60000,
+        });
+
+        if (receipt.status === "reverted") {
+          throw new Error("Arc Mainnet swap transaction reverted on-chain.");
+        }
+
+        setStatus("completed");
+        return {
+          txHash: swapTx,
+          amountOut: freshQuote.formattedAmountOut,
+        };
       }
 
       // ==========================================
@@ -664,6 +813,151 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
     });
   }, [address, connector, isConnected]);
 
+  const executeArcMainnetErc20Approval = useCallback(async (
+    token: "USDC" | "EURC",
+    amountIn: string
+  ): Promise<{ success: boolean; txHash?: string }> => {
+    if (!amountIn || parseFloat(amountIn) <= 0) {
+      throw new Error("Enter a valid amount to approve.");
+    }
+    if (!isConnected || !connector || !address) {
+      throw new Error("Wallet not connected.");
+    }
+    const provider = (await connector.getProvider()) as EIP1193Provider;
+    let providerChainId: number | null = null;
+    try {
+      const hexChainId = (await provider.request({ method: "eth_chainId" })) as string;
+      providerChainId = parseInt(hexChainId, 16);
+    } catch (err) {
+      console.error("[SWAP] Failed to read provider chain ID:", err);
+    }
+
+    if (providerChainId !== 5042) {
+      throw new Error(
+        `Wrong network: Connected wallet chain ID is ${providerChainId ?? "unknown"}, but Arc Mainnet requires 5042. Please manually switch your wallet to Arc Mainnet.`
+      );
+    }
+
+    const rawAmount = parseUnits(amountIn, 6).toString();
+    const preparedTx = prepareArcMainnetErc20ApprovalTx({
+      token,
+      owner: address,
+      amount: rawAmount,
+      chainId: 5042,
+      allowUnlimited: false, // strictly exact required amount
+    });
+
+    decodeAndValidateArcMainnetApprovalCalldata(preparedTx);
+
+    setStatus("waiting-wallet");
+    let txHash: `0x${string}`;
+    try {
+      txHash = (await provider.request({
+        method: "eth_sendTransaction",
+        params: [
+          {
+            from: address,
+            to: preparedTx.to,
+            data: preparedTx.data,
+            value: "0x0",
+          },
+        ],
+      })) as `0x${string}`;
+    } catch (sendErr) {
+      setStatus("failed");
+      throw sendErr;
+    }
+
+    setStatus("approving");
+    setTxHash(txHash);
+
+    const receipt = await arcMainnetPublicClient.waitForTransactionReceipt({
+      hash: txHash,
+      timeout: 60000,
+    });
+
+    if (receipt.status === "reverted") {
+      setStatus("failed");
+      throw new Error("USDC ERC20 approval transaction reverted on-chain.");
+    }
+
+    setStatus("idle");
+    return { success: true, txHash };
+  }, [address, connector, isConnected]);
+
+  const executeArcMainnetPermit2Approval = useCallback(async (
+    token: "USDC" | "EURC",
+    amountIn: string
+  ): Promise<{ success: boolean; txHash?: string }> => {
+    if (!amountIn || parseFloat(amountIn) <= 0) {
+      throw new Error("Enter a valid amount to approve.");
+    }
+    if (!isConnected || !connector || !address) {
+      throw new Error("Wallet not connected.");
+    }
+    const provider = (await connector.getProvider()) as EIP1193Provider;
+    let providerChainId: number | null = null;
+    try {
+      const hexChainId = (await provider.request({ method: "eth_chainId" })) as string;
+      providerChainId = parseInt(hexChainId, 16);
+    } catch (err) {
+      console.error("[SWAP] Failed to read provider chain ID:", err);
+    }
+
+    if (providerChainId !== 5042) {
+      throw new Error(
+        `Wrong network: Connected wallet chain ID is ${providerChainId ?? "unknown"}, but Arc Mainnet requires 5042. Please manually switch your wallet to Arc Mainnet.`
+      );
+    }
+
+    const rawAmount = parseUnits(amountIn, 6).toString();
+    const preparedTx = prepareArcMainnetPermit2ApprovalTx({
+      token,
+      owner: address,
+      amount: rawAmount,
+      chainId: 5042,
+      expirationSeconds: 30 * 86400,
+      allowUnlimited: false, // strictly exact required amount
+    });
+
+    decodeAndValidateArcMainnetApprovalCalldata(preparedTx);
+
+    setStatus("waiting-wallet");
+    let txHash: `0x${string}`;
+    try {
+      txHash = (await provider.request({
+        method: "eth_sendTransaction",
+        params: [
+          {
+            from: address,
+            to: preparedTx.to,
+            data: preparedTx.data,
+            value: "0x0",
+          },
+        ],
+      })) as `0x${string}`;
+    } catch (sendErr) {
+      setStatus("failed");
+      throw sendErr;
+    }
+
+    setStatus("approving");
+    setTxHash(txHash);
+
+    const receipt = await arcMainnetPublicClient.waitForTransactionReceipt({
+      hash: txHash,
+      timeout: 60000,
+    });
+
+    if (receipt.status === "reverted") {
+      setStatus("failed");
+      throw new Error("Permit2 approval transaction reverted on-chain.");
+    }
+
+    setStatus("idle");
+    return { success: true, txHash };
+  }, [address, connector, isConnected]);
+
   const resetSwapState = useCallback(() => {
     setStatus("idle");
     setEstimate(null);
@@ -680,6 +974,8 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
     getArcMainnetPreflight,
     getArcMainnetApprovalAudit,
     getArcMainnetReadiness,
+    executeArcMainnetErc20Approval,
+    executeArcMainnetPermit2Approval,
     executeSwap,
     resetSwapState,
   };
