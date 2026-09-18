@@ -6,6 +6,7 @@ export const arcMainnetPublicClient = createPublicClient({
   chain: arcMainnet,
   transport: http("https://rpc.mainnet.arc.io", {
     batch: false,
+    timeout: 10_000,
   }),
 });
 

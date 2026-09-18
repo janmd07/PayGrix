@@ -211,6 +211,7 @@ export function SwapForm({
 
   const [isApprovingErc20, setIsApprovingErc20] = useState(false);
   const [isApprovingPermit2, setIsApprovingPermit2] = useState(false);
+  const [isReviewing, setIsReviewing] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
 
@@ -276,10 +277,47 @@ export function SwapForm({
               setArcMainnetReadinessState("Both Approvals Required");
             }
           }
-        }).catch(() => {
-          setArcMainnetReadinessState("Quote Only");
+        }).catch((err) => {
+          console.warn("[Swap] Background allowance check notice:", err);
         });
       }
+    }
+  };
+
+  const handleReviewArcMainnetSwap = async () => {
+    if (isFormInvalid || isSwapDisabled || !hasQuote) return;
+    if (!isConnected) {
+      if (availableConnector) {
+        connect({ connector: availableConnector });
+      } else {
+        alert("Please connect your wallet using the button in the top header.");
+      }
+      return;
+    }
+
+    setApprovalError(null);
+    setIsReviewing(true);
+    try {
+      const audit = await getArcMainnetApprovalAudit(tokenIn as SwapToken, amount);
+      if (audit) {
+        if (audit.audit.state === "ERC20_APPROVAL_NEEDED") {
+          setArcMainnetReadinessState("ERC20 Approval Required");
+          return;
+        } else if (audit.audit.state === "PERMIT2_APPROVAL_NEEDED") {
+          setArcMainnetReadinessState("Permit2 Approval Required");
+          return;
+        } else if (audit.audit.state === "BOTH_APPROVALS_NEEDED") {
+          setArcMainnetReadinessState("Both Approvals Required");
+          return;
+        }
+      }
+      setArcMainnetReadinessState("Ready for Swap");
+      setShowConfirmModal(true);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to verify swap readiness.";
+      setApprovalError(msg);
+    } finally {
+      setIsReviewing(false);
     }
   };
 
@@ -805,38 +843,38 @@ export function SwapForm({
                       Permit2 authorization for Universal Router (exact amount: <span className="font-semibold text-white">{amount} {tokenIn}</span>, valid 30 days). Wallet confirmation required.
                     </div>
                   </div>
-                ) : arcMainnetReadinessState === "Ready for Swap" ? (
+                ) : (
                   <div className="space-y-2">
                     <Button
                       type="button"
-                      disabled={status === "swapping" || status === "waiting-wallet"}
+                      disabled={status === "swapping" || status === "waiting-wallet" || isReviewing}
                       variant="default"
                       className={cn(
                         "w-full text-sm font-bold py-3.5 rounded-xl transition-all duration-300 active:scale-[0.98]",
                         "bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf] hover:from-[#3b7cff] hover:via-[#8c3ed9] hover:to-[#6a1cb0]",
-                        "text-white shadow-[0_4px_14px_rgba(157,78,221,0.3)] hover:shadow-[0_4px_20px_rgba(157,78,221,0.5)]"
+                        "text-white shadow-[0_4px_14px_rgba(157,78,221,0.3)] hover:shadow-[0_4px_20px_rgba(157,78,221,0.5)]",
+                        (status === "swapping" || status === "waiting-wallet" || isReviewing) && "opacity-60 cursor-not-allowed hover:shadow-none hover:from-[#4f8cff] hover:via-[#9d4edd] hover:to-[#7b2cbf]"
                       )}
-                      onClick={() => setShowConfirmModal(true)}
+                      onClick={handleReviewArcMainnetSwap}
                     >
                       {status === "waiting-wallet"
                         ? "Confirm in Wallet..."
                         : status === "swapping"
                         ? "Swapping..."
+                        : isReviewing
+                        ? "Checking Readiness..."
                         : "Review Arc Mainnet Swap"}
                     </Button>
-                    <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-center text-xs text-emerald-400 leading-normal">
-                      ✓ Allowances verified on-chain. Click to review and confirm swap before signing.
-                    </div>
+                    {arcMainnetReadinessState === "Ready for Swap" ? (
+                      <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-center text-xs text-emerald-400 leading-normal">
+                        ✓ Allowances verified on-chain. Click to review and confirm swap before signing.
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 px-3 py-2 text-center text-xs text-purple-300/90 leading-normal">
+                        Click to review swap parameters, verified allowances, and gas estimate.
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <Button
-                    type="button"
-                    disabled={true}
-                    variant="outline"
-                    className="w-full text-xs font-semibold py-3.5 rounded-xl border-white/10 bg-white/5 text-slate-400"
-                  >
-                    Preparing Quote...
-                  </Button>
                 )}
 
                 {approvalError && (
