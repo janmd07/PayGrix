@@ -10,6 +10,10 @@ import { basePublicClient, clearBaseBalanceCache } from "@/lib/base-client";
 import { sanitizeExecutionError } from "@/lib/arc-read-infra";
 import { SWAP_CHAINS, SupportedSwapChain } from "@/config/swap-config";
 import { appendBaseBuilderSuffix } from "@/config/base-builder-code";
+import {
+  prepareArcMainnetExecutionPreflight,
+  ArcMainnetExecutionPreflightResult,
+} from "@/lib/arc-mainnet-execution-preflight";
 
 export type SwapStatus =
   | "idle"
@@ -553,6 +557,41 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
   }, [address, connector, isConnected, selectedNetwork]);
 
 
+  const getArcMainnetPreflight = useCallback(async (
+    amountIn: string,
+    tokenIn: SwapToken,
+    tokenOut: SwapToken,
+    slippageBps: number = 100
+  ): Promise<ArcMainnetExecutionPreflightResult | null> => {
+    if (!amountIn || parseFloat(amountIn) <= 0) return null;
+    if (!isConnected || !connector || !address) {
+      setError("Wallet not connected");
+      return null;
+    }
+    if (tokenIn !== "USDC" && tokenIn !== "EURC") return null;
+    if (tokenOut !== "USDC" && tokenOut !== "EURC") return null;
+
+    const provider = (await connector.getProvider()) as EIP1193Provider;
+    let providerChainId = 5042;
+    try {
+      const hexChainId = (await provider.request({ method: "eth_chainId" })) as string;
+      providerChainId = parseInt(hexChainId, 16);
+    } catch {
+      // fallback to 5042
+    }
+
+    const rawAmount = parseUnits(amountIn, 6).toString();
+    return await prepareArcMainnetExecutionPreflight({
+      fromAddress: address,
+      toAddress: address,
+      chainId: providerChainId,
+      tokenIn,
+      tokenOut,
+      amount: rawAmount,
+      slippageBps,
+    });
+  }, [address, connector, isConnected]);
+
   const resetSwapState = useCallback(() => {
     setStatus("idle");
     setEstimate(null);
@@ -566,6 +605,7 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
     txHash,
     error,
     getSwapEstimate,
+    getArcMainnetPreflight,
     executeSwap,
     resetSwapState,
   };
