@@ -426,7 +426,7 @@ type ExtendedEIP1193Provider = {
           expectedTokenIn: tokenInAddress as `0x${string}`,
           expectedTokenOut: tokenOutAddress as `0x${string}`,
           expectedAmountIn: rawAmount,
-          expectedAmountOutMinimum: freshQuote.minAmountOut,
+          expectedAmountOutMinimum: BigInt(buildResult.minAmountOut),
           expectedZeroForOne: tokenIn === "USDC",
           minDeadline: nowSec - BigInt(60),
         });
@@ -476,7 +476,7 @@ type ExtendedEIP1193Provider = {
         setStatus("completed");
         return {
           txHash: swapTx,
-          amountOut: freshQuote.formattedAmountOut,
+          amountOut: buildResult.quote.formattedAmountOut,
         };
       }
 

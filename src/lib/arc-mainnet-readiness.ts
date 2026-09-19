@@ -303,7 +303,7 @@ export async function prepareArcMainnetReadiness(
     expectedTokenIn: tokenInAddress,
     expectedTokenOut: tokenOutAddress,
     expectedAmountIn: rawAmountIn,
-    expectedAmountOutMinimum: freshMinAmountOut,
+    expectedAmountOutMinimum: BigInt(buildResult.minAmountOut),
     expectedZeroForOne: zeroForOne,
     minDeadline: nowTimestampSec - BigInt(60),
   });

@@ -26,7 +26,7 @@ export const permit2AllowanceAbi = parseAbi([
 
 // ABI parameter definitions for Uniswap V4 actions encoding
 const exactInputSingleAbiParams = parseAbiParameters([
-  "( (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) poolKey, bool zeroForOne, uint128 amountIn, uint128 amountOutMinimum, bytes hookData )",
+  "( (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) poolKey, bool zeroForOne, uint128 amountIn, uint128 amountOutMinimum, uint256 minHopPriceX36, bytes hookData )",
 ]);
 
 const currencyAndUint256AbiParams = parseAbiParameters([
@@ -145,6 +145,7 @@ export interface DecodedArcMainnetV4Calldata {
     zeroForOne: boolean;
     amountIn: bigint;
     amountOutMinimum: bigint;
+    minHopPriceX36: bigint;
     hookData: `0x${string}`;
   };
   settle: {
@@ -296,6 +297,7 @@ export async function buildArcMainnetV4Swap(
       zeroForOne,
       amountIn: rawAmountIn,
       amountOutMinimum: rawAmountOutMin,
+      minHopPriceX36: BigInt(0),
       hookData: "0x",
     },
   ]);
@@ -601,6 +603,11 @@ export function decodeAndValidateArcMainnetV4Calldata(
   if (decodedSwapParams.amountOutMinimum !== expectations.expectedAmountOutMinimum) {
     throw new Error(
       `Swap amountOutMinimum mismatch: expected ${expectations.expectedAmountOutMinimum}, got ${decodedSwapParams.amountOutMinimum}`
+    );
+  }
+  if (decodedSwapParams.minHopPriceX36 !== BigInt(0)) {
+    throw new Error(
+      `Swap minHopPriceX36 mismatch: expected 0, got ${decodedSwapParams.minHopPriceX36}`
     );
   }
 
