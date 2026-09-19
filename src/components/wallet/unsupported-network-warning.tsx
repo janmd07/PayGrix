@@ -21,9 +21,13 @@ export function UnsupportedNetworkWarning() {
 
   // PayGrix globally supports Arc Testnet (5042002) and Base Sepolia (84532).
   // The bridge feature additionally supports Arbitrum Sepolia (421614).
+  // The swap feature additionally supports Arc Mainnet (5042).
   const isBridgePage = pathname === "/bridge";
+  const isSwapPage = pathname === "/swap";
   const allowedChainIds = isBridgePage
     ? [5042002, 84532, 421614]
+    : isSwapPage
+    ? [5042002, 84532, 5042]
     : [5042002, 84532];
   const isUnsupported = isConnected && !allowedChainIds.includes(chainId);
 
@@ -42,6 +46,8 @@ export function UnsupportedNetworkWarning() {
               Current network: {currentNetwork?.name ?? "Unknown network"}.{" "}
               {isBridgePage
                 ? "The bridge supports Arc Testnet, Base Sepolia, and Arbitrum Sepolia. Please switch to one of these networks to bridge."
+                : isSwapPage
+                ? "Swap supports Arc Mainnet, Arc Testnet, and Base Sepolia. Please switch to one of these networks."
                 : "PayGrix supports Arc Testnet and Base Sepolia. Please switch to one of these networks."}
             </p>
           </div>

@@ -9,8 +9,8 @@ import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 
 function ChainBadgeLogo({ chainId }: { chainId: number }) {
   const [hasError, setHasError] = useState(false);
-  const logoUrl = chainId === 84532 ? "/chains/base.png" : chainId === 5042002 ? "/chains/arc.png" : null;
-  const alt = chainId === 84532 ? "Base Sepolia" : "Arc Testnet";
+  const logoUrl = chainId === 84532 ? "/chains/base.png" : (chainId === 5042002 || chainId === 5042) ? "/chains/arc.png" : null;
+  const alt = chainId === 84532 ? "Base Sepolia" : chainId === 5042 ? "Arc Mainnet" : "Arc Testnet";
 
   if (!logoUrl || hasError) {
     return <PlugZap className="mr-1 h-3.5 w-3.5 shrink-0" />;
@@ -52,11 +52,14 @@ export function NetworkStatus() {
   }
 
   const isArc = chainId === 5042002;
+  const isArcMainnet = chainId === 5042;
   const isBase = chainId === 84532;
-  const isSupported = isArc || isBase;
+  const isSupported = isArc || isBase || isArcMainnet;
 
   const networkName = isBase
     ? "Base Sepolia"
+    : isArcMainnet
+    ? "Arc Mainnet"
     : isArc
     ? "Arc Testnet"
     : (currentNetwork?.name ?? "Unsupported Network");

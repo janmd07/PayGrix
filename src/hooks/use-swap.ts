@@ -1,6 +1,22 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
+
+export function parseChainId(chainId: unknown): number | null {
+  if (typeof chainId === "number") {
+    return Number.isFinite(chainId) ? chainId : null;
+  }
+  if (typeof chainId === "string") {
+    const trimmed = chainId.trim();
+    if (trimmed.startsWith("0x") || trimmed.startsWith("0X")) {
+      const parsed = parseInt(trimmed, 16);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    const parsed = parseInt(trimmed, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
 import { useAccount } from "wagmi";
 import { createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2";
 import { ArcTestnet } from "@circle-fin/app-kit/chains";
@@ -76,6 +92,121 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
   const [error, setError] = useState<string | null>(null);
 
   const { address, connector, isConnected } = useAccount();
+
+  const [providerChainId, setProviderChainId] = useState<number | null>(null);
+
+  const refreshProviderChainId = useCallback(async (): Promise<number | null> => {
+    if (!connector || !isConnected) {
+      setProviderChainId(null);
+      return null;
+    }
+    try {
+      const provider = (await connector.getProvider()) as EIP1193Provider;
+      if (!provider || typeof provider.request !== "function") {
+        setProviderChainId(null);
+        return null;
+      }
+      const hexChainId = (await provider.request({ method: "eth_chainId" })) as string;
+      const parsed = parseChainId(hexChainId);
+      setProviderChainId(parsed);
+      return parsed;
+    } catch (err) {
+      console.warn("[SWAP] Failed to read provider chain ID via eth_chainId:", err);
+      setProviderChainId(null);
+      return null;
+    }
+  }, [connector, isConnected]);
+
+type ExtendedEIP1193Provider = {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+  on?: (event: string, listener: (...args: unknown[]) => void) => void;
+  removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
+  off?: (event: string, listener: (...args: unknown[]) => void) => void;
+};
+
+  useEffect(() => {
+    let cleanUp = false;
+    let activeProvider: ExtendedEIP1193Provider | null = null;
+    let onChainChanged: ((chainIdHex: unknown) => void) | null = null;
+    let onAccountsChanged: (() => void) | null = null;
+
+    const setupListeners = async () => {
+      if (!connector || !isConnected) {
+        setProviderChainId(null);
+        return;
+      }
+      try {
+        const provider = (await connector.getProvider()) as ExtendedEIP1193Provider;
+        if (!provider || cleanUp) return;
+        activeProvider = provider;
+
+        // Authoritative initial read directly from provider
+        if (typeof provider.request === "function") {
+          try {
+            const hex = await provider.request({ method: "eth_chainId" });
+            if (!cleanUp) {
+              setProviderChainId(parseChainId(hex));
+            }
+          } catch (err) {
+            console.warn("[SWAP] Error fetching initial eth_chainId:", err);
+            if (!cleanUp) setProviderChainId(null);
+          }
+        }
+
+        onChainChanged = (chainIdHex: unknown) => {
+          const parsed = parseChainId(chainIdHex);
+          if (!cleanUp) {
+            setProviderChainId(parsed);
+            setError(null);
+          }
+        };
+
+        onAccountsChanged = () => {
+          if (!cleanUp) {
+            if (typeof provider.request === "function") {
+              provider.request({ method: "eth_chainId" })
+                .then((hex: unknown) => {
+                  if (!cleanUp) setProviderChainId(parseChainId(hex));
+                })
+                .catch(() => {
+                  if (!cleanUp) setProviderChainId(null);
+                });
+            }
+            setError(null);
+          }
+        };
+
+        if (typeof provider.on === "function") {
+          provider.on("chainChanged", onChainChanged);
+          provider.on("accountsChanged", onAccountsChanged);
+        }
+      } catch (err) {
+        console.warn("[SWAP] Failed to initialize provider listeners:", err);
+      }
+    };
+
+    setupListeners();
+
+    return () => {
+      cleanUp = true;
+      if (activeProvider) {
+        if (onChainChanged) {
+          if (typeof activeProvider.removeListener === "function") {
+            activeProvider.removeListener("chainChanged", onChainChanged);
+          } else if (typeof activeProvider.off === "function") {
+            activeProvider.off("chainChanged", onChainChanged);
+          }
+        }
+        if (onAccountsChanged) {
+          if (typeof activeProvider.removeListener === "function") {
+            activeProvider.removeListener("accountsChanged", onAccountsChanged);
+          } else if (typeof activeProvider.off === "function") {
+            activeProvider.off("accountsChanged", onAccountsChanged);
+          }
+        }
+      }
+    };
+  }, [connector, isConnected]);
 
   const getSwapEstimate = useCallback(async (
     amountIn: string,
@@ -203,7 +334,8 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
       let providerChainId: number | null = null;
       try {
         const hexChainId = (await provider.request({ method: "eth_chainId" })) as string;
-        providerChainId = parseInt(hexChainId, 16);
+        providerChainId = parseChainId(hexChainId);
+        setProviderChainId(providerChainId);
       } catch (err) {
         console.error("[SWAP] Failed to read provider chain ID:", err);
       }
@@ -218,7 +350,7 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
         // Do NOT automatically switch networks.
         if (providerChainId !== targetChainId) {
           throw new Error(
-            `Wrong network: Connected wallet chain ID is ${providerChainId ?? "unknown"}, but Arc Mainnet requires 5042. Please manually switch your wallet to Arc Mainnet.`
+            `Wrong network: Connected wallet chain ID is ${providerChainId ?? "unknown"}, but Arc Mainnet requires 5042. Please switch your wallet to Arc Mainnet (Chain ID 5042).`
           );
         }
 
@@ -800,14 +932,15 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
     let providerChainId: number | null = null;
     try {
       const hexChainId = (await provider.request({ method: "eth_chainId" })) as string;
-      providerChainId = parseInt(hexChainId, 16);
+      providerChainId = parseChainId(hexChainId);
+      setProviderChainId(providerChainId);
     } catch (err) {
       console.error("[SWAP] Failed to read provider chain ID:", err);
     }
 
     if (providerChainId !== 5042) {
       throw new Error(
-        `Wrong network: Connected wallet chain ID is ${providerChainId ?? "unknown"}, but Arc Mainnet requires 5042. Please manually switch your wallet to Arc Mainnet.`
+        `Wrong network: Connected wallet chain ID is ${providerChainId ?? "unknown"}, but Arc Mainnet requires 5042. Please switch your wallet to Arc Mainnet (Chain ID 5042).`
       );
     }
 
@@ -872,14 +1005,15 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
     let providerChainId: number | null = null;
     try {
       const hexChainId = (await provider.request({ method: "eth_chainId" })) as string;
-      providerChainId = parseInt(hexChainId, 16);
+      providerChainId = parseChainId(hexChainId);
+      setProviderChainId(providerChainId);
     } catch (err) {
       console.error("[SWAP] Failed to read provider chain ID:", err);
     }
 
     if (providerChainId !== 5042) {
       throw new Error(
-        `Wrong network: Connected wallet chain ID is ${providerChainId ?? "unknown"}, but Arc Mainnet requires 5042. Please manually switch your wallet to Arc Mainnet.`
+        `Wrong network: Connected wallet chain ID is ${providerChainId ?? "unknown"}, but Arc Mainnet requires 5042. Please switch your wallet to Arc Mainnet (Chain ID 5042).`
       );
     }
 
@@ -943,6 +1077,8 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
     estimate,
     txHash,
     error,
+    providerChainId,
+    refreshProviderChainId,
     getSwapEstimate,
     getArcMainnetPreflight,
     getArcMainnetApprovalAudit,

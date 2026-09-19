@@ -195,12 +195,13 @@ export function SwapForm({
 
   const isSwapDisabled = currentNetwork === "Arc" ? !isEnabled : false;
 
-  const { isConnected, availableConnector, connect } = useArcWallet();
+  const { address, isConnected, availableConnector, connect } = useArcWallet();
   const {
     status,
     estimate,
     txHash,
     error,
+    providerChainId,
     getSwapEstimate,
     getArcMainnetApprovalAudit,
     executeArcMainnetErc20Approval,
@@ -229,6 +230,35 @@ export function SwapForm({
   const isOverBalance = parseFloat(amount) > parseFloat(currentBalance);
   const isValidAmount = amount !== "" && parseFloat(amount) > 0;
   const isFormInvalid = isOverBalance || !isValidAmount;
+
+  // Clear stale errors and re-evaluate readiness when providerChainId becomes 5042
+  useEffect(() => {
+    if (providerChainId === 5042) {
+      setApprovalError(null);
+      if (currentNetwork === "ArcMainnet" && hasQuote && isValidAmount && !isOverBalance) {
+        getArcMainnetApprovalAudit(tokenIn as SwapToken, amount).then((audit) => {
+          if (audit) {
+            if (audit.audit.state === "BOTH_SUFFICIENT") {
+              setArcMainnetReadinessState("Ready for Swap");
+            } else if (audit.audit.state === "ERC20_APPROVAL_NEEDED") {
+              setArcMainnetReadinessState("ERC20 Approval Required");
+            } else if (audit.audit.state === "PERMIT2_APPROVAL_NEEDED") {
+              setArcMainnetReadinessState("Permit2 Approval Required");
+            } else {
+              setArcMainnetReadinessState("Both Approvals Required");
+            }
+          }
+        }).catch((err) => {
+          console.warn("[Swap] Background allowance check notice on network switch:", err);
+        });
+      }
+    }
+  }, [providerChainId, currentNetwork, hasQuote, isValidAmount, isOverBalance, amount, tokenIn, getArcMainnetApprovalAudit]);
+
+  // When accounts change, clear stale approval errors
+  useEffect(() => {
+    setApprovalError(null);
+  }, [address]);
 
   // Recalculate quote if amount or tokens change
   useEffect(() => {
@@ -796,6 +826,26 @@ export function SwapForm({
                   >
                     Connect Wallet
                   </Button>
+                ) : providerChainId !== 5042 ? (
+                  <div className="space-y-2.5">
+                    <Button
+                      type="button"
+                      disabled={true}
+                      variant="outline"
+                      className="w-full text-xs font-semibold py-3.5 rounded-xl border-amber-500/30 bg-amber-500/10 text-amber-300 cursor-not-allowed opacity-90"
+                    >
+                      Wrong Network — Please Switch to Arc Mainnet (5042)
+                    </Button>
+                    <div className="flex items-start gap-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 p-3.5 text-xs text-amber-300 leading-normal">
+                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
+                      <div className="space-y-1">
+                        <p className="font-semibold text-white">Wrong network</p>
+                        <p>
+                          Connected wallet chain ID is <span className="font-mono text-white">{providerChainId ?? "unknown"}</span>, but Arc Mainnet requires <span className="font-mono text-white">5042</span>. Please switch your wallet to Arc Mainnet (Chain ID 5042).
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 ) : isOverBalance ? (
                   <Button
                     type="button"
