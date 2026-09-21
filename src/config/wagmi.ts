@@ -116,8 +116,29 @@ export const genlayerBradbury = defineChain({
   testnet: true,
 });
 
+export const arbitrum = defineChain({
+  id: 42161,
+  name: "Arbitrum One",
+  nativeCurrency: {
+    name: "Ether",
+    symbol: "ETH",
+    decimals: 18,
+  },
+  rpcUrls: {
+    default: {
+      http: ["https://arb1.arbitrum.io/rpc"],
+    },
+  },
+  blockExplorers: {
+    default: {
+      name: "Arbiscan",
+      url: "https://arbiscan.io",
+    },
+  },
+});
+
 export const wagmiConfig = createConfig({
-  chains: [arcTestnet, baseSepolia, arbitrumSepolia, mainnet, base, genlayerBradbury, arcMainnet],
+  chains: [arcTestnet, baseSepolia, arbitrumSepolia, mainnet, base, arbitrum, genlayerBradbury, arcMainnet],
   connectors: [
     injected({ target: "metaMask" }),
     injected({ target: "okxWallet" }),
@@ -136,6 +157,7 @@ export const wagmiConfig = createConfig({
     [arbitrumSepolia.id]: http(arbitrumSepolia.rpcUrls.default.http[0]),
     [mainnet.id]: http(mainnet.rpcUrls.default.http[0]),
     [base.id]: http(base.rpcUrls.default.http[0]),
+    [arbitrum.id]: http(arbitrum.rpcUrls.default.http[0]),
     [genlayerBradbury.id]: http(genlayerBradbury.rpcUrls.default.http[0]),
     [arcMainnet.id]: http(arcMainnet.rpcUrls.default.http[0]),
   },

@@ -19,6 +19,11 @@ const BridgeForm = dynamic(
   { ssr: false }
 );
 
+const MainnetBridgeForm = dynamic(
+  () => import("@/components/bridge/mainnet-bridge-form").then((mod) => mod.MainnetBridgeForm),
+  { ssr: false }
+);
+
 import { createPublicClient, http } from "viem";
 import { arcPublicClient } from "@/lib/arc-client";
 import { basePublicClient } from "@/lib/base-client";
@@ -31,7 +36,7 @@ import { SwapHistoryItem } from "@/hooks/use-swap";
 import { SupportedSwapChain } from "@/config/swap-config";
 
 export default function BridgePage() {
-  const [activeTab, setActiveTab] = useState<"swap" | "bridge">("swap");
+  const [activeTab, setActiveTab] = useState<"swap" | "bridge" | "bridge-mainnet">("swap");
   const [selectedSwapNetwork, setSelectedSwapNetwork] = useState<SupportedSwapChain>("Arc");
   
   // Bridge-specific states and hooks
@@ -595,7 +600,21 @@ export default function BridgePage() {
               : "text-slate-400 hover:text-white hover:bg-white/5"
           )}
         >
-          Bridge
+          Bridge (Testnet)
+        </button>
+        <button
+          onClick={() => setActiveTab("bridge-mainnet")}
+          className={cn(
+            "px-4 py-2 text-sm font-semibold rounded-lg transition-all flex items-center gap-1.5",
+            activeTab === "bridge-mainnet"
+              ? "bg-emerald-600 text-white shadow-lg shadow-emerald-600/20"
+              : "text-slate-400 hover:text-white hover:bg-white/5"
+          )}
+        >
+          <span>Bridge</span>
+          <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+            Mainnet
+          </span>
         </button>
       </div>
 
@@ -611,6 +630,10 @@ export default function BridgePage() {
             onNetworkChange={setSelectedSwapNetwork}
             onSwapSuccess={handleSwapSuccess}
           />
+        </div>
+      ) : activeTab === "bridge-mainnet" ? (
+        <div className="space-y-6">
+          <MainnetBridgeForm />
         </div>
       ) : (
         <div className="space-y-6">
