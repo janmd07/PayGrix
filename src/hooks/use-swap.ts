@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 
 export function parseChainId(chainId: unknown): number | null {
   if (typeof chainId === "number") {
@@ -37,6 +37,9 @@ import {
   prepareArcMainnetPermit2ApprovalTx,
   decodeAndValidateArcMainnetApprovalCalldata,
   ArcMainnetApprovalAuditAndPreparationResult,
+  ArcMainnetPipelineStage,
+  executeArcMainnetApprovalPipeline,
+  MinimalApprovalProvider,
 } from "@/lib/arc-mainnet-approval";
 import {
   prepareArcMainnetReadiness,
@@ -94,6 +97,14 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
   const { address, connector, isConnected } = useAccount();
 
   const [providerChainId, setProviderChainId] = useState<number | null>(null);
+  const [approvalPipelineStage, setApprovalPipelineStage] = useState<ArcMainnetPipelineStage>("idle");
+  const [approvalPipelineError, setApprovalPipelineError] = useState<string | null>(null);
+  const pipelineInFlightRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const addressRef = useRef(address);
+  addressRef.current = address;
+  const providerChainIdRef = useRef(providerChainId);
+  providerChainIdRef.current = providerChainId;
 
   const refreshProviderChainId = useCallback(async (): Promise<number | null> => {
     if (!connector || !isConnected) {
@@ -157,19 +168,39 @@ type ExtendedEIP1193Provider = {
           const parsed = parseChainId(chainIdHex);
           if (!cleanUp) {
             setProviderChainId(parsed);
+            providerChainIdRef.current = parsed;
             setError(null);
+            if (pipelineInFlightRef.current) {
+              abortControllerRef.current?.abort();
+              pipelineInFlightRef.current = false;
+              setApprovalPipelineStage("aborted");
+              setApprovalPipelineError("Network changed during approval. Approval pipeline aborted.");
+            }
           }
         };
 
         onAccountsChanged = () => {
           if (!cleanUp) {
+            if (pipelineInFlightRef.current) {
+              abortControllerRef.current?.abort();
+              pipelineInFlightRef.current = false;
+              setApprovalPipelineStage("aborted");
+              setApprovalPipelineError("Account changed during approval. Approval pipeline aborted.");
+            }
             if (typeof provider.request === "function") {
               provider.request({ method: "eth_chainId" })
                 .then((hex: unknown) => {
-                  if (!cleanUp) setProviderChainId(parseChainId(hex));
+                  if (!cleanUp) {
+                    const parsed = parseChainId(hex);
+                    setProviderChainId(parsed);
+                    providerChainIdRef.current = parsed;
+                  }
                 })
                 .catch(() => {
-                  if (!cleanUp) setProviderChainId(null);
+                  if (!cleanUp) {
+                    setProviderChainId(null);
+                    providerChainIdRef.current = null;
+                  }
                 });
             }
             setError(null);
@@ -984,7 +1015,7 @@ type ExtendedEIP1193Provider = {
 
     if (receipt.status === "reverted") {
       setStatus("failed");
-      throw new Error("USDC ERC20 approval transaction reverted on-chain.");
+      throw new Error(`${token} ERC20 approval transaction reverted on-chain.`);
     }
 
     setStatus("idle");
@@ -1065,11 +1096,107 @@ type ExtendedEIP1193Provider = {
     return { success: true, txHash };
   }, [address, connector, isConnected]);
 
+  const startApprovalPipeline = useCallback(async (
+    token: "USDC" | "EURC",
+    amountIn: string
+  ): Promise<boolean> => {
+    if (!amountIn || parseFloat(amountIn) <= 0) {
+      setApprovalPipelineError("Enter a valid amount to swap.");
+      return false;
+    }
+    if (!isConnected || !connector || !address) {
+      setApprovalPipelineError("Wallet not connected.");
+      return false;
+    }
+
+    // Synchronous in-flight guard
+    if (pipelineInFlightRef.current) {
+      console.warn("[SWAP] Approval pipeline already in-flight. Ignoring duplicate invocation.");
+      return false;
+    }
+    pipelineInFlightRef.current = true;
+    setApprovalPipelineError(null);
+
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    try {
+      const provider = (await connector.getProvider()) as EIP1193Provider;
+      if (!provider || typeof provider.request !== "function") {
+        throw new Error("Wallet provider is not available.");
+      }
+
+      // 1. Verify Arc Mainnet network (5042)
+      let currentChainId = providerChainIdRef.current;
+      try {
+        const hexChain = (await provider.request({ method: "eth_chainId" })) as string;
+        currentChainId = parseChainId(hexChain);
+        setProviderChainId(currentChainId);
+        providerChainIdRef.current = currentChainId;
+      } catch {
+        // ignore
+      }
+
+      if (currentChainId !== 5042) {
+        throw new Error(
+          `Wrong network: Connected wallet chain ID is ${currentChainId ?? "unknown"}, but Arc Mainnet requires 5042. Please switch your wallet to Arc Mainnet.`
+        );
+      }
+
+      // 2. Run pure approval pipeline engine
+      const rawAmount = parseUnits(amountIn, 6).toString();
+      const pipelineRes = await executeArcMainnetApprovalPipeline({
+        token,
+        owner: address as `0x${string}`,
+        requiredAmount: rawAmount,
+        provider: provider as unknown as MinimalApprovalProvider,
+        publicClient: arcMainnetPublicClient,
+        onStageChange: (stage) => {
+          setApprovalPipelineStage(stage);
+          if (stage === "erc20_wallet" || stage === "permit2_wallet") {
+            setStatus("waiting-wallet");
+          } else if (stage === "erc20_receipt" || stage === "permit2_receipt") {
+            setStatus("approving");
+          } else if (stage === "review_ready" || stage === "idle") {
+            setStatus("idle");
+          }
+        },
+        onTxSent: (_stage, hash) => {
+          setTxHash(hash);
+        },
+        getLatestAccount: () => addressRef.current,
+        getLatestChainId: () => providerChainIdRef.current,
+        signal: abortController.signal,
+      });
+
+      if (!pipelineRes.success) {
+        setApprovalPipelineError(pipelineRes.error || "Approval pipeline failed.");
+        setStatus("failed");
+        return false;
+      }
+
+      setApprovalPipelineStage("review_ready");
+      setStatus("idle");
+      return true;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Approval pipeline failed.";
+      setApprovalPipelineStage("aborted");
+      setApprovalPipelineError(msg);
+      setStatus("failed");
+      return false;
+    } finally {
+      pipelineInFlightRef.current = false;
+      abortControllerRef.current = null;
+    }
+  }, [address, connector, isConnected]);
+
   const resetSwapState = useCallback(() => {
     setStatus("idle");
     setEstimate(null);
     setTxHash("");
     setError(null);
+    setApprovalPipelineStage("idle");
+    setApprovalPipelineError(null);
   }, []);
 
   return {
@@ -1087,5 +1214,8 @@ type ExtendedEIP1193Provider = {
     executeArcMainnetPermit2Approval,
     executeSwap,
     resetSwapState,
+    approvalPipelineStage,
+    approvalPipelineError,
+    startApprovalPipeline,
   };
 }

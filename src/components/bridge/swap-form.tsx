@@ -206,17 +206,16 @@ export function SwapForm({
     refreshProviderChainId,
     getSwapEstimate,
     getArcMainnetApprovalAudit,
-    executeArcMainnetErc20Approval,
-    executeArcMainnetPermit2Approval,
     executeSwap,
     resetSwapState,
+    approvalPipelineStage,
+    approvalPipelineError,
+    startApprovalPipeline,
   } = useSwap(currentNetwork);
 
-  const [isApprovingErc20, setIsApprovingErc20] = useState(false);
-  const [isApprovingPermit2, setIsApprovingPermit2] = useState(false);
-  const [isReviewing, setIsReviewing] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [approvalError, setApprovalError] = useState<string | null>(null);
+  const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
 
   const isEthOnBase = currentNetwork === "Base" && (tokenIn === "ETH" || tokenOut === "ETH");
   const { marketPrice: ethMarketPrice, source: ethPriceSource } = useEthMarketPrice(isEthOnBase);
@@ -328,7 +327,6 @@ export function SwapForm({
     }
 
     setApprovalError(null);
-    setIsReviewing(true);
     try {
       // 1. Network check & assisted switch/add when providerChainId !== 5042
       if (providerChainId !== 5042) {
@@ -345,46 +343,39 @@ export function SwapForm({
           return;
         }
 
-        const networkRes = await ensureArcMainnetNetwork(provider);
-        if (!networkRes.success) {
-          setApprovalError(networkRes.error || "Failed to switch wallet to Arc Mainnet.");
-          return;
-        }
+        setIsSwitchingNetwork(true);
+        try {
+          const networkRes = await ensureArcMainnetNetwork(provider);
+          if (!networkRes.success) {
+            setApprovalError(networkRes.error || "Failed to switch wallet to Arc Mainnet.");
+            return;
+          }
 
-        // Re-read and verify eth_chainId === 5042
-        const currentHex = await provider.request({ method: "eth_chainId" });
-        const verifiedChainId = parseChainId(currentHex);
-        await refreshProviderChainId();
+          // Re-read and verify eth_chainId === 5042
+          const currentHex = await provider.request({ method: "eth_chainId" });
+          const verifiedChainId = parseChainId(currentHex);
+          await refreshProviderChainId();
 
-        if (verifiedChainId !== 5042) {
-          setApprovalError(
-            `Wallet is not connected to Arc Mainnet. Detected chain ID: ${verifiedChainId ?? "unknown"}.`
-          );
-          return;
-        }
-      }
-
-      // 2. Continue into existing allowance/readiness/review flow
-      const audit = await getArcMainnetApprovalAudit(tokenIn as SwapToken, amount);
-      if (audit) {
-        if (audit.audit.state === "ERC20_APPROVAL_NEEDED") {
-          setArcMainnetReadinessState("ERC20 Approval Required");
-          return;
-        } else if (audit.audit.state === "PERMIT2_APPROVAL_NEEDED") {
-          setArcMainnetReadinessState("Permit2 Approval Required");
-          return;
-        } else if (audit.audit.state === "BOTH_APPROVALS_NEEDED") {
-          setArcMainnetReadinessState("Both Approvals Required");
-          return;
+          if (verifiedChainId !== 5042) {
+            setApprovalError(
+              `Wallet is not connected to Arc Mainnet. Detected chain ID: ${verifiedChainId ?? "unknown"}.`
+            );
+            return;
+          }
+        } finally {
+          setIsSwitchingNetwork(false);
         }
       }
-      setArcMainnetReadinessState("Ready for Swap");
-      setShowConfirmModal(true);
+
+      // 2. Start streamlined approval pipeline
+      const ok = await startApprovalPipeline(tokenIn as "USDC" | "EURC", amount);
+      if (ok) {
+        setArcMainnetReadinessState("Ready for Swap");
+        setShowConfirmModal(true);
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to verify swap readiness.";
       setApprovalError(msg);
-    } finally {
-      setIsReviewing(false);
     }
   };
 
@@ -394,58 +385,6 @@ export function SwapForm({
     if (result && result.txHash) {
       const outputVal = result.amountOut || estimate.estimatedOutput;
       onSwapSuccess(amount, outputVal, tokenIn, tokenOut, result.txHash, currentNetwork);
-    }
-  };
-
-  const handleArcMainnetErc20Approve = async () => {
-    if (!amount || parseFloat(amount) <= 0) return;
-    setApprovalError(null);
-    setIsApprovingErc20(true);
-    try {
-      await executeArcMainnetErc20Approval(tokenIn as "USDC" | "EURC", amount);
-      const audit = await getArcMainnetApprovalAudit(tokenIn as SwapToken, amount);
-      if (audit) {
-        if (audit.audit.state === "BOTH_SUFFICIENT") {
-          setArcMainnetReadinessState("Ready for Swap");
-        } else if (audit.audit.state === "PERMIT2_APPROVAL_NEEDED") {
-          setArcMainnetReadinessState("Permit2 Approval Required");
-        } else if (audit.audit.state === "ERC20_APPROVAL_NEEDED") {
-          setArcMainnetReadinessState("ERC20 Approval Required");
-        } else {
-          setArcMainnetReadinessState("Both Approvals Required");
-        }
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "ERC20 approval failed.";
-      setApprovalError(msg);
-    } finally {
-      setIsApprovingErc20(false);
-    }
-  };
-
-  const handleArcMainnetPermit2Approve = async () => {
-    if (!amount || parseFloat(amount) <= 0) return;
-    setApprovalError(null);
-    setIsApprovingPermit2(true);
-    try {
-      await executeArcMainnetPermit2Approval(tokenIn as "USDC" | "EURC", amount);
-      const audit = await getArcMainnetApprovalAudit(tokenIn as SwapToken, amount);
-      if (audit) {
-        if (audit.audit.state === "BOTH_SUFFICIENT") {
-          setArcMainnetReadinessState("Ready for Swap");
-        } else if (audit.audit.state === "PERMIT2_APPROVAL_NEEDED") {
-          setArcMainnetReadinessState("Permit2 Approval Required");
-        } else if (audit.audit.state === "ERC20_APPROVAL_NEEDED") {
-          setArcMainnetReadinessState("ERC20 Approval Required");
-        } else {
-          setArcMainnetReadinessState("Both Approvals Required");
-        }
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Permit2 approval failed.";
-      setApprovalError(msg);
-    } finally {
-      setIsApprovingPermit2(false);
     }
   };
 
@@ -867,18 +806,18 @@ export function SwapForm({
                   <div className="space-y-2.5">
                     <Button
                       type="button"
-                      disabled={isFormInvalid || isSwapDisabled || !hasQuote || isReviewing}
+                      disabled={isFormInvalid || isSwapDisabled || !hasQuote || isSwitchingNetwork}
                       variant="default"
                       className={cn(
                         "w-full text-xs font-bold py-3.5 rounded-xl transition-all duration-300 active:scale-[0.98]",
                         "bg-gradient-to-r from-amber-500 via-[#9d4edd] to-[#7b2cbf] hover:from-amber-600 hover:via-[#8c3ed9] hover:to-[#6a1cb0]",
                         "text-white shadow-[0_4px_14px_rgba(245,158,11,0.3)] hover:shadow-[0_4px_20px_rgba(245,158,11,0.5)]",
-                        (isFormInvalid || isSwapDisabled || !hasQuote || isReviewing) &&
+                        (isFormInvalid || isSwapDisabled || !hasQuote || isSwitchingNetwork) &&
                           "opacity-60 cursor-not-allowed hover:shadow-none"
                       )}
                       onClick={handleReviewArcMainnetSwap}
                     >
-                      {isReviewing
+                      {isSwitchingNetwork
                         ? "Switching to Arc Mainnet..."
                         : "Switch to Arc Mainnet & Review"}
                     </Button>
@@ -903,67 +842,64 @@ export function SwapForm({
                   >
                     Insufficient {tokenIn} Balance
                   </Button>
-                ) : arcMainnetReadinessState === "Both Approvals Required" || arcMainnetReadinessState === "ERC20 Approval Required" ? (
-                  <div className="space-y-2">
-                    <Button
-                      type="button"
-                      disabled={isApprovingErc20 || isApprovingPermit2 || status === "waiting-wallet" || status === "approving"}
-                      variant="default"
-                      className="w-full text-xs font-bold py-3.5 rounded-xl bg-gradient-to-r from-amber-500 to-purple-600 hover:from-amber-600 hover:to-purple-700 text-white shadow-[0_4px_14px_rgba(245,158,11,0.3)] transition-all"
-                      onClick={handleArcMainnetErc20Approve}
-                    >
-                      {isApprovingErc20 || status === "approving"
-                        ? "Approving USDC for Permit2..."
-                        : status === "waiting-wallet"
-                        ? "Confirm in Wallet..."
-                        : "Approve USDC for Permit2"}
-                    </Button>
-                    <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-center text-xs text-amber-300/90 leading-normal">
-                      Exact approval: <span className="font-semibold text-white">{amount} {tokenIn}</span> to Permit2. Wallet signature required.
-                    </div>
-                  </div>
-                ) : arcMainnetReadinessState === "Permit2 Approval Required" ? (
-                  <div className="space-y-2">
-                    <Button
-                      type="button"
-                      disabled={isApprovingErc20 || isApprovingPermit2 || status === "waiting-wallet" || status === "approving"}
-                      variant="default"
-                      className="w-full text-xs font-bold py-3.5 rounded-xl bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 text-white shadow-[0_4px_14px_rgba(168,85,247,0.3)] transition-all"
-                      onClick={handleArcMainnetPermit2Approve}
-                    >
-                      {isApprovingPermit2 || status === "approving"
-                        ? "Approving Permit2 for Swap..."
-                        : status === "waiting-wallet"
-                        ? "Confirm in Wallet..."
-                        : "Approve Permit2 for Swap"}
-                    </Button>
-                    <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 px-3 py-2 text-center text-xs text-purple-300/90 leading-normal">
-                      Permit2 authorization for Universal Router (exact amount: <span className="font-semibold text-white">{amount} {tokenIn}</span>, valid 30 days). Wallet confirmation required.
-                    </div>
-                  </div>
                 ) : (
                   <div className="space-y-2">
                     <Button
                       type="button"
-                      disabled={status === "swapping" || status === "waiting-wallet" || isReviewing}
+                      disabled={
+                        isFormInvalid ||
+                        isSwapDisabled ||
+                        !hasQuote ||
+                        status === "swapping" ||
+                        status === "waiting-wallet" ||
+                        approvalPipelineStage === "erc20_wallet" ||
+                        approvalPipelineStage === "erc20_receipt" ||
+                        approvalPipelineStage === "permit2_wallet" ||
+                        approvalPipelineStage === "permit2_receipt"
+                      }
                       variant="default"
                       className={cn(
                         "w-full text-sm font-bold py-3.5 rounded-xl transition-all duration-300 active:scale-[0.98]",
                         "bg-gradient-to-r from-[#4f8cff] via-[#9d4edd] to-[#7b2cbf] hover:from-[#3b7cff] hover:via-[#8c3ed9] hover:to-[#6a1cb0]",
                         "text-white shadow-[0_4px_14px_rgba(157,78,221,0.3)] hover:shadow-[0_4px_20px_rgba(157,78,221,0.5)]",
-                        (status === "swapping" || status === "waiting-wallet" || isReviewing) && "opacity-60 cursor-not-allowed hover:shadow-none hover:from-[#4f8cff] hover:via-[#9d4edd] hover:to-[#7b2cbf]"
+                        (isFormInvalid ||
+                          isSwapDisabled ||
+                          !hasQuote ||
+                          status === "swapping" ||
+                          status === "waiting-wallet" ||
+                          approvalPipelineStage === "erc20_wallet" ||
+                          approvalPipelineStage === "erc20_receipt" ||
+                          approvalPipelineStage === "permit2_wallet" ||
+                          approvalPipelineStage === "permit2_receipt") &&
+                          "opacity-60 cursor-not-allowed hover:shadow-none hover:from-[#4f8cff] hover:via-[#9d4edd] hover:to-[#7b2cbf]"
                       )}
                       onClick={handleReviewArcMainnetSwap}
                     >
-                      {status === "waiting-wallet"
+                      {approvalPipelineStage === "erc20_wallet"
+                        ? `Confirm ${tokenIn} Approval in Wallet...`
+                        : approvalPipelineStage === "erc20_receipt"
+                        ? "Waiting for ERC20 approval confirmation..."
+                        : approvalPipelineStage === "permit2_wallet"
+                        ? "Confirm Permit2 Approval in Wallet..."
+                        : approvalPipelineStage === "permit2_receipt"
+                        ? "Waiting for Permit2 approval confirmation..."
+                        : status === "waiting-wallet"
                         ? "Confirm in Wallet..."
                         : status === "swapping"
                         ? "Swapping..."
-                        : isReviewing
-                        ? "Checking Readiness..."
+                        : providerChainId !== 5042
+                        ? "Switch to Arc Mainnet & Review"
                         : "Review Arc Mainnet Swap"}
                     </Button>
-                    {arcMainnetReadinessState === "Ready for Swap" ? (
+                    {approvalPipelineStage === "erc20_wallet" || approvalPipelineStage === "erc20_receipt" ? (
+                      <div className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-center text-xs text-amber-300/90 leading-normal">
+                        Stage 1 of 2: Authorizing Permit2 for {amount} {tokenIn}. {approvalPipelineStage === "erc20_wallet" ? "Confirm the transaction in your wallet." : "Waiting for on-chain block confirmation..."}
+                      </div>
+                    ) : approvalPipelineStage === "permit2_wallet" || approvalPipelineStage === "permit2_receipt" ? (
+                      <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 px-3 py-2 text-center text-xs text-purple-300/90 leading-normal">
+                        Stage 2 of 2: Authorizing Universal Router via Permit2 ({amount} {tokenIn}). {approvalPipelineStage === "permit2_wallet" ? "Confirm the transaction in your wallet." : "Waiting for on-chain block confirmation..."}
+                      </div>
+                    ) : arcMainnetReadinessState === "Ready for Swap" || approvalPipelineStage === "review_ready" ? (
                       <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-center text-xs text-emerald-400 leading-normal">
                         ✓ Allowances verified on-chain. Click to review and confirm swap before signing.
                       </div>
@@ -975,9 +911,9 @@ export function SwapForm({
                   </div>
                 )}
 
-                {approvalError && (
+                {(approvalPipelineError || approvalError) && (
                   <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 leading-normal">
-                    {approvalError}
+                    {approvalPipelineError || approvalError}
                   </div>
                 )}
               </div>

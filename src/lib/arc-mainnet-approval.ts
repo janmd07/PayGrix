@@ -8,6 +8,7 @@ import {
 import { ARC_MAINNET_TOKENS, ARC_MAINNET_UNISWAP_V4 } from "@/config/arc-mainnet";
 import { arcMainnetPublicClient } from "@/lib/arc-mainnet-client";
 import { BASE_BUILDER_CODE } from "@/config/base-builder-code";
+import { parseChainId } from "@/lib/arc-mainnet-network";
 
 export const ARC_MAINNET_CHAIN_ID = 5042;
 export const BASE_BUILDER_SUFFIX_HEX = "62635f66337366326969750b00802180218021802180218021";
@@ -34,11 +35,64 @@ export type ArcMainnetApprovalType =
   | "ERC20_TO_PERMIT2"
   | "PERMIT2_TO_UNIVERSAL_ROUTER";
 
+export type ArcMainnetPipelineStage =
+  | "idle"
+  | "erc20_wallet"
+  | "erc20_receipt"
+  | "permit2_wallet"
+  | "permit2_receipt"
+  | "review_ready"
+  | "aborted";
+
+export interface MinimalApprovalProvider {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+}
+
+export interface ArcMainnetPublicReadClient {
+  readContract: (args: {
+    address: `0x${string}`;
+    abi: readonly unknown[];
+    functionName: string;
+    args: readonly unknown[];
+  }) => Promise<unknown>;
+}
+
+export interface ArcMainnetPublicReceiptClient {
+  waitForTransactionReceipt: (args: {
+    hash: `0x${string}`;
+    timeout?: number;
+  }) => Promise<{ status: "success" | "reverted" | string }>;
+}
+
+export interface ArcMainnetApprovalPipelineParams {
+  token: "USDC" | "EURC";
+  owner: `0x${string}`;
+  requiredAmount: string; // raw 6-decimal units string e.g. "1000000"
+  provider: MinimalApprovalProvider;
+  publicClient?: ArcMainnetPublicReceiptClient & Partial<ArcMainnetPublicReadClient>;
+  onStageChange?: (stage: ArcMainnetPipelineStage) => void;
+  onTxSent?: (stage: "erc20" | "permit2", txHash: `0x${string}`) => void;
+  getLatestAccount?: () => Promise<string | undefined> | string | undefined;
+  getLatestChainId?: () => Promise<number | null> | number | null;
+  signal?: AbortSignal;
+}
+
+export interface ArcMainnetApprovalPipelineResult {
+  success: boolean;
+  stage: ArcMainnetPipelineStage;
+  erc20TxHash?: `0x${string}`;
+  permit2TxHash?: `0x${string}`;
+  erc20Skipped: boolean;
+  permit2Skipped: boolean;
+  error?: string;
+}
+
 export interface ArcMainnetAllowanceAuditParams {
   token: "USDC" | "EURC";
   owner: string;
   requiredAmount: string; // raw 6-decimal units string e.g. "1000000"
   chainId?: number;
+  publicClient?: ArcMainnetPublicReadClient;
 }
 
 export interface ArcMainnetAllowanceAuditResult {
@@ -150,16 +204,18 @@ export async function auditArcMainnetAllowances(
     throw new Error(`Required amount must be positive, received: ${requiredAmount}`);
   }
 
+  const client = params.publicClient ?? arcMainnetPublicClient;
+
   // Step A: Read ERC20 allowance: owner -> Permit2
   let erc20AllowanceBigInt = BigInt(0);
   try {
-    const erc20Res = await arcMainnetPublicClient.readContract({
+    const erc20Res = await client.readContract({
       address: tokenAddress,
       abi: erc20ApproveAbi,
       functionName: "allowance",
       args: [ownerAddress, ARC_MAINNET_UNISWAP_V4.permit2],
     });
-    erc20AllowanceBigInt = BigInt(erc20Res);
+    erc20AllowanceBigInt = BigInt(erc20Res as string | number | bigint);
   } catch (err) {
     console.warn("[Arc Mainnet Approval] Non-fatal error reading ERC20 allowance:", err);
   }
@@ -169,15 +225,16 @@ export async function auditArcMainnetAllowances(
   let permit2Expiration = 0;
   let permit2Nonce = 0;
   try {
-    const permit2Res = await arcMainnetPublicClient.readContract({
+    const permit2Res = await client.readContract({
       address: ARC_MAINNET_UNISWAP_V4.permit2,
       abi: permit2ApproveAbi,
       functionName: "allowance",
       args: [ownerAddress, tokenAddress, ARC_MAINNET_UNISWAP_V4.universalRouter],
     });
-    permit2AllowanceBigInt = BigInt(permit2Res[0]);
-    permit2Expiration = Number(permit2Res[1]);
-    permit2Nonce = Number(permit2Res[2]);
+    const permit2Tuple = permit2Res as [bigint | number | string, number | string, number | string];
+    permit2AllowanceBigInt = BigInt(permit2Tuple[0]);
+    permit2Expiration = Number(permit2Tuple[1]);
+    permit2Nonce = Number(permit2Tuple[2]);
   } catch (err) {
     console.warn("[Arc Mainnet Approval] Non-fatal error reading Permit2 allowance:", err);
   }
@@ -613,4 +670,258 @@ export async function auditAndPrepareArcMainnetApprovals(
     isReadyForBroadcast: false,
     writeExecuted: false,
   };
+}
+
+// -----------------------------------------------------------------------------
+// 8. Pure / Reusable Arc Mainnet Approval Pipeline Engine
+// -----------------------------------------------------------------------------
+export async function executeArcMainnetApprovalPipeline(
+  params: ArcMainnetApprovalPipelineParams
+): Promise<ArcMainnetApprovalPipelineResult> {
+  const {
+    token,
+    owner,
+    requiredAmount,
+    provider,
+    publicClient = arcMainnetPublicClient,
+    onStageChange,
+    onTxSent,
+    getLatestAccount,
+    getLatestChainId,
+    signal,
+  } = params;
+
+  const setStage = (stage: ArcMainnetPipelineStage) => {
+    onStageChange?.(stage);
+  };
+
+  const checkInvariants = async () => {
+    if (signal?.aborted) {
+      throw new Error("Approval pipeline aborted.");
+    }
+    if (getLatestAccount) {
+      const latestAcc = await getLatestAccount();
+      if (latestAcc && latestAcc.toLowerCase() !== owner.toLowerCase()) {
+        throw new Error(
+          `Account changed from ${owner} to ${latestAcc} during approval pipeline.`
+        );
+      }
+    }
+    let currentChainId: number | null = null;
+    if (getLatestChainId) {
+      currentChainId = await getLatestChainId();
+    } else if (provider && typeof provider.request === "function") {
+      try {
+        const hex = await provider.request({ method: "eth_chainId" });
+        currentChainId = parseChainId(hex);
+      } catch {
+        // ignore
+      }
+    }
+    if (currentChainId !== null && currentChainId !== ARC_MAINNET_CHAIN_ID) {
+      throw new Error(
+        `Network changed to chain ID ${currentChainId} during approval pipeline. Arc Mainnet requires ${ARC_MAINNET_CHAIN_ID}.`
+      );
+    }
+  };
+
+  let erc20TxHash: `0x${string}` | undefined;
+  let permit2TxHash: `0x${string}` | undefined;
+  let erc20Skipped = false;
+  let permit2Skipped = false;
+
+  try {
+    await checkInvariants();
+
+    // Step 1: Read current ERC20 & Permit2 allowances
+    const initialAudit = await auditArcMainnetAllowances({
+      token,
+      owner,
+      requiredAmount,
+      chainId: ARC_MAINNET_CHAIN_ID,
+      publicClient: publicClient as ArcMainnetPublicReadClient,
+    });
+
+    await checkInvariants();
+
+    // Stage 1: ERC20 approval if insufficient
+    if (initialAudit.erc20ApprovalNeeded) {
+      setStage("erc20_wallet");
+
+      const preparedErc20 = prepareArcMainnetErc20ApprovalTx({
+        token,
+        owner,
+        amount: requiredAmount,
+        chainId: ARC_MAINNET_CHAIN_ID,
+        allowUnlimited: false,
+      });
+      decodeAndValidateArcMainnetApprovalCalldata(preparedErc20);
+
+      await checkInvariants();
+
+      // Request ERC20 approval popup from wallet
+      const rawErc20Tx = await provider.request({
+        method: "eth_sendTransaction",
+        params: [
+          {
+            from: owner,
+            to: preparedErc20.to,
+            data: preparedErc20.data,
+            value: "0x0",
+          },
+        ],
+      });
+
+      erc20TxHash = rawErc20Tx as `0x${string}`;
+      onTxSent?.("erc20", erc20TxHash);
+
+      setStage("erc20_receipt");
+
+      await checkInvariants();
+
+      // Wait for on-chain receipt
+      const erc20Receipt = await publicClient.waitForTransactionReceipt({
+        hash: erc20TxHash,
+        timeout: 60000,
+      });
+
+      if (erc20Receipt.status !== "success") {
+        throw new Error(`${token} ERC20 approval transaction reverted on-chain.`);
+      }
+
+      await checkInvariants();
+
+      // Re-read ERC20 allowance and verify
+      const auditAfterErc20 = await auditArcMainnetAllowances({
+        token,
+        owner,
+        requiredAmount,
+        chainId: ARC_MAINNET_CHAIN_ID,
+        publicClient: publicClient as ArcMainnetPublicReadClient,
+      });
+
+      if (auditAfterErc20.erc20ApprovalNeeded) {
+        throw new Error(
+          `ERC20 allowance for ${token} remains insufficient after approval transaction.`
+        );
+      }
+    } else {
+      erc20Skipped = true;
+    }
+
+    await checkInvariants();
+
+    // Stage 2: Permit2 approval if insufficient
+    const auditBeforePermit2 = await auditArcMainnetAllowances({
+      token,
+      owner,
+      requiredAmount,
+      chainId: ARC_MAINNET_CHAIN_ID,
+      publicClient: publicClient as ArcMainnetPublicReadClient,
+    });
+
+    if (auditBeforePermit2.permit2ApprovalNeeded) {
+      // AUTOMATICALLY request Permit2 approval popup WITHOUT requiring another UI click
+      setStage("permit2_wallet");
+
+      const preparedPermit2 = prepareArcMainnetPermit2ApprovalTx({
+        token,
+        owner,
+        amount: requiredAmount,
+        chainId: ARC_MAINNET_CHAIN_ID,
+        expirationSeconds: 30 * 86400,
+        allowUnlimited: false,
+      });
+      decodeAndValidateArcMainnetApprovalCalldata(preparedPermit2);
+
+      await checkInvariants();
+
+      // Request Permit2 approval popup from wallet
+      const rawPermit2Tx = await provider.request({
+        method: "eth_sendTransaction",
+        params: [
+          {
+            from: owner,
+            to: preparedPermit2.to,
+            data: preparedPermit2.data,
+            value: "0x0",
+          },
+        ],
+      });
+
+      permit2TxHash = rawPermit2Tx as `0x${string}`;
+      onTxSent?.("permit2", permit2TxHash);
+
+      setStage("permit2_receipt");
+
+      await checkInvariants();
+
+      // Wait for on-chain receipt
+      const permit2Receipt = await publicClient.waitForTransactionReceipt({
+        hash: permit2TxHash,
+        timeout: 60000,
+      });
+
+      if (permit2Receipt.status !== "success") {
+        throw new Error("Permit2 approval transaction reverted on-chain.");
+      }
+
+      await checkInvariants();
+
+      // Re-read Permit2 allowance and verify
+      const auditAfterPermit2 = await auditArcMainnetAllowances({
+        token,
+        owner,
+        requiredAmount,
+        chainId: ARC_MAINNET_CHAIN_ID,
+        publicClient: publicClient as ArcMainnetPublicReadClient,
+      });
+
+      if (auditAfterPermit2.permit2ApprovalNeeded) {
+        throw new Error(
+          `Permit2 allowance for ${token} remains insufficient after approval transaction.`
+        );
+      }
+    } else {
+      permit2Skipped = true;
+    }
+
+    await checkInvariants();
+
+    // Verify both allowances are now sufficient
+    const finalAudit = await auditArcMainnetAllowances({
+      token,
+      owner,
+      requiredAmount,
+      chainId: ARC_MAINNET_CHAIN_ID,
+      publicClient: publicClient as ArcMainnetPublicReadClient,
+    });
+
+    if (finalAudit.state !== "BOTH_SUFFICIENT") {
+      throw new Error("Allowances are not both sufficient after approval pipeline.");
+    }
+
+    setStage("review_ready");
+
+    return {
+      success: true,
+      stage: "review_ready",
+      erc20TxHash,
+      permit2TxHash,
+      erc20Skipped,
+      permit2Skipped,
+    };
+  } catch (err: unknown) {
+    setStage("aborted");
+    const msg = err instanceof Error ? err.message : "Approval pipeline failed.";
+    return {
+      success: false,
+      stage: "aborted",
+      erc20TxHash,
+      permit2TxHash,
+      erc20Skipped,
+      permit2Skipped,
+      error: msg,
+    };
+  }
 }
