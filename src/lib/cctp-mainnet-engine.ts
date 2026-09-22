@@ -491,6 +491,190 @@ export function validateDecodedMessage(params: {
 }
 
 // -----------------------------------------------------------------------------
+// Protocol-Aware Source <-> Iris Message Correlation (CCTP V2)
+// -----------------------------------------------------------------------------
+export interface MessageCorrelationResult {
+  valid: boolean;
+  error?: string;
+  sourceDecoded?: DecodedCctpMessage;
+  irisDecoded?: DecodedCctpMessage;
+}
+
+export function correlateSourceAndIrisMessages(params: {
+  sourceMessageHex: `0x${string}`;
+  irisMessageHex: `0x${string}`;
+}): MessageCorrelationResult {
+  const { sourceMessageHex, irisMessageHex } = params;
+
+  // 1. Basic hex & structure validation
+  if (!sourceMessageHex || !sourceMessageHex.startsWith("0x") || sourceMessageHex.length % 2 !== 0) {
+    return { valid: false, error: "Invalid source message hex encoding." };
+  }
+  if (!irisMessageHex || !irisMessageHex.startsWith("0x") || irisMessageHex.length % 2 !== 0) {
+    return { valid: false, error: "Invalid Iris message hex encoding." };
+  }
+
+  // 2. Decode both messages (handles length checks & supported versions)
+  let sourceDecoded: DecodedCctpMessage;
+  let irisDecoded: DecodedCctpMessage;
+  try {
+    sourceDecoded = decodeCctpMessage(sourceMessageHex);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { valid: false, error: `Malformed source message: ${msg}` };
+  }
+
+  try {
+    irisDecoded = decodeCctpMessage(irisMessageHex);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { valid: false, error: `Malformed Iris message: ${msg}` };
+  }
+
+  // 3. Both must be CCTP V2 (version === 1)
+  if (sourceDecoded.version !== 1 || irisDecoded.version !== 1) {
+    return {
+      valid: false,
+      error: `Unsupported CCTP version for V2 correlation: source=${sourceDecoded.version}, iris=${irisDecoded.version}.`,
+    };
+  }
+
+  // 4. Immutable header fields must match exactly
+  if (sourceDecoded.sourceDomain !== irisDecoded.sourceDomain) {
+    return {
+      valid: false,
+      error: `Source domain mismatch: source=${sourceDecoded.sourceDomain}, iris=${irisDecoded.sourceDomain}.`,
+    };
+  }
+  if (sourceDecoded.destinationDomain !== irisDecoded.destinationDomain) {
+    return {
+      valid: false,
+      error: `Destination domain mismatch: source=${sourceDecoded.destinationDomain}, iris=${irisDecoded.destinationDomain}.`,
+    };
+  }
+  if (sourceDecoded.sender.toLowerCase() !== irisDecoded.sender.toLowerCase()) {
+    return {
+      valid: false,
+      error: `TokenMessenger sender mismatch: source=${sourceDecoded.sender}, iris=${irisDecoded.sender}.`,
+    };
+  }
+  if (sourceDecoded.recipient.toLowerCase() !== irisDecoded.recipient.toLowerCase()) {
+    return {
+      valid: false,
+      error: `TokenMessenger recipient mismatch: source=${sourceDecoded.recipient}, iris=${irisDecoded.recipient}.`,
+    };
+  }
+  if (
+    sourceDecoded.destinationCaller.toLowerCase() !==
+    irisDecoded.destinationCaller.toLowerCase()
+  ) {
+    return {
+      valid: false,
+      error: `Destination caller mismatch: source=${sourceDecoded.destinationCaller}, iris=${irisDecoded.destinationCaller}.`,
+    };
+  }
+  if (sourceDecoded.minFinalityThreshold !== irisDecoded.minFinalityThreshold) {
+    return {
+      valid: false,
+      error: `Minimum finality threshold mismatch: source=${sourceDecoded.minFinalityThreshold}, iris=${irisDecoded.minFinalityThreshold}.`,
+    };
+  }
+
+  // 5. Byte-for-byte equality of complete BurnMessageV2 body (from byte 148 onward)
+  const sourceBodyHex = sourceMessageHex.slice(2 + 148 * 2);
+  const irisBodyHex = irisMessageHex.slice(2 + 148 * 2);
+
+  if (sourceDecoded.feeExecuted === irisDecoded.feeExecuted) {
+    if (sourceBodyHex.toLowerCase() !== irisBodyHex.toLowerCase()) {
+      return {
+        valid: false,
+        error: "BurnMessageV2 body byte-for-byte mismatch between source and Iris messages.",
+      };
+    }
+  } else {
+    // If fees were executed dynamically by Iris, verify all other body fields individually and ensure feeExecuted <= maxFee
+    if (sourceDecoded.messageBodyVersion !== irisDecoded.messageBodyVersion) {
+      return { valid: false, error: "BurnMessageV2 messageBodyVersion mismatch." };
+    }
+    if (sourceDecoded.burnToken.toLowerCase() !== irisDecoded.burnToken.toLowerCase()) {
+      return { valid: false, error: "BurnMessageV2 burnToken mismatch." };
+    }
+    if (sourceDecoded.mintRecipient.toLowerCase() !== irisDecoded.mintRecipient.toLowerCase()) {
+      return { valid: false, error: "BurnMessageV2 mintRecipient mismatch." };
+    }
+    if (sourceDecoded.amount !== irisDecoded.amount) {
+      return { valid: false, error: "BurnMessageV2 amount mismatch." };
+    }
+    if (sourceDecoded.messageSender.toLowerCase() !== irisDecoded.messageSender.toLowerCase()) {
+      return { valid: false, error: "BurnMessageV2 messageSender mismatch." };
+    }
+    if (sourceDecoded.maxFee !== irisDecoded.maxFee) {
+      return { valid: false, error: "BurnMessageV2 maxFee mismatch." };
+    }
+    if (sourceDecoded.expirationBlock !== irisDecoded.expirationBlock) {
+      return { valid: false, error: "BurnMessageV2 expirationBlock mismatch." };
+    }
+    if (
+      (sourceDecoded.hookData || "0x").toLowerCase() !==
+      (irisDecoded.hookData || "0x").toLowerCase()
+    ) {
+      return { valid: false, error: "BurnMessageV2 hookData mismatch." };
+    }
+    const maxFee = sourceDecoded.maxFee ?? BigInt(0);
+    const executedFee = irisDecoded.feeExecuted ?? BigInt(0);
+    if (executedFee > maxFee) {
+      return {
+        valid: false,
+        error: `Iris executed fee (${executedFee}) exceeds source max fee (${maxFee}).`,
+      };
+    }
+  }
+
+  // 6. CCTP V2 Nonce semantics:
+  // Source pre-finalized message has unassigned nonce 0
+  if (sourceDecoded.nonce !== BigInt(0)) {
+    return {
+      valid: false,
+      error: `Source message nonce must be 0 (unassigned before finalization), got ${sourceDecoded.nonce}.`,
+    };
+  }
+  // Iris finalized message must have assigned positive non-zero nonce
+  if (irisDecoded.nonce <= BigInt(0)) {
+    return {
+      valid: false,
+      error: `Iris finalized message must have non-zero nonce, got ${irisDecoded.nonce}.`,
+    };
+  }
+
+  // 7. CCTP V2 Finality threshold semantics:
+  // iris.finalityThresholdExecuted must be >= source.minFinalityThreshold
+  const minRequired = sourceDecoded.minFinalityThreshold ?? 0;
+  const executed = irisDecoded.finalityThresholdExecuted ?? 0;
+  if (executed < minRequired) {
+    return {
+      valid: false,
+      error: `Iris finality threshold executed (${executed}) is below required source threshold (${minRequired}).`,
+    };
+  }
+
+  return {
+    valid: true,
+    sourceDecoded,
+    irisDecoded,
+  };
+}
+
+export function assertCorrelatedSourceAndIrisMessages(params: {
+  sourceMessageHex: `0x${string}`;
+  irisMessageHex: `0x${string}`;
+}): void {
+  const result = correlateSourceAndIrisMessages(params);
+  if (!result.valid) {
+    throw new Error(`Security check failed: ${result.error}`);
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Iris Attestation Polling
 // -----------------------------------------------------------------------------
 export interface IrisAttestationMessage {
@@ -537,14 +721,33 @@ export async function pollCircleIrisAttestation(params: {
       const res = await fetch(url, { signal });
       if (res.ok) {
         const data = (await res.json()) as IrisAttestationResponse;
-        const matchingMsg = data.messages?.find((m) =>
-          expectedMessageHex
-            ? m.message?.toLowerCase() === expectedMessageHex.toLowerCase()
-            : true
-        );
-        const targetMsg = matchingMsg || data.messages?.[0];
+        let targetMsg: IrisAttestationMessage | undefined;
 
-        onAttempt?.(attempt, maxAttempts, targetMsg?.status || "fetching");
+        if (expectedMessageHex) {
+          // When expectedMessageHex is provided, search ALL candidates and accept ONLY
+          // a candidate that strictly passes protocol correlation.
+          // NEVER fall back to data.messages[0] or an unrelated candidate.
+          targetMsg = data.messages?.find((m) => {
+            if (!m.message || m.message === "0x") return false;
+            const correlation = correlateSourceAndIrisMessages({
+              sourceMessageHex: expectedMessageHex,
+              irisMessageHex: m.message as `0x${string}`,
+            });
+            return correlation.valid;
+          });
+        } else {
+          // Fallback only if no expected source message is specified
+          targetMsg =
+            data.messages?.find((m) => m.message && m.message !== "0x") ||
+            data.messages?.[0];
+        }
+
+        onAttempt?.(
+          attempt,
+          maxAttempts,
+          targetMsg?.status ||
+            (data.messages && data.messages.length > 0 ? "waiting-correlation" : "indexing")
+        );
 
         if (
           targetMsg &&
@@ -555,14 +758,11 @@ export async function pollCircleIrisAttestation(params: {
         ) {
           const retMessage = (targetMsg.message || "0x") as `0x${string}`;
 
-          if (
-            expectedMessageHex &&
-            retMessage !== "0x" &&
-            retMessage.toLowerCase() !== expectedMessageHex.toLowerCase()
-          ) {
-            throw new Error(
-              "Security check failed: Iris returned message does not match source transaction message bytes."
-            );
+          if (expectedMessageHex && retMessage !== "0x") {
+            assertCorrelatedSourceAndIrisMessages({
+              sourceMessageHex: expectedMessageHex,
+              irisMessageHex: retMessage,
+            });
           }
 
           return {
@@ -935,11 +1135,10 @@ export async function executeMainnetCctpBridge(
 
     attestationHex = attestationRes.attestation;
     if (attestationRes.message && attestationRes.message !== "0x") {
-      if (attestationRes.message.toLowerCase() !== messageHex.toLowerCase()) {
-        throw new Error(
-          "Security check failed: Iris returned message does not match source transaction message."
-        );
-      }
+      assertCorrelatedSourceAndIrisMessages({
+        sourceMessageHex: messageHex,
+        irisMessageHex: attestationRes.message,
+      });
       messageHex = attestationRes.message;
     }
 

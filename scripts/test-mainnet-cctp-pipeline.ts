@@ -14,7 +14,9 @@ import {
   DEPOSIT_FOR_BURN_SELECTOR,
   MESSAGE_SENT_EVENT_TOPIC0,
   RECEIVE_MESSAGE_SELECTOR,
+  assertCorrelatedSourceAndIrisMessages,
   bytes32ToAddress,
+  correlateSourceAndIrisMessages,
   decodeCctpMessage,
   decodeDepositForBurnCalldata,
   encodeDepositForBurnCalldata,
@@ -1127,8 +1129,8 @@ async function runTests() {
   // 45. Required Test 9: Mismatched Iris attestation rejection
   // ---------------------------------------------------------------------------
   await test("Test 45: Rejection — Iris returning message bytes different from source receipt is strictly rejected", async () => {
-    const sourceMessage = buildV2Message({ amount: BigInt(10000), nonce: BigInt(1) });
-    const tamperedMessage = buildV2Message({ amount: BigInt(20000), nonce: BigInt(1) }); // tampered message returned by Iris
+    const sourceMessage = buildV2Message({ amount: BigInt(10000), nonce: BigInt(0), finalityThresholdExecuted: 0 });
+    const tamperedMessage = buildV2Message({ amount: BigInt(20000), nonce: BigInt(1), finalityThresholdExecuted: 2000 }); // tampered message returned by Iris
 
     const originalFetch = global.fetch;
     try {
@@ -1141,6 +1143,7 @@ async function runTests() {
           }),
         } as unknown as Response);
 
+      // 1. Polling must NOT accept the tampered candidate as a fallback; it must continue polling and time out
       await assert.rejects(
         pollCircleIrisAttestation({
           sourceDomain: 26,
@@ -1148,7 +1151,17 @@ async function runTests() {
           expectedMessageHex: sourceMessage,
           maxAttempts: 1,
         }),
-        /Iris returned message does not match source transaction message bytes/
+        /Timed out waiting for Circle CCTP attestation/
+      );
+
+      // 2. Authoritative assertion function must directly reject the tampered candidate
+      assert.throws(
+        () =>
+          assertCorrelatedSourceAndIrisMessages({
+            sourceMessageHex: sourceMessage,
+            irisMessageHex: tamperedMessage,
+          }),
+        /Security check failed:/
       );
     } finally {
       global.fetch = originalFetch;
@@ -1333,6 +1346,444 @@ async function runTests() {
     assert.throws(() => decodeCctpMessage("0x123" as `0x${string}`), /invalid length/);
     assert.throws(() => decodeCctpMessage("0x00000001" as `0x${string}`), /too short/);
     assert.throws(() => decodeCctpMessage("0x000000020000001a" as `0x${string}`), /Unsupported CCTP message version/);
+  });
+
+  // ===========================================================================
+  // PROTOCOL-AWARE CCTP V2 CORRELATION EXTENDED REGRESSION SUITE (TESTS 53 - 65)
+  // ===========================================================================
+
+  // ---------------------------------------------------------------------------
+  // 53. Category A: Real Production Regression Fixture (tx 0xef67f633...)
+  // ---------------------------------------------------------------------------
+  await test("Test 53: Category A — Real Arc Mainnet CCTP V2 production regression fixture (0xef67f633...)", () => {
+    // Real raw MessageSent log data from Arc block 10214811
+    const realSourceEmittedHex =
+      "0x000000010000001a00000006000000000000000000000000000000000000000000000000000000000000000000000000000000000000000028b5a0e9c621a5badaa536219b3a228c8168cf5d00000000000000000000000028b5a0e9c621a5badaa536219b3a228c8168cf5d0000000000000000000000000000000000000000000000000000000000000000000007d000000000000000010000000000000000000000003600000000000000000000000000000000000000000000000000000000000000e2ef8f89df0b50975328eb8859116bbe90c1036d0000000000000000000000000000000000000000000000000000000000002710000000000000000000000000e2ef8f89df0b50975328eb8859116bbe90c1036d000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`;
+
+    // Real Iris attested message for the same transaction
+    const realIrisAttestedHex =
+      "0x000000010000001a0000000604de31be0dcc37a3389b4b53cc03a25e12ecca12a362df705a1286e612f0eda900000000000000000000000028b5a0e9c621a5badaa536219b3a228c8168cf5d00000000000000000000000028b5a0e9c621a5badaa536219b3a228c8168cf5d0000000000000000000000000000000000000000000000000000000000000000000007d0000007d0000000010000000000000000000000003600000000000000000000000000000000000000000000000000000000000000e2ef8f89df0b50975328eb8859116bbe90c1036d0000000000000000000000000000000000000000000000000000000000002710000000000000000000000000e2ef8f89df0b50975328eb8859116bbe90c1036d000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" as `0x${string}`;
+
+    const decodedSrc = decodeCctpMessage(realSourceEmittedHex);
+    const decodedIris = decodeCctpMessage(realIrisAttestedHex);
+
+    assert.strictEqual(decodedSrc.nonce, BigInt(0), "Source pre-finalized nonce must be 0");
+    assert.strictEqual(decodedSrc.finalityThresholdExecuted, 0, "Source pre-finalized finalityExecuted must be 0");
+    assert.strictEqual(decodedIris.nonce > BigInt(0), true, "Iris finalized nonce must be positive");
+    assert.strictEqual(decodedIris.finalityThresholdExecuted, 2000, "Iris finalityExecuted must be 2000");
+
+    const result = correlateSourceAndIrisMessages({
+      sourceMessageHex: realSourceEmittedHex,
+      irisMessageHex: realIrisAttestedHex,
+    });
+    assert.strictEqual(result.valid, true, `Real transaction correlation must succeed: ${result.error}`);
+    assert.doesNotThrow(() =>
+      assertCorrelatedSourceAndIrisMessages({
+        sourceMessageHex: realSourceEmittedHex,
+        irisMessageHex: realIrisAttestedHex,
+      })
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 54. Categories B & C: Parameterized Multi-User Transfers
+  // ---------------------------------------------------------------------------
+  await test("Test 54: Categories B & C — Parameterized multi-user transfers (A->A, A->B, B->C, C->A) across arbitrary amounts", () => {
+    const testCases: Array<[string, string, bigint]> = [
+      [WALLET_A, WALLET_A, BigInt(10000)], // 0.01 USDC
+      [WALLET_A, WALLET_B, BigInt(500000)], // 0.5 USDC
+      [WALLET_B, WALLET_C, BigInt(10000000)], // 10 USDC
+      [WALLET_C, WALLET_A, BigInt(100000000)], // 100 USDC
+    ];
+
+    for (const [sender, recipient, amount] of testCases) {
+      const srcMsg = buildV2Message({
+        messageSender: sender as `0x${string}`,
+        mintRecipient: recipient as `0x${string}`,
+        amount,
+        nonce: BigInt(0),
+        finalityThresholdExecuted: 0,
+        minFinalityThreshold: 2000,
+      });
+
+      const irisMsg = buildV2Message({
+        messageSender: sender as `0x${string}`,
+        mintRecipient: recipient as `0x${string}`,
+        amount,
+        nonce: BigInt(54321),
+        finalityThresholdExecuted: 2000,
+        minFinalityThreshold: 2000,
+      });
+
+      const res = correlateSourceAndIrisMessages({
+        sourceMessageHex: srcMsg,
+        irisMessageHex: irisMsg,
+      });
+      assert.strictEqual(
+        res.valid,
+        true,
+        `Dynamic transfer for ${sender}->${recipient} (${amount}) must be correlated successfully`
+      );
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // 55. Category D: Mutation — Mutated Amount Rejected
+  // ---------------------------------------------------------------------------
+  await test("Test 55: Category D — Mutated amount by 1 unit in BurnMessageV2 is strictly rejected", () => {
+    const srcMsg = buildV2Message({ amount: BigInt(10000), nonce: BigInt(0), finalityThresholdExecuted: 0 });
+    const irisMsgTampered = buildV2Message({ amount: BigInt(10001), nonce: BigInt(10), finalityThresholdExecuted: 2000 });
+
+    const res = correlateSourceAndIrisMessages({
+      sourceMessageHex: srcMsg,
+      irisMessageHex: irisMsgTampered,
+    });
+    assert.strictEqual(res.valid, false);
+    assert.match(res.error || "", /BurnMessageV2 body byte-for-byte mismatch|amount mismatch/);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 56. Category E: Mutation — Mutated Mint Recipient Rejected
+  // ---------------------------------------------------------------------------
+  await test("Test 56: Category E — Mutated mintRecipient in Iris message is strictly rejected", () => {
+    const srcMsg = buildV2Message({ mintRecipient: WALLET_A, nonce: BigInt(0), finalityThresholdExecuted: 0 });
+    const irisMsgTampered = buildV2Message({ mintRecipient: WALLET_B, nonce: BigInt(10), finalityThresholdExecuted: 2000 });
+
+    const res = correlateSourceAndIrisMessages({
+      sourceMessageHex: srcMsg,
+      irisMessageHex: irisMsgTampered,
+    });
+    assert.strictEqual(res.valid, false);
+    assert.match(res.error || "", /BurnMessageV2 body byte-for-byte mismatch|mintRecipient mismatch/);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 57. Category F: Mutation — Mutated Burn Token Rejected
+  // ---------------------------------------------------------------------------
+  await test("Test 57: Category F — Mutated burnToken in Iris message is strictly rejected", () => {
+    const srcMsg = buildV2Message({ burnToken: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc, nonce: BigInt(0), finalityThresholdExecuted: 0 });
+    const irisMsgTampered = buildV2Message({ burnToken: MAINNET_CHAINS["Base Mainnet"].nativeUsdc, nonce: BigInt(10), finalityThresholdExecuted: 2000 });
+
+    const res = correlateSourceAndIrisMessages({
+      sourceMessageHex: srcMsg,
+      irisMessageHex: irisMsgTampered,
+    });
+    assert.strictEqual(res.valid, false);
+    assert.match(res.error || "", /BurnMessageV2 body byte-for-byte mismatch|burnToken mismatch/);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 58. Category G: Mutation — Mutated Message Sender Rejected
+  // ---------------------------------------------------------------------------
+  await test("Test 58: Category G — Mutated messageSender in Iris message is strictly rejected", () => {
+    const srcMsg = buildV2Message({ messageSender: WALLET_A, nonce: BigInt(0), finalityThresholdExecuted: 0 });
+    const irisMsgTampered = buildV2Message({ messageSender: WALLET_B, nonce: BigInt(10), finalityThresholdExecuted: 2000 });
+
+    const res = correlateSourceAndIrisMessages({
+      sourceMessageHex: srcMsg,
+      irisMessageHex: irisMsgTampered,
+    });
+    assert.strictEqual(res.valid, false);
+    assert.match(res.error || "", /BurnMessageV2 body byte-for-byte mismatch|messageSender mismatch/);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 59. Categories H & I: Mutation — Mutated Source / Destination Domain Rejected
+  // ---------------------------------------------------------------------------
+  await test("Test 59: Categories H & I — Mutated sourceDomain or destinationDomain in Iris message is strictly rejected", () => {
+    const srcMsg = buildV2Message({ sourceDomain: 26, destinationDomain: 6, nonce: BigInt(0), finalityThresholdExecuted: 0 });
+    const irisMsgWrongSrc = buildV2Message({ sourceDomain: 0, destinationDomain: 6, nonce: BigInt(10), finalityThresholdExecuted: 2000 });
+    const irisMsgWrongDst = buildV2Message({ sourceDomain: 26, destinationDomain: 3, nonce: BigInt(10), finalityThresholdExecuted: 2000 });
+
+    assert.strictEqual(correlateSourceAndIrisMessages({ sourceMessageHex: srcMsg, irisMessageHex: irisMsgWrongSrc }).valid, false);
+    assert.strictEqual(correlateSourceAndIrisMessages({ sourceMessageHex: srcMsg, irisMessageHex: irisMsgWrongDst }).valid, false);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 60. Categories J, K, L: Mutation — Mutated Sender, Recipient, Destination Caller Rejected
+  // ---------------------------------------------------------------------------
+  await test("Test 60: Categories J, K, L — Mutated outer sender, recipient, or destinationCaller is strictly rejected", () => {
+    const srcMsg = buildV2Message({ sender: CCTP_V2_TOKEN_MESSENGER, nonce: BigInt(0), finalityThresholdExecuted: 0 });
+    const irisMsgWrongSender = buildV2Message({ sender: WALLET_A, nonce: BigInt(10), finalityThresholdExecuted: 2000 });
+
+    assert.strictEqual(correlateSourceAndIrisMessages({ sourceMessageHex: srcMsg, irisMessageHex: irisMsgWrongSender }).valid, false);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 61. Categories M, N, O, P, Q: Mutation — Mutated maxFee, expirationBlock, hookData, minFinalityThreshold Rejected
+  // ---------------------------------------------------------------------------
+  await test("Test 61: Categories M, N, O, P, Q — Mutated maxFee, expirationBlock, hookData, or minFinalityThreshold is strictly rejected", () => {
+    const srcMsg = buildV2Message({ minFinalityThreshold: 2000, expirationBlock: BigInt(100), nonce: BigInt(0), finalityThresholdExecuted: 0 });
+    const irisMsgWrongThreshold = buildV2Message({ minFinalityThreshold: 1000, expirationBlock: BigInt(100), nonce: BigInt(10), finalityThresholdExecuted: 2000 });
+    const irisMsgWrongExp = buildV2Message({ minFinalityThreshold: 2000, expirationBlock: BigInt(200), nonce: BigInt(10), finalityThresholdExecuted: 2000 });
+
+    assert.strictEqual(correlateSourceAndIrisMessages({ sourceMessageHex: srcMsg, irisMessageHex: irisMsgWrongThreshold }).valid, false);
+    assert.strictEqual(correlateSourceAndIrisMessages({ sourceMessageHex: srcMsg, irisMessageHex: irisMsgWrongExp }).valid, false);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 62. Category R: Mutation — Iris Finality Below Source Required Threshold Rejected
+  // ---------------------------------------------------------------------------
+  await test("Test 62: Category R — Iris finality executed below required source threshold is strictly rejected", () => {
+    const srcMsg = buildV2Message({ minFinalityThreshold: 2000, nonce: BigInt(0), finalityThresholdExecuted: 0 });
+    const irisMsgLowFinality = buildV2Message({ minFinalityThreshold: 2000, nonce: BigInt(10), finalityThresholdExecuted: 1000 }); // only 1000 < 2000
+
+    const res = correlateSourceAndIrisMessages({
+      sourceMessageHex: srcMsg,
+      irisMessageHex: irisMsgLowFinality,
+    });
+    assert.strictEqual(res.valid, false);
+    assert.match(res.error || "", /below required source threshold/);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 63. Category S: Mutation — Invalid Nonces Rejected
+  // ---------------------------------------------------------------------------
+  await test("Test 63: Category S — Invalid source nonce (!= 0) or invalid Iris nonce (<= 0) is strictly rejected", () => {
+    // Iris nonce is 0
+    const srcMsg = buildV2Message({ nonce: BigInt(0), finalityThresholdExecuted: 0 });
+    const irisMsgZeroNonce = buildV2Message({ nonce: BigInt(0), finalityThresholdExecuted: 2000 });
+    const res1 = correlateSourceAndIrisMessages({ sourceMessageHex: srcMsg, irisMessageHex: irisMsgZeroNonce });
+    assert.strictEqual(res1.valid, false);
+    assert.match(res1.error || "", /Iris finalized message must have non-zero nonce/);
+
+    // Source nonce is non-zero (pre-finalized message must have nonce 0)
+    const srcMsgNonzeroNonce = buildV2Message({ nonce: BigInt(99), finalityThresholdExecuted: 0 });
+    const irisMsgValid = buildV2Message({ nonce: BigInt(100), finalityThresholdExecuted: 2000 });
+    const res2 = correlateSourceAndIrisMessages({ sourceMessageHex: srcMsgNonzeroNonce, irisMessageHex: irisMsgValid });
+    assert.strictEqual(res2.valid, false);
+    assert.match(res2.error || "", /Source message nonce must be 0/);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 64. Categories T & U: Malformed & Unsupported Versions Rejected
+  // ---------------------------------------------------------------------------
+  await test("Test 64: Categories T & U — Malformed messages, short lengths, or unsupported versions reject cleanly", () => {
+    const validSrc = buildV2Message({ nonce: BigInt(0), finalityThresholdExecuted: 0 });
+    assert.strictEqual(correlateSourceAndIrisMessages({ sourceMessageHex: "0x12" as `0x${string}`, irisMessageHex: validSrc }).valid, false);
+    assert.strictEqual(correlateSourceAndIrisMessages({ sourceMessageHex: validSrc, irisMessageHex: "0x" as `0x${string}` }).valid, false);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 65. Category V: Multiple Candidate Messages in Iris Response
+  // ---------------------------------------------------------------------------
+  await test("Test 65: Category V — Multiple candidate messages in Iris response: correctly selects matching transfer", async () => {
+    const mySourceMsg = buildV2Message({ amount: BigInt(10000), mintRecipient: WALLET_A, nonce: BigInt(0), finalityThresholdExecuted: 0 });
+
+    const candidateUnrelated1 = buildV2Message({ amount: BigInt(50000), mintRecipient: WALLET_B, nonce: BigInt(1), finalityThresholdExecuted: 2000 });
+    const candidateMatching = buildV2Message({ amount: BigInt(10000), mintRecipient: WALLET_A, nonce: BigInt(2), finalityThresholdExecuted: 2000 });
+    const candidateUnrelated2 = buildV2Message({ amount: BigInt(99999), mintRecipient: WALLET_C, nonce: BigInt(3), finalityThresholdExecuted: 2000 });
+
+    const originalFetch = global.fetch;
+    try {
+      global.fetch = async () =>
+        ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            messages: [
+              { status: "complete", attestation: "0xattest_wrong1", message: candidateUnrelated1 },
+              { status: "complete", attestation: "0xattest_CORRECT", message: candidateMatching },
+              { status: "complete", attestation: "0xattest_wrong2", message: candidateUnrelated2 },
+            ],
+          }),
+        } as unknown as Response);
+
+      const result = await pollCircleIrisAttestation({
+        sourceDomain: 26,
+        transactionHash: "0x1111111111111111111111111111111111111111111111111111111111111111",
+        expectedMessageHex: mySourceMsg,
+        maxAttempts: 1,
+      });
+
+      assert.strictEqual(result.attestation, "0xattest_CORRECT", "Must select the matching candidate rather than candidate 0");
+      assert.strictEqual(result.message, candidateMatching);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // 66. TEST A: Unrelated candidate first, matching candidate later
+  // ---------------------------------------------------------------------------
+  await test("Test 66: TEST A — Unrelated candidate in initial attempt does NOT terminate polling; matching candidate on subsequent attempt is selected", async () => {
+    const mySourceMsg = buildV2Message({ amount: BigInt(250000), mintRecipient: WALLET_A, nonce: BigInt(0), finalityThresholdExecuted: 0 });
+    const unrelatedCandidate = buildV2Message({ amount: BigInt(777000), mintRecipient: WALLET_B, nonce: BigInt(100), finalityThresholdExecuted: 2000 });
+    const matchingCandidate = buildV2Message({ amount: BigInt(250000), mintRecipient: WALLET_A, nonce: BigInt(101), finalityThresholdExecuted: 2000 });
+
+    let fetchCallCount = 0;
+    const originalFetch = global.fetch;
+    try {
+      global.fetch = async () => {
+        fetchCallCount++;
+        if (fetchCallCount === 1) {
+          // Attempt 1: Iris only has the unrelated candidate ready
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              messages: [
+                { status: "complete", attestation: "0xattest_unrelated", message: unrelatedCandidate },
+              ],
+            }),
+          } as unknown as Response;
+        } else {
+          // Attempt 2: Both the unrelated and our matching candidate are now returned
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              messages: [
+                { status: "complete", attestation: "0xattest_unrelated", message: unrelatedCandidate },
+                { status: "complete", attestation: "0xattest_CORRECT_MATCH", message: matchingCandidate },
+              ],
+            }),
+          } as unknown as Response;
+        }
+      };
+
+      const result = await pollCircleIrisAttestation({
+        sourceDomain: 26,
+        transactionHash: "0x2222222222222222222222222222222222222222222222222222222222222222",
+        expectedMessageHex: mySourceMsg,
+        maxAttempts: 3,
+        intervalMs: 10,
+      });
+
+      assert.strictEqual(fetchCallCount, 2, "Must have polled twice without terminating on attempt 1");
+      assert.strictEqual(result.attestation, "0xattest_CORRECT_MATCH", "Must return the matching candidate's attestation");
+      assert.strictEqual(result.message, matchingCandidate, "Must return the matching candidate's message bytes");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // 67. TEST B: Only unrelated candidates returned across all attempts
+  // ---------------------------------------------------------------------------
+  await test("Test 67: TEST B — Polling strictly continues when only unrelated candidates exist and cleanly times out without accepting wrong candidate", async () => {
+    const mySourceMsg = buildV2Message({ amount: BigInt(50000), mintRecipient: WALLET_A, nonce: BigInt(0), finalityThresholdExecuted: 0 });
+    const unrelatedCandidate = buildV2Message({ amount: BigInt(99999), mintRecipient: WALLET_C, nonce: BigInt(99), finalityThresholdExecuted: 2000 });
+
+    let attemptsSeen = 0;
+    const originalFetch = global.fetch;
+    try {
+      global.fetch = async () => {
+        attemptsSeen++;
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            messages: [
+              { status: "complete", attestation: "0xattest_unrelated", message: unrelatedCandidate },
+            ],
+          }),
+        } as unknown as Response;
+      };
+
+      await assert.rejects(
+        pollCircleIrisAttestation({
+          sourceDomain: 26,
+          transactionHash: "0x3333333333333333333333333333333333333333333333333333333333333333",
+          expectedMessageHex: mySourceMsg,
+          maxAttempts: 3,
+          intervalMs: 10,
+        }),
+        /Timed out waiting for Circle CCTP attestation completion after 3 attempts/
+      );
+
+      assert.strictEqual(attemptsSeen, 3, "Must have polled all 3 attempts without early rejection or wrong acceptance");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // 68. TEST C & E: Multi-candidate shuffled ordering and public-platform independence
+  // ---------------------------------------------------------------------------
+  await test("Test 68: TEST C & E — Correct candidate selected regardless of position among wrong recipient, amount, and domain candidates", async () => {
+    const testWalletX = "0x9876543210987654321098765432109876543210";
+    const testWalletY = "0x1234567890123456789012345678901234567890";
+    const testAmount = BigInt(12345678); // 12.345678 USDC
+
+    const sourceMsg = buildV2Message({
+      sourceDomain: 26,
+      destinationDomain: 6,
+      mintRecipient: testWalletY as `0x${string}`,
+      messageSender: testWalletX as `0x${string}`,
+      amount: testAmount,
+      nonce: BigInt(0),
+      finalityThresholdExecuted: 0,
+    });
+
+    const wrongRecipient = buildV2Message({
+      sourceDomain: 26,
+      destinationDomain: 6,
+      mintRecipient: testWalletX as `0x${string}`, // wrong recipient
+      messageSender: testWalletX as `0x${string}`,
+      amount: testAmount,
+      nonce: BigInt(1),
+      finalityThresholdExecuted: 2000,
+    });
+
+    const wrongAmount = buildV2Message({
+      sourceDomain: 26,
+      destinationDomain: 6,
+      mintRecipient: testWalletY as `0x${string}`,
+      messageSender: testWalletX as `0x${string}`,
+      amount: BigInt(12345679), // wrong amount
+      nonce: BigInt(2),
+      finalityThresholdExecuted: 2000,
+    });
+
+    const wrongDomain = buildV2Message({
+      sourceDomain: 0, // wrong source domain
+      destinationDomain: 6,
+      mintRecipient: testWalletY as `0x${string}`,
+      messageSender: testWalletX as `0x${string}`,
+      amount: testAmount,
+      nonce: BigInt(3),
+      finalityThresholdExecuted: 2000,
+    });
+
+    const correctCandidate = buildV2Message({
+      sourceDomain: 26,
+      destinationDomain: 6,
+      mintRecipient: testWalletY as `0x${string}`,
+      messageSender: testWalletX as `0x${string}`,
+      amount: testAmount,
+      nonce: BigInt(4),
+      finalityThresholdExecuted: 2000,
+    });
+
+    const originalFetch = global.fetch;
+    try {
+      global.fetch = async () =>
+        ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            messages: [
+              { status: "complete", attestation: "0xattest_wrong_recip", message: wrongRecipient },
+              { status: "complete", attestation: "0xattest_wrong_amt", message: wrongAmount },
+              { status: "complete", attestation: "0xattest_wrong_domain", message: wrongDomain },
+              { status: "complete", attestation: "0xattest_PERFECT", message: correctCandidate },
+            ],
+          }),
+        } as unknown as Response);
+
+      const res = await pollCircleIrisAttestation({
+        sourceDomain: 26,
+        transactionHash: "0x4444444444444444444444444444444444444444444444444444444444444444",
+        expectedMessageHex: sourceMsg,
+        maxAttempts: 1,
+      });
+
+      assert.strictEqual(res.attestation, "0xattest_PERFECT");
+      assert.strictEqual(res.message, correctCandidate);
+    } finally {
+      global.fetch = originalFetch;
+    }
   });
 
   console.log("\n==================================================");

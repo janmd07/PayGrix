@@ -17,6 +17,7 @@ import {
   resolveMainnetCctpRoute,
 } from "@/config/cctp-mainnet";
 import {
+  assertCorrelatedSourceAndIrisMessages,
   CCTP_V2_DEFAULT_MAX_FEE,
   CCTP_V2_EMPTY_BYTES32,
   CCTP_V2_STANDARD_FINALITY_THRESHOLD,
@@ -486,11 +487,10 @@ export function useMainnetBridge() {
 
         setAttestationHex(attestationRes.attestation);
         if (attestationRes.message && attestationRes.message !== "0x") {
-          if (attestationRes.message.toLowerCase() !== extractedMessage.toLowerCase()) {
-            throw new Error(
-              "Security check failed: Iris returned message does not match source transaction message bytes."
-            );
-          }
+          assertCorrelatedSourceAndIrisMessages({
+            sourceMessageHex: extractedMessage,
+            irisMessageHex: attestationRes.message,
+          });
           setMessageHex(attestationRes.message);
         }
 
