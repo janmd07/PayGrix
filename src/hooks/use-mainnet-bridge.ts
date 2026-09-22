@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAccount, useSwitchChain } from "wagmi";
 import {
   createPublicClient,
@@ -81,10 +81,64 @@ export function useMainnetBridge() {
 
   const bridgeInFlightRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const operationIdRef = useRef(0);
   const addressRef = useRef(address);
   addressRef.current = address;
   const chainIdRef = useRef(chainId);
   chainIdRef.current = chainId;
+
+  // Track previous account to isolate multi-user state on accountsChanged
+  const prevAddressRef = useRef<string | undefined>(address);
+  useEffect(() => {
+    if (prevAddressRef.current !== address) {
+      // 1. Invalidate active async requests
+      operationIdRef.current++;
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      bridgeInFlightRef.current = false;
+
+      // 2. Reset all active bridge state for the new connected wallet
+      setStatus("idle");
+      setApprovalTxHash("");
+      setBurnTxHash("");
+      setMintTxHash("");
+      setAttestationHex("");
+      setMessageHex("");
+      setError(null);
+
+      // 3. Clear balance cache if disconnected
+      if (!address) {
+        setSourceBalance("0.00");
+        setDestBalance("0.00");
+      }
+
+      prevAddressRef.current = address;
+    }
+  }, [address]);
+
+  // Track unexpected chainId change during execution
+  const prevChainIdRef = useRef<number | undefined>(chainId);
+  useEffect(() => {
+    if (prevChainIdRef.current !== chainId) {
+      if (
+        bridgeInFlightRef.current &&
+        status !== "waiting-destination-wallet" &&
+        status !== "minting"
+      ) {
+        operationIdRef.current++;
+        if (abortControllerRef.current) {
+          abortControllerRef.current.abort();
+          abortControllerRef.current = null;
+        }
+        bridgeInFlightRef.current = false;
+        setStatus("failed");
+        setError("Network switch detected during bridge execution. Operation aborted for safety.");
+      }
+      prevChainIdRef.current = chainId;
+    }
+  }, [chainId, status]);
 
   // Read balances
   const refreshBalances = useCallback(
@@ -134,6 +188,12 @@ export function useMainnetBridge() {
 
   // Reset state
   const resetBridgeState = useCallback(() => {
+    operationIdRef.current++;
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    bridgeInFlightRef.current = false;
     setStatus("idle");
     setApprovalTxHash("");
     setBurnTxHash("");
@@ -143,18 +203,23 @@ export function useMainnetBridge() {
     setError(null);
   }, []);
 
-  // Save history
-  const saveTransferRecord = useCallback((record: MainnetBridgeTransferRecord) => {
-    try {
-      const key = "paygrix_mainnet_bridge_transfers";
-      const existing = localStorage.getItem(key);
-      const list: MainnetBridgeTransferRecord[] = existing ? JSON.parse(existing) : [];
-      const updated = [record, ...list.filter((r) => r.id !== record.id)];
-      localStorage.setItem(key, JSON.stringify(updated));
-    } catch {
-      // ignore
-    }
-  }, []);
+  // Save history (strictly wallet-scoped)
+  const saveTransferRecord = useCallback(
+    (record: MainnetBridgeTransferRecord) => {
+      const walletAddr = record.senderAddress || address;
+      if (!walletAddr) return;
+      try {
+        const key = `paygrix_mainnet_bridge_transfers_${walletAddr.toLowerCase()}`;
+        const existing = localStorage.getItem(key);
+        const list: MainnetBridgeTransferRecord[] = existing ? JSON.parse(existing) : [];
+        const updated = [record, ...list.filter((r) => r.id !== record.id)];
+        localStorage.setItem(key, JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+    },
+    [address]
+  );
 
   // Step 1: Start Bridge Source Flow (Approve + Burn + Poll Attestation)
   const startSourceBridgeFlow = useCallback(
@@ -187,6 +252,12 @@ export function useMainnetBridge() {
         console.warn("[Mainnet Bridge] Bridge already in flight.");
         return false;
       }
+
+      const opId = ++operationIdRef.current;
+      const currentWallet = address.toLowerCase();
+      const isStale = () =>
+        opId !== operationIdRef.current ||
+        addressRef.current?.toLowerCase() !== currentWallet;
 
       bridgeInFlightRef.current = true;
       setError(null);
@@ -229,6 +300,8 @@ export function useMainnetBridge() {
           }
         }
 
+        if (isStale()) return false;
+
         const sourcePublic = getPublicClientForChain(sourceChain);
         const destPublic = getPublicClientForChain(destinationChain);
 
@@ -245,6 +318,8 @@ export function useMainnetBridge() {
             usdcAddress: route.destinationUsdc,
           }),
         ]);
+
+        if (isStale()) return false;
 
         if (!srcCheck.tokenMessengerOk || !srcCheck.usdcOk) {
           throw new Error(
@@ -280,6 +355,7 @@ export function useMainnetBridge() {
         })) as bigint;
 
         if (currentAllowance < parsedAmount) {
+          if (isStale()) return false;
           setStatus("approving");
 
           const rawApproveTx = (await provider.request({
@@ -297,6 +373,7 @@ export function useMainnetBridge() {
             ],
           })) as `0x${string}`;
 
+          if (isStale()) return false;
           setApprovalTxHash(rawApproveTx);
 
           const approveReceipt = await sourcePublic.waitForTransactionReceipt({
@@ -304,6 +381,7 @@ export function useMainnetBridge() {
             timeout: 60000,
           });
 
+          if (isStale()) return false;
           if (approveReceipt.status !== "success") {
             throw new Error("USDC approval transaction reverted on-chain.");
           }
@@ -319,6 +397,8 @@ export function useMainnetBridge() {
             throw new Error("USDC allowance verification failed after approval.");
           }
         }
+
+        if (isStale()) return false;
 
         // 5. Deposit For Burn
         setStatus("burning");
@@ -344,9 +424,10 @@ export function useMainnetBridge() {
           ],
         })) as `0x${string}`;
 
+        if (isStale()) return false;
         setBurnTxHash(rawBurnTx);
 
-        // Record pending transfer
+        // Record pending transfer (wallet-scoped)
         saveTransferRecord({
           id: rawBurnTx,
           sourceChain,
@@ -364,12 +445,16 @@ export function useMainnetBridge() {
           timeout: 120000,
         });
 
+        if (isStale()) return false;
         if (burnReceipt.status !== "success") {
           throw new Error("depositForBurn transaction reverted on source chain.");
         }
 
-        // 6. Extract MessageSent log
-        const extractedMessage = extractMessageFromReceiptLogs(burnReceipt);
+        // 6. Extract and validate MessageSent log from transmitter
+        const extractedMessage = extractMessageFromReceiptLogs(
+          burnReceipt,
+          route.sourceConfig?.messageTransmitterV2
+        );
         setMessageHex(extractedMessage);
 
         const decoded = decodeCctpMessage(extractedMessage);
@@ -380,7 +465,12 @@ export function useMainnetBridge() {
           expectedAmount: parsedAmount,
           expectedBurnToken: route.sourceUsdc,
           expectedMintRecipientBytes32: recipientBytes32,
+          expectedSenderBytes32: padAddressToBytes32(route.sourceTokenMessenger),
+          expectedMessageSenderBytes32: padAddressToBytes32(address),
+          expectedDestinationCallerBytes32: CCTP_V2_EMPTY_BYTES32,
         });
+
+        if (isStale()) return false;
 
         // 7. Poll Circle Production Iris API
         setStatus("attesting");
@@ -388,11 +478,19 @@ export function useMainnetBridge() {
         const attestationRes = await pollCircleIrisAttestation({
           sourceDomain: route.sourceDomain,
           transactionHash: rawBurnTx,
+          expectedMessageHex: extractedMessage,
           signal: abortController.signal,
         });
 
+        if (isStale()) return false;
+
         setAttestationHex(attestationRes.attestation);
         if (attestationRes.message && attestationRes.message !== "0x") {
+          if (attestationRes.message.toLowerCase() !== extractedMessage.toLowerCase()) {
+            throw new Error(
+              "Security check failed: Iris returned message does not match source transaction message bytes."
+            );
+          }
           setMessageHex(attestationRes.message);
         }
 
@@ -401,13 +499,16 @@ export function useMainnetBridge() {
         refreshBalances(sourceChain, destinationChain);
         return true;
       } catch (err: unknown) {
+        if (isStale()) return false;
         const msg = err instanceof Error ? err.message : "Source bridge failed.";
         setError(msg);
         setStatus("failed");
         return false;
       } finally {
-        bridgeInFlightRef.current = false;
-        abortControllerRef.current = null;
+        if (!isStale()) {
+          bridgeInFlightRef.current = false;
+          abortControllerRef.current = null;
+        }
       }
     },
     [address, connector, isConnected, refreshBalances, saveTransferRecord, switchChainAsync]
@@ -440,6 +541,12 @@ export function useMainnetBridge() {
         return false;
       }
 
+      const opId = ++operationIdRef.current;
+      const currentWallet = address.toLowerCase();
+      const isStale = () =>
+        opId !== operationIdRef.current ||
+        addressRef.current?.toLowerCase() !== currentWallet;
+
       bridgeInFlightRef.current = true;
       setError(null);
 
@@ -456,6 +563,8 @@ export function useMainnetBridge() {
           args: [recipientAddress],
         })) as bigint;
 
+        if (isStale()) return false;
+
         // 2. Ensure wallet is on destination chain
         if (chainIdRef.current !== route.destinationConfig.chainId) {
           try {
@@ -466,6 +575,8 @@ export function useMainnetBridge() {
             );
           }
         }
+
+        if (isStale()) return false;
 
         const provider = (await connector.getProvider()) as {
           request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
@@ -492,6 +603,7 @@ export function useMainnetBridge() {
           ],
         })) as `0x${string}`;
 
+        if (isStale()) return false;
         setMintTxHash(rawMintTx);
 
         const mintReceipt = await destPublic.waitForTransactionReceipt({
@@ -499,11 +611,12 @@ export function useMainnetBridge() {
           timeout: 120000,
         });
 
+        if (isStale()) return false;
         if (mintReceipt.status !== "success") {
           throw new Error("receiveMessage transaction reverted on destination chain.");
         }
 
-        // 4. Verify destination balance increment
+        // 4. Verify destination balance increment (accounting for CCTP V2 feeExecuted)
         setStatus("verifying");
 
         const destBalanceAfter = (await destPublic.readContract({
@@ -513,11 +626,17 @@ export function useMainnetBridge() {
           args: [recipientAddress],
         })) as bigint;
 
-        if (destBalanceAfter < destBalanceBefore + parsedAmount) {
+        const decoded = decodeCctpMessage(messageHex as `0x${string}`);
+        const executedFee = decoded.feeExecuted ?? BigInt(0);
+        const expectedMintIncrement = parsedAmount > executedFee ? parsedAmount - executedFee : BigInt(0);
+
+        if (destBalanceAfter < destBalanceBefore + expectedMintIncrement) {
           throw new Error(
-            `Destination balance verification failed. Expected at least ${destBalanceBefore + parsedAmount}, got ${destBalanceAfter}.`
+            `Destination balance verification failed. Expected at least ${destBalanceBefore + expectedMintIncrement}, got ${destBalanceAfter}.`
           );
         }
+
+        if (isStale()) return false;
 
         // Update transfer record
         saveTransferRecord({
@@ -537,12 +656,15 @@ export function useMainnetBridge() {
         refreshBalances(sourceChain, destinationChain);
         return true;
       } catch (err: unknown) {
+        if (isStale()) return false;
         const msg = err instanceof Error ? err.message : "Destination mint failed.";
         setError(msg);
         setStatus("failed");
         return false;
       } finally {
-        bridgeInFlightRef.current = false;
+        if (!isStale()) {
+          bridgeInFlightRef.current = false;
+        }
       }
     },
     [address, attestationHex, burnTxHash, connector, isConnected, messageHex, refreshBalances, saveTransferRecord, switchChainAsync]

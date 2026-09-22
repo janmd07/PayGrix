@@ -88,10 +88,9 @@ export function MainnetBridgeForm() {
   } = useMainnetBridge();
 
   useEffect(() => {
-    if (!isCustomRecipientOpen) {
-      setRecipientAddress(address || "");
-    }
-  }, [address, isCustomRecipientOpen]);
+    setRecipientAddress(address || "");
+    setIsCustomRecipientOpen(false);
+  }, [address]);
 
   useEffect(() => {
     refreshBalances(sourceChain, destinationChain);
@@ -959,11 +958,32 @@ export function MainnetBridgeForm() {
                     </div>
                   ) : status === "complete" ? (
                     <span className="text-xs text-emerald-400 font-medium">Completed</span>
-                  ) : (
+                  ) : status === "burning" ? (
+                    <span className="text-xs text-slate-400 italic">
+                      Awaiting source burn confirmation
+                    </span>
+                  ) : status === "attesting" ? (
+                    <div className="flex items-center gap-1.5 text-blue-400 text-xs">
+                      <Loader2 className="h-3 w-3 animate-spin shrink-0 text-blue-400" />
+                      <span>Awaiting Circle Iris attestation</span>
+                    </div>
+                  ) : status === "waiting-destination-wallet" ? (
+                    <span className="text-xs text-indigo-400 font-medium">
+                      Ready for destination claim (switch network)
+                    </span>
+                  ) : status === "minting" || status === "verifying" ? (
                     <div className="flex items-center gap-1.5 text-amber-400/90 text-xs">
                       <Loader2 className="h-3 w-3 animate-spin text-amber-400 shrink-0" />
                       <span>Destination transaction pending</span>
                     </div>
+                  ) : status === "failed" ? (
+                    <span className="text-xs text-rose-400 italic">
+                      Destination not submitted (source failed or paused)
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-500 italic">
+                      Pending destination submission
+                    </span>
                   )}
                 </div>
               </div>

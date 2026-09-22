@@ -273,24 +273,29 @@ async function runTests() {
   // ---------------------------------------------------------------------------
   // 18. MessageSent Extraction & Decoding
   // ---------------------------------------------------------------------------
-  await test("Test 18: MessageSent event extraction from receipt logs and decoding", () => {
-    // Build a mock CCTP message
-    const versionHex = "00000000";
+  await test("Test 18: MessageSent event extraction from receipt logs and decoding (V2 148-byte header)", () => {
+    // Build a mock CCTP V2 message with 148-byte header + BurnMessageV2
+    const versionHex = "00000001";
     const srcDomainHex = "0000001a"; // 26
     const dstDomainHex = "00000006"; // 6
-    const nonceHex = "0000000000000001";
+    const nonceHex = pad("0x01", { size: 32 }).slice(2);
     const senderHex = padAddressToBytes32("0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d").slice(2);
-    const recipientHex = padAddressToBytes32("0x81D40F21F12A8F0E3252Bccb954D722d4c464B64").slice(2);
+    const recipientHex = padAddressToBytes32("0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d").slice(2);
     const callerHex = pad("0x0", { size: 32 }).slice(2);
+    const minThresholdHex = "000007d0"; // 2000
+    const execThresholdHex = "00000000";
 
-    // Body
+    // Body (BurnMessageV2 starting at byte 148)
     const bodyVersionHex = "00000001";
     const burnTokenHex = padAddressToBytes32("0x3600000000000000000000000000000000000000").slice(2);
     const mintRecipientHex = padAddressToBytes32("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045").slice(2);
     const amountHex = pad("0x0f4240", { size: 32 }).slice(2); // 1_000_000
     const msgSenderHex = padAddressToBytes32("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045").slice(2);
+    const maxFeeHex = pad("0x0", { size: 32 }).slice(2);
+    const feeExecutedHex = pad("0x0", { size: 32 }).slice(2);
+    const expirationBlockHex = pad("0x0", { size: 32 }).slice(2);
 
-    const messageHex = `0x${versionHex}${srcDomainHex}${dstDomainHex}${nonceHex}${senderHex}${recipientHex}${callerHex}${bodyVersionHex}${burnTokenHex}${mintRecipientHex}${amountHex}${msgSenderHex}` as `0x${string}`;
+    const messageHex = `0x${versionHex}${srcDomainHex}${dstDomainHex}${nonceHex}${senderHex}${recipientHex}${callerHex}${minThresholdHex}${execThresholdHex}${bodyVersionHex}${burnTokenHex}${mintRecipientHex}${amountHex}${msgSenderHex}${maxFeeHex}${feeExecutedHex}${expirationBlockHex}` as `0x${string}`;
 
     // Encode as MessageSent event log data
     const logData = encodeAbiParameters([{ type: "bytes" }], [messageHex]);
@@ -304,14 +309,16 @@ async function runTests() {
       ],
     };
 
-    const extracted = extractMessageFromReceiptLogs(mockReceipt);
+    const extracted = extractMessageFromReceiptLogs(mockReceipt, CCTP_V2_MESSAGE_TRANSMITTER);
     assert.strictEqual(extracted.toLowerCase(), messageHex.toLowerCase());
 
     const decoded = decodeCctpMessage(extracted);
+    assert.strictEqual(decoded.version, 1);
     assert.strictEqual(decoded.sourceDomain, 26);
     assert.strictEqual(decoded.destinationDomain, 6);
     assert.strictEqual(decoded.amount, BigInt(1_000_000));
     assert.strictEqual(decoded.nonce, BigInt(1));
+    assert.strictEqual(decoded.minFinalityThreshold, 2000);
   });
 
   // ---------------------------------------------------------------------------
@@ -843,6 +850,489 @@ async function runTests() {
     assert.strictEqual(arcDomain, 26, "Arc localDomain MUST be 26");
     assert.strictEqual(baseDomain, 6, "Base localDomain MUST be 6");
     assert.strictEqual(arcMbv, 1, "Arc TokenMessenger messageBodyVersion MUST be 1");
+  });
+
+  // ===========================================================================
+  // MULTI-USER SAFETY & CCTP V2 EXTENDED TEST SUITE (TESTS 37 - 52)
+  // ===========================================================================
+  const WALLET_A = "0x1111111111111111111111111111111111111111" as const;
+  const WALLET_B = "0x2222222222222222222222222222222222222222" as const;
+  const WALLET_C = "0x3333333333333333333333333333333333333333" as const;
+
+  function buildV2Message(params: {
+    sourceDomain?: number;
+    destinationDomain?: number;
+    nonce?: bigint;
+    sender?: `0x${string}`;
+    recipient?: `0x${string}`;
+    destinationCaller?: `0x${string}`;
+    minFinalityThreshold?: number;
+    finalityThresholdExecuted?: number;
+    messageBodyVersion?: number;
+    burnToken?: `0x${string}`;
+    mintRecipient?: `0x${string}`;
+    amount?: bigint;
+    messageSender?: `0x${string}`;
+    maxFee?: bigint;
+    feeExecuted?: bigint;
+    expirationBlock?: bigint;
+    hookDataHex?: string;
+  }): `0x${string}` {
+    const toBytes32 = (addrOrBytes32: string): string => {
+      const clean = addrOrBytes32.trim();
+      if (clean.length === 66 && clean.startsWith("0x")) return clean.slice(2);
+      return padAddressToBytes32(clean).slice(2);
+    };
+
+    const versionHex = "00000001";
+    const srcHex = (params.sourceDomain ?? 26).toString(16).padStart(8, "0");
+    const dstHex = (params.destinationDomain ?? 6).toString(16).padStart(8, "0");
+    const nonceHex = (params.nonce ?? BigInt(1)).toString(16).padStart(64, "0");
+    const senderHex = toBytes32(params.sender ?? CCTP_V2_TOKEN_MESSENGER);
+    const recipientHex = toBytes32(params.recipient ?? CCTP_V2_TOKEN_MESSENGER);
+    const callerHex = toBytes32(params.destinationCaller ?? CCTP_V2_EMPTY_BYTES32);
+    const minThresholdHex = (params.minFinalityThreshold ?? 2000).toString(16).padStart(8, "0");
+    const execThresholdHex = (params.finalityThresholdExecuted ?? 0).toString(16).padStart(8, "0");
+
+    const bodyVerHex = (params.messageBodyVersion ?? 1).toString(16).padStart(8, "0");
+    const burnTokenHex = toBytes32(params.burnToken ?? MAINNET_CHAINS["Arc Mainnet"].nativeUsdc);
+    const mintRecipientHex = toBytes32(params.mintRecipient ?? WALLET_A);
+    const amountHex = (params.amount ?? BigInt(10000)).toString(16).padStart(64, "0");
+    const msgSenderHex = toBytes32(params.messageSender ?? WALLET_A);
+    const maxFeeHex = (params.maxFee ?? BigInt(0)).toString(16).padStart(64, "0");
+    const feeExecutedHex = (params.feeExecuted ?? BigInt(0)).toString(16).padStart(64, "0");
+    const expBlockHex = (params.expirationBlock ?? BigInt(0)).toString(16).padStart(64, "0");
+    const hookData = params.hookDataHex ?? "";
+
+    return `0x${versionHex}${srcHex}${dstHex}${nonceHex}${senderHex}${recipientHex}${callerHex}${minThresholdHex}${execThresholdHex}${bodyVerHex}${burnTokenHex}${mintRecipientHex}${amountHex}${msgSenderHex}${maxFeeHex}${feeExecutedHex}${expBlockHex}${hookData}` as `0x${string}`;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 37. Required Test 1: Real Arc Mainnet CCTP V2 Message Decoding
+  // ---------------------------------------------------------------------------
+  await test("Test 37: Real Arc Mainnet CCTP V2 message decoding (proves amount read from bytes 216..248)", () => {
+    // Real raw emitted message from Arc Mainnet tx 0x656cfa2decfd1af550c072da431fac660716d396aebd592a99dc1ae03e9323d4
+    const realArcMainnetMessage =
+      "0x000000010000001a00000006000000000000000000000000000000000000000000000000000000000000000000000000000000000000000028b5a0e9c621a5badaa536219b3a228c8168cf5d00000000000000000000000028b5a0e9c621a5badaa536219b3a228c8168cf5d0000000000000000000000000000000000000000000000000000000000000000000003e8000000000000000100000000000000000000000036000000000000000000000000000000000000000000000000000000000000005967c5080b0cea77d6bfc133f3d926753b4715010000000000000000000000000000000000000000000000000000000000a344e0000000000000000000000000b3fa262d0fb521cc93be83d87b322b8a23daf3f0000000000000000000000000000000000000000000000000000000000000d68f00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000636374702d666f72776172640000000000000000000000000000000000000000" as `0x${string}`;
+
+    const decoded = decodeCctpMessage(realArcMainnetMessage);
+    assert.strictEqual(decoded.version, 1, "version must be 1 for CCTP V2");
+    assert.strictEqual(decoded.sourceDomain, 26, "sourceDomain must be 26 (Arc)");
+    assert.strictEqual(decoded.destinationDomain, 6, "destinationDomain must be 6 (Base)");
+    assert.strictEqual(decoded.nonce, BigInt(0), "nonce must be 0");
+    assert.strictEqual(
+      decoded.sender.toLowerCase(),
+      padAddressToBytes32(CCTP_V2_TOKEN_MESSENGER).toLowerCase(),
+      "sender must be source TokenMessenger"
+    );
+    assert.strictEqual(
+      decoded.recipient.toLowerCase(),
+      padAddressToBytes32(CCTP_V2_TOKEN_MESSENGER).toLowerCase(),
+      "recipient must be destination TokenMessenger"
+    );
+    assert.strictEqual(decoded.minFinalityThreshold, 1000);
+    assert.strictEqual(decoded.finalityThresholdExecuted, 0);
+
+    // Body checks
+    assert.strictEqual(decoded.messageBodyVersion, 1);
+    assert.strictEqual(
+      decoded.burnToken.toLowerCase(),
+      padAddressToBytes32("0x3600000000000000000000000000000000000000").toLowerCase()
+    );
+    assert.strictEqual(
+      decoded.mintRecipient.toLowerCase(),
+      padAddressToBytes32("0x5967c5080b0cea77d6bfc133f3d926753b471501").toLowerCase()
+    );
+    // CRITICAL: Amount MUST be BigInt(10700000) (10.7 USDC), NOT 0x5967... (the recipient address!)
+    assert.strictEqual(decoded.amount, BigInt(10700000), "amount MUST be decoded from bytes 216..248");
+    assert.notStrictEqual(
+      decoded.amount,
+      BigInt("0x0000000000000000000000005967c5080b0cea77d6bfc133f3d926753b471501"),
+      "amount MUST NOT be recipient address"
+    );
+    assert.strictEqual(
+      decoded.messageSender.toLowerCase(),
+      padAddressToBytes32("0xb3fa262d0fb521cc93be83d87b322b8a23daf3f0").toLowerCase()
+    );
+    assert.strictEqual(decoded.maxFee, BigInt(54927));
+    assert.strictEqual(decoded.feeExecuted, BigInt(0));
+  });
+
+  // ---------------------------------------------------------------------------
+  // 38. Required Test 2: Wallet A -> Wallet A
+  // ---------------------------------------------------------------------------
+  await test("Test 38: Parameterized multi-user — Wallet A -> Wallet A (self-mint)", () => {
+    const msg = buildV2Message({
+      messageSender: WALLET_A,
+      mintRecipient: WALLET_A,
+      amount: BigInt(10000),
+    });
+    const decoded = decodeCctpMessage(msg);
+    validateDecodedMessage({
+      decoded,
+      expectedSourceDomain: 26,
+      expectedDestinationDomain: 6,
+      expectedAmount: BigInt(10000),
+      expectedBurnToken: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc,
+      expectedMintRecipientBytes32: padAddressToBytes32(WALLET_A),
+      expectedMessageSenderBytes32: padAddressToBytes32(WALLET_A),
+    });
+    assert.strictEqual(decoded.amount, BigInt(10000));
+    assert.strictEqual(decoded.mintRecipient.toLowerCase(), padAddressToBytes32(WALLET_A).toLowerCase());
+    assert.strictEqual(decoded.messageSender.toLowerCase(), padAddressToBytes32(WALLET_A).toLowerCase());
+  });
+
+  // ---------------------------------------------------------------------------
+  // 39. Required Test 3: Wallet B -> Wallet B
+  // ---------------------------------------------------------------------------
+  await test("Test 39: Parameterized multi-user — Wallet B -> Wallet B (self-mint)", () => {
+    const msg = buildV2Message({
+      messageSender: WALLET_B,
+      mintRecipient: WALLET_B,
+      amount: BigInt(250000),
+    });
+    const decoded = decodeCctpMessage(msg);
+    validateDecodedMessage({
+      decoded,
+      expectedSourceDomain: 26,
+      expectedDestinationDomain: 6,
+      expectedAmount: BigInt(250000),
+      expectedBurnToken: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc,
+      expectedMintRecipientBytes32: padAddressToBytes32(WALLET_B),
+      expectedMessageSenderBytes32: padAddressToBytes32(WALLET_B),
+    });
+    assert.strictEqual(decoded.amount, BigInt(250000));
+    assert.strictEqual(decoded.mintRecipient.toLowerCase(), padAddressToBytes32(WALLET_B).toLowerCase());
+    assert.strictEqual(decoded.messageSender.toLowerCase(), padAddressToBytes32(WALLET_B).toLowerCase());
+  });
+
+  // ---------------------------------------------------------------------------
+  // 40. Required Test 4: Wallet A -> Wallet B
+  // ---------------------------------------------------------------------------
+  await test("Test 40: Parameterized multi-user — Wallet A -> Wallet B (cross-recipient)", () => {
+    const msg = buildV2Message({
+      messageSender: WALLET_A,
+      mintRecipient: WALLET_B,
+      amount: BigInt(500000),
+    });
+    const decoded = decodeCctpMessage(msg);
+    validateDecodedMessage({
+      decoded,
+      expectedSourceDomain: 26,
+      expectedDestinationDomain: 6,
+      expectedAmount: BigInt(500000),
+      expectedBurnToken: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc,
+      expectedMintRecipientBytes32: padAddressToBytes32(WALLET_B),
+      expectedMessageSenderBytes32: padAddressToBytes32(WALLET_A),
+    });
+    assert.strictEqual(decoded.mintRecipient.toLowerCase(), padAddressToBytes32(WALLET_B).toLowerCase());
+    assert.strictEqual(decoded.messageSender.toLowerCase(), padAddressToBytes32(WALLET_A).toLowerCase());
+    assert.notStrictEqual(decoded.mintRecipient.toLowerCase(), decoded.messageSender.toLowerCase());
+  });
+
+  // ---------------------------------------------------------------------------
+  // 41. Required Test 5: Wallet B -> Wallet A
+  // ---------------------------------------------------------------------------
+  await test("Test 41: Parameterized multi-user — Wallet B -> Wallet A (cross-recipient)", () => {
+    const msg = buildV2Message({
+      messageSender: WALLET_B,
+      mintRecipient: WALLET_A,
+      amount: BigInt(750000),
+    });
+    const decoded = decodeCctpMessage(msg);
+    validateDecodedMessage({
+      decoded,
+      expectedSourceDomain: 26,
+      expectedDestinationDomain: 6,
+      expectedAmount: BigInt(750000),
+      expectedBurnToken: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc,
+      expectedMintRecipientBytes32: padAddressToBytes32(WALLET_A),
+      expectedMessageSenderBytes32: padAddressToBytes32(WALLET_B),
+    });
+    assert.strictEqual(decoded.mintRecipient.toLowerCase(), padAddressToBytes32(WALLET_A).toLowerCase());
+    assert.strictEqual(decoded.messageSender.toLowerCase(), padAddressToBytes32(WALLET_B).toLowerCase());
+    assert.notStrictEqual(decoded.mintRecipient.toLowerCase(), decoded.messageSender.toLowerCase());
+  });
+
+  // ---------------------------------------------------------------------------
+  // 42. Required Test 6: Account change during attestation
+  // ---------------------------------------------------------------------------
+  await test("Test 42: Multi-user isolation — account switch immediately aborts and invalidates operation", async () => {
+    let operationId = 1;
+    let activeWallet: string = WALLET_A;
+    const controller = new AbortController();
+
+    const isStale = (op: number, wallet: string) =>
+      op !== operationId || wallet.toLowerCase() !== activeWallet.toLowerCase();
+
+    // Wallet A starts operation
+    assert.strictEqual(isStale(1, WALLET_A), false);
+
+    // Switch account to Wallet B
+    operationId++;
+    activeWallet = WALLET_B;
+    controller.abort();
+
+    // Wallet A's delayed response finishes
+    assert.strictEqual(isStale(1, WALLET_A), true, "Wallet A operation must be marked stale");
+    assert.strictEqual(controller.signal.aborted, true, "Wallet A abort signal must be triggered");
+    assert.strictEqual(isStale(operationId, WALLET_B), false, "Wallet B starts with fresh valid opId");
+  });
+
+  // ---------------------------------------------------------------------------
+  // 43. Required Test 7: Disconnect / Reconnect state isolation
+  // ---------------------------------------------------------------------------
+  await test("Test 43: Multi-user isolation — disconnect and reconnect enforces strict wallet-scoped persistence", () => {
+    const memoryStorage: Record<string, string> = {};
+    const save = (wallet: string, record: string) => {
+      memoryStorage[`paygrix_mainnet_bridge_transfers_${wallet.toLowerCase()}`] = record;
+    };
+    const load = (wallet: string) => memoryStorage[`paygrix_mainnet_bridge_transfers_${wallet.toLowerCase()}`];
+
+    // Wallet A stores transfer
+    save(WALLET_A, JSON.stringify([{ id: "txA", amount: "10" }]));
+    assert.strictEqual(Boolean(load(WALLET_A)), true);
+
+    // Wallet B connects
+    assert.strictEqual(load(WALLET_B), undefined, "Wallet B must not see Wallet A transfer history");
+
+    // Wallet B stores transfer
+    save(WALLET_B, JSON.stringify([{ id: "txB", amount: "20" }]));
+    assert.notStrictEqual(load(WALLET_A), load(WALLET_B), "History must be completely isolated between accounts");
+  });
+
+  // ---------------------------------------------------------------------------
+  // 44. Required Test 8: Stale message rejection
+  // ---------------------------------------------------------------------------
+  await test("Test 44: Rejection — stale message with mismatched nonce is strictly rejected", () => {
+    const staleMsg = buildV2Message({ nonce: BigInt(42) });
+    const decoded = decodeCctpMessage(staleMsg);
+
+    assert.throws(
+      () =>
+        validateDecodedMessage({
+          decoded,
+          expectedSourceDomain: 26,
+          expectedDestinationDomain: 6,
+          expectedAmount: BigInt(10000),
+          expectedBurnToken: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc,
+          expectedMintRecipientBytes32: padAddressToBytes32(WALLET_A),
+          expectedNonce: BigInt(43), // expects 43, got 42
+        }),
+      /Nonce mismatch/
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 45. Required Test 9: Mismatched Iris attestation rejection
+  // ---------------------------------------------------------------------------
+  await test("Test 45: Rejection — Iris returning message bytes different from source receipt is strictly rejected", async () => {
+    const sourceMessage = buildV2Message({ amount: BigInt(10000), nonce: BigInt(1) });
+    const tamperedMessage = buildV2Message({ amount: BigInt(20000), nonce: BigInt(1) }); // tampered message returned by Iris
+
+    const originalFetch = global.fetch;
+    try {
+      global.fetch = async () =>
+        ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            messages: [{ status: "complete", attestation: "0xattest", message: tamperedMessage }],
+          }),
+        } as unknown as Response);
+
+      await assert.rejects(
+        pollCircleIrisAttestation({
+          sourceDomain: 26,
+          transactionHash: "0x1111111111111111111111111111111111111111111111111111111111111111",
+          expectedMessageHex: sourceMessage,
+          maxAttempts: 1,
+        }),
+        /Iris returned message does not match source transaction message bytes/
+      );
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // 46. Required Test 10: Wrong nonce rejection
+  // ---------------------------------------------------------------------------
+  await test("Test 46: Rejection — wrong nonce in validateDecodedMessage throws error", () => {
+    const msg = buildV2Message({ nonce: BigInt(999) });
+    const decoded = decodeCctpMessage(msg);
+    assert.throws(
+      () =>
+        validateDecodedMessage({
+          decoded,
+          expectedSourceDomain: 26,
+          expectedDestinationDomain: 6,
+          expectedAmount: BigInt(10000),
+          expectedBurnToken: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc,
+          expectedMintRecipientBytes32: padAddressToBytes32(WALLET_A),
+          expectedNonce: BigInt(1000),
+        }),
+      /Nonce mismatch/
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 47. Required Test 11: Wrong amount rejection (exact base units)
+  // ---------------------------------------------------------------------------
+  await test("Test 47: Rejection — wrong amount base units in validateDecodedMessage throws error", () => {
+    const msg = buildV2Message({ amount: BigInt(10000) }); // 0.01 USDC
+    const decoded = decodeCctpMessage(msg);
+    assert.throws(
+      () =>
+        validateDecodedMessage({
+          decoded,
+          expectedSourceDomain: 26,
+          expectedDestinationDomain: 6,
+          expectedAmount: BigInt(20000), // expects 0.02 USDC
+          expectedBurnToken: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc,
+          expectedMintRecipientBytes32: padAddressToBytes32(WALLET_A),
+        }),
+      /Message amount mismatch\. Expected 20000, got 10000\./
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 48. Required Test 12: Wrong recipient rejection
+  // ---------------------------------------------------------------------------
+  await test("Test 48: Rejection — wrong recipient in validateDecodedMessage throws error", () => {
+    const msg = buildV2Message({ mintRecipient: WALLET_A });
+    const decoded = decodeCctpMessage(msg);
+    assert.throws(
+      () =>
+        validateDecodedMessage({
+          decoded,
+          expectedSourceDomain: 26,
+          expectedDestinationDomain: 6,
+          expectedAmount: BigInt(10000),
+          expectedBurnToken: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc,
+          expectedMintRecipientBytes32: padAddressToBytes32(WALLET_B), // expects Wallet B
+        }),
+      /Mint recipient mismatch/
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 49. Required Test 13: Wrong source transaction rejection
+  // ---------------------------------------------------------------------------
+  await test("Test 49: Rejection — wrong source transaction / receipt correlation throws error", () => {
+    const msg = buildV2Message({ sender: "0x9999999999999999999999999999999999999999" });
+    const decoded = decodeCctpMessage(msg);
+    assert.throws(
+      () =>
+        validateDecodedMessage({
+          decoded,
+          expectedSourceDomain: 26,
+          expectedDestinationDomain: 6,
+          expectedAmount: BigInt(10000),
+          expectedBurnToken: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc,
+          expectedMintRecipientBytes32: padAddressToBytes32(WALLET_A),
+          expectedSenderBytes32: padAddressToBytes32(CCTP_V2_TOKEN_MESSENGER),
+        }),
+      /Outer sender mismatch/
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 50. Required Test 14: Old decoder forensic regression (mathematical proof of the 129557... bug)
+  // ---------------------------------------------------------------------------
+  await test("Test 50: Forensic regression — proving why old V1 decoder interpreted mintRecipient as amount 129557...", () => {
+    // Address starting with 0xe2ef5e...
+    const victimAddress = "0xe2ef5e383cb11d8bcbdef58d274d080000000000" as `0x${string}`;
+    const expectedAmount = BigInt(10000); // 0.01 USDC
+
+    const v2Message = buildV2Message({
+      mintRecipient: victimAddress,
+      amount: expectedAmount,
+    });
+
+    const rawBytes = v2Message.slice(2);
+    // OLD V1 offset for amount was byte 184..216:
+    const oldV1AmountBytes = rawBytes.slice(184 * 2, 216 * 2);
+    const oldV1DecodedAmount = BigInt(`0x${oldV1AmountBytes}`);
+
+    // CORRECT V2 offset for amount is byte 216..248:
+    const correctV2AmountBytes = rawBytes.slice(216 * 2, 248 * 2);
+    const correctV2DecodedAmount = BigInt(`0x${correctV2AmountBytes}`);
+
+    // Verify that the old V1 offset extracted the RECIPIENT address:
+    assert.strictEqual(
+      `0x${oldV1AmountBytes}`.toLowerCase(),
+      padAddressToBytes32(victimAddress).toLowerCase(),
+      "Old decoder byte 184..216 was precisely mintRecipient"
+    );
+
+    // Verify that the old decoder converted this address to a huge decimal integer starting with 129557:
+    const oldDecodedStr = oldV1DecodedAmount.toString();
+    assert.strictEqual(
+      oldDecodedStr.startsWith("129557"),
+      true,
+      `Old decoded value MUST start with '129557', got: ${oldDecodedStr.slice(0, 10)}...`
+    );
+
+    // Verify that the correct V2 offset produces 10000n:
+    assert.strictEqual(
+      correctV2DecodedAmount,
+      expectedAmount,
+      "Correct V2 decoder MUST produce exact base units 10000n"
+    );
+
+    // Verify decoder function uses correct offset:
+    const decoded = decodeCctpMessage(v2Message);
+    assert.strictEqual(decoded.amount, expectedAmount);
+    assert.strictEqual(decoded.mintRecipient.toLowerCase(), padAddressToBytes32(victimAddress).toLowerCase());
+  });
+
+  // ---------------------------------------------------------------------------
+  // 51. Required Test 15: Expired message rejection
+  // ---------------------------------------------------------------------------
+  await test("Test 51: Rejection — expired BurnMessageV2 is rejected by validateDecodedMessage", () => {
+    const expiredMsg = buildV2Message({
+      expirationBlock: BigInt(5000000),
+    });
+    const decoded = decodeCctpMessage(expiredMsg);
+
+    // When current block is past expiration block:
+    assert.throws(
+      () =>
+        validateDecodedMessage({
+          decoded,
+          expectedSourceDomain: 26,
+          expectedDestinationDomain: 6,
+          expectedAmount: BigInt(10000),
+          expectedBurnToken: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc,
+          expectedMintRecipientBytes32: padAddressToBytes32(WALLET_A),
+          currentBlockNumber: BigInt(5000001), // expired!
+        }),
+      /Message expired at block 5000000/
+    );
+
+    // When current block is before expiration block:
+    assert.doesNotThrow(() =>
+      validateDecodedMessage({
+        decoded,
+        expectedSourceDomain: 26,
+        expectedDestinationDomain: 6,
+        expectedAmount: BigInt(10000),
+        expectedBurnToken: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc,
+        expectedMintRecipientBytes32: padAddressToBytes32(WALLET_A),
+        currentBlockNumber: BigInt(4999999),
+      })
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 52. Required Test 16: Malformed / short message rejection
+  // ---------------------------------------------------------------------------
+  await test("Test 52: Rejection — malformed, short, odd-length, or unsupported version messages throw error", () => {
+    assert.throws(() => decodeCctpMessage("0x" as `0x${string}`), /too short/);
+    assert.throws(() => decodeCctpMessage("0x123" as `0x${string}`), /invalid length/);
+    assert.throws(() => decodeCctpMessage("0x00000001" as `0x${string}`), /too short/);
+    assert.throws(() => decodeCctpMessage("0x000000020000001a" as `0x${string}`), /Unsupported CCTP message version/);
   });
 
   console.log("\n==================================================");

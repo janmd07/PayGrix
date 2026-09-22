@@ -184,29 +184,44 @@ export interface DecodedCctpMessage {
   sender: `0x${string}`;
   recipient: `0x${string}`;
   destinationCaller: `0x${string}`;
+  minFinalityThreshold?: number;
+  finalityThresholdExecuted?: number;
   messageBodyVersion: number;
   burnToken: `0x${string}`;
   mintRecipient: `0x${string}`;
   amount: bigint;
   messageSender: `0x${string}`;
+  maxFee?: bigint;
+  feeExecuted?: bigint;
+  expirationBlock?: bigint;
+  hookData?: `0x${string}`;
   rawMessage: `0x${string}`;
 }
 
-export function extractMessageFromReceiptLogs(receipt: {
-  logs?: Array<{ address: string; topics: string[]; data: string }>;
-}): `0x${string}` {
+export function extractMessageFromReceiptLogs(
+  receipt: {
+    logs?: Array<{ address: string; topics: string[]; data: string }>;
+  },
+  expectedEmitter?: string
+): `0x${string}` {
   if (!receipt.logs || !Array.isArray(receipt.logs) || receipt.logs.length === 0) {
     throw new Error("No logs found in transaction receipt.");
   }
 
   const messageLog = receipt.logs.find(
     (log) =>
+      (!expectedEmitter ||
+        log.address?.toLowerCase() === expectedEmitter.toLowerCase()) &&
       log.topics &&
       log.topics[0]?.toLowerCase() === MESSAGE_SENT_EVENT_TOPIC0.toLowerCase()
   );
 
   if (!messageLog) {
-    throw new Error("MessageSent event log not found in transaction receipt.");
+    throw new Error(
+      expectedEmitter
+        ? `MessageSent event log from expected transmitter (${expectedEmitter}) not found in transaction receipt.`
+        : "MessageSent event log not found in transaction receipt."
+    );
   }
 
   // The MessageSent event has a single non-indexed parameter `bytes message`.
@@ -232,48 +247,120 @@ export function decodeCctpMessage(messageHex: `0x${string}`): DecodedCctpMessage
     throw new Error("CCTP message hex must start with 0x.");
   }
   const rawBytes = messageHex.slice(2);
+  if (rawBytes.length % 2 !== 0) {
+    throw new Error("CCTP message hex has invalid length (odd number of characters).");
+  }
   const totalLengthBytes = rawBytes.length / 2;
 
-  // Header = 116 bytes, BurnMessage = 132 bytes -> Total minimum = 248 bytes
-  if (totalLengthBytes < 248) {
-    throw new Error(
-      `CCTP message is too short: expected at least 248 bytes, got ${totalLengthBytes} bytes.`
-    );
+  if (totalLengthBytes < 4) {
+    throw new Error("CCTP message is too short: expected at least 4 bytes for version.");
   }
 
   const getSub = (startByte: number, endByte: number): string =>
     rawBytes.slice(startByte * 2, endByte * 2);
 
   const version = parseInt(getSub(0, 4), 16);
-  const sourceDomain = parseInt(getSub(4, 8), 16);
-  const destinationDomain = parseInt(getSub(8, 12), 16);
-  const nonce = BigInt(`0x${getSub(12, 20)}`);
-  const sender = `0x${getSub(20, 52)}` as `0x${string}`;
-  const recipient = `0x${getSub(52, 84)}` as `0x${string}`;
-  const destinationCaller = `0x${getSub(84, 116)}` as `0x${string}`;
 
-  // Body offsets
-  const messageBodyVersion = parseInt(getSub(116, 120), 16);
-  const burnToken = `0x${getSub(120, 152)}` as `0x${string}`;
-  const mintRecipient = `0x${getSub(152, 184)}` as `0x${string}`;
-  const amount = BigInt(`0x${getSub(184, 216)}`);
-  const messageSender = `0x${getSub(216, 248)}` as `0x${string}`;
+  if (version === 1) {
+    // -------------------------------------------------------------------------
+    // CCTP V2 (MessageV2 + BurnMessageV2)
+    // -------------------------------------------------------------------------
+    // Header (148 bytes) + BurnMessageV2 fixed fields up to hookData (228 bytes) = 376 bytes
+    if (totalLengthBytes < 376) {
+      throw new Error(
+        `CCTP V2 message is too short: expected at least 376 bytes, got ${totalLengthBytes} bytes.`
+      );
+    }
 
-  return {
-    version,
-    sourceDomain,
-    destinationDomain,
-    nonce,
-    sender,
-    recipient,
-    destinationCaller,
-    messageBodyVersion,
-    burnToken,
-    mintRecipient,
-    amount,
-    messageSender,
-    rawMessage: messageHex,
-  };
+    const sourceDomain = parseInt(getSub(4, 8), 16);
+    const destinationDomain = parseInt(getSub(8, 12), 16);
+    const nonce = BigInt(`0x${getSub(12, 44)}`);
+    const sender = `0x${getSub(44, 76)}` as `0x${string}`;
+    const recipient = `0x${getSub(76, 108)}` as `0x${string}`;
+    const destinationCaller = `0x${getSub(108, 140)}` as `0x${string}`;
+    const minFinalityThreshold = parseInt(getSub(140, 144), 16);
+    const finalityThresholdExecuted = parseInt(getSub(144, 148), 16);
+
+    // BurnMessageV2 (starts at byte 148)
+    const messageBodyVersion = parseInt(getSub(148, 152), 16);
+    const burnToken = `0x${getSub(152, 184)}` as `0x${string}`;
+    const mintRecipient = `0x${getSub(184, 216)}` as `0x${string}`;
+    const amount = BigInt(`0x${getSub(216, 248)}`);
+    const messageSender = `0x${getSub(248, 280)}` as `0x${string}`;
+    const maxFee = BigInt(`0x${getSub(280, 312)}`);
+    const feeExecuted = BigInt(`0x${getSub(312, 344)}`);
+    const expirationBlock = BigInt(`0x${getSub(344, 376)}`);
+    const hookData =
+      totalLengthBytes > 376
+        ? (`0x${getSub(376, totalLengthBytes)}` as `0x${string}`)
+        : ("0x" as `0x${string}`);
+
+    return {
+      version,
+      sourceDomain,
+      destinationDomain,
+      nonce,
+      sender,
+      recipient,
+      destinationCaller,
+      minFinalityThreshold,
+      finalityThresholdExecuted,
+      messageBodyVersion,
+      burnToken,
+      mintRecipient,
+      amount,
+      messageSender,
+      maxFee,
+      feeExecuted,
+      expirationBlock,
+      hookData,
+      rawMessage: messageHex,
+    };
+  } else if (version === 0) {
+    // -------------------------------------------------------------------------
+    // Legacy CCTP V1 (Message + BurnMessage)
+    // -------------------------------------------------------------------------
+    // Header (116 bytes) + BurnMessage (132 bytes) = 248 bytes
+    if (totalLengthBytes < 248) {
+      throw new Error(
+        `CCTP V1 message is too short: expected at least 248 bytes, got ${totalLengthBytes} bytes.`
+      );
+    }
+
+    const sourceDomain = parseInt(getSub(4, 8), 16);
+    const destinationDomain = parseInt(getSub(8, 12), 16);
+    const nonce = BigInt(`0x${getSub(12, 20)}`);
+    const sender = `0x${getSub(20, 52)}` as `0x${string}`;
+    const recipient = `0x${getSub(52, 84)}` as `0x${string}`;
+    const destinationCaller = `0x${getSub(84, 116)}` as `0x${string}`;
+
+    // Body offsets
+    const messageBodyVersion = parseInt(getSub(116, 120), 16);
+    const burnToken = `0x${getSub(120, 152)}` as `0x${string}`;
+    const mintRecipient = `0x${getSub(152, 184)}` as `0x${string}`;
+    const amount = BigInt(`0x${getSub(184, 216)}`);
+    const messageSender = `0x${getSub(216, 248)}` as `0x${string}`;
+
+    return {
+      version,
+      sourceDomain,
+      destinationDomain,
+      nonce,
+      sender,
+      recipient,
+      destinationCaller,
+      messageBodyVersion,
+      burnToken,
+      mintRecipient,
+      amount,
+      messageSender,
+      rawMessage: messageHex,
+    };
+  } else {
+    throw new Error(
+      `Unsupported CCTP message version: ${version}. Only version 1 (V2) and version 0 (V1) are supported.`
+    );
+  }
 }
 
 export function validateDecodedMessage(params: {
@@ -283,6 +370,12 @@ export function validateDecodedMessage(params: {
   expectedAmount: bigint;
   expectedBurnToken: `0x${string}`;
   expectedMintRecipientBytes32: `0x${string}`;
+  expectedSenderBytes32?: `0x${string}`;
+  expectedMessageSenderBytes32?: `0x${string}`;
+  expectedDestinationRecipientBytes32?: `0x${string}`;
+  expectedDestinationCallerBytes32?: `0x${string}`;
+  expectedNonce?: bigint;
+  currentBlockNumber?: bigint;
 }): void {
   const {
     decoded,
@@ -291,6 +384,12 @@ export function validateDecodedMessage(params: {
     expectedAmount,
     expectedBurnToken,
     expectedMintRecipientBytes32,
+    expectedSenderBytes32,
+    expectedMessageSenderBytes32,
+    expectedDestinationRecipientBytes32,
+    expectedDestinationCallerBytes32,
+    expectedNonce,
+    currentBlockNumber,
   } = params;
 
   if (decoded.sourceDomain !== expectedSourceDomain) {
@@ -311,19 +410,82 @@ export function validateDecodedMessage(params: {
     );
   }
 
-  const expectedBurnTokenBytes32 = padAddressToBytes32(expectedBurnToken);
+  const expectedBurnTokenBytes32 =
+    expectedBurnToken.length === 66
+      ? expectedBurnToken
+      : padAddressToBytes32(expectedBurnToken);
   if (decoded.burnToken.toLowerCase() !== expectedBurnTokenBytes32.toLowerCase()) {
     throw new Error(
       `Security check failed: Burn token mismatch. Expected ${expectedBurnTokenBytes32}, got ${decoded.burnToken}.`
     );
   }
 
+  const expectedRecipientBytes32 =
+    expectedMintRecipientBytes32.length === 66
+      ? expectedMintRecipientBytes32
+      : padAddressToBytes32(expectedMintRecipientBytes32);
   if (
     decoded.mintRecipient.toLowerCase() !==
-    expectedMintRecipientBytes32.toLowerCase()
+    expectedRecipientBytes32.toLowerCase()
   ) {
     throw new Error(
-      `Security check failed: Mint recipient mismatch. Expected ${expectedMintRecipientBytes32}, got ${decoded.mintRecipient}.`
+      `Security check failed: Mint recipient mismatch. Expected ${expectedRecipientBytes32}, got ${decoded.mintRecipient}.`
+    );
+  }
+
+  if (
+    expectedSenderBytes32 &&
+    decoded.sender.toLowerCase() !== expectedSenderBytes32.toLowerCase()
+  ) {
+    throw new Error(
+      `Security check failed: Outer sender mismatch. Expected ${expectedSenderBytes32}, got ${decoded.sender}.`
+    );
+  }
+
+  if (
+    expectedMessageSenderBytes32 &&
+    decoded.messageSender.toLowerCase() !==
+      expectedMessageSenderBytes32.toLowerCase()
+  ) {
+    throw new Error(
+      `Security check failed: Message caller sender mismatch. Expected ${expectedMessageSenderBytes32}, got ${decoded.messageSender}.`
+    );
+  }
+
+  if (
+    expectedDestinationRecipientBytes32 &&
+    decoded.recipient.toLowerCase() !==
+      expectedDestinationRecipientBytes32.toLowerCase()
+  ) {
+    throw new Error(
+      `Security check failed: Destination recipient mismatch. Expected ${expectedDestinationRecipientBytes32}, got ${decoded.recipient}.`
+    );
+  }
+
+  if (
+    expectedDestinationCallerBytes32 &&
+    decoded.destinationCaller.toLowerCase() !==
+      expectedDestinationCallerBytes32.toLowerCase()
+  ) {
+    throw new Error(
+      `Security check failed: Destination caller mismatch. Expected ${expectedDestinationCallerBytes32}, got ${decoded.destinationCaller}.`
+    );
+  }
+
+  if (expectedNonce !== undefined && decoded.nonce !== expectedNonce) {
+    throw new Error(
+      `Security check failed: Nonce mismatch. Expected ${expectedNonce}, got ${decoded.nonce}.`
+    );
+  }
+
+  if (
+    currentBlockNumber !== undefined &&
+    decoded.expirationBlock &&
+    decoded.expirationBlock > BigInt(0) &&
+    currentBlockNumber > decoded.expirationBlock
+  ) {
+    throw new Error(
+      `Security check failed: Message expired at block ${decoded.expirationBlock}. Current block: ${currentBlockNumber}.`
     );
   }
 }
@@ -346,6 +508,7 @@ export interface IrisAttestationResponse {
 export async function pollCircleIrisAttestation(params: {
   sourceDomain: number;
   transactionHash: `0x${string}`;
+  expectedMessageHex?: `0x${string}`;
   apiBaseUrl?: string;
   maxAttempts?: number;
   intervalMs?: number;
@@ -355,6 +518,7 @@ export async function pollCircleIrisAttestation(params: {
   const {
     sourceDomain,
     transactionHash,
+    expectedMessageHex,
     apiBaseUrl = CIRCLE_IRIS_PRODUCTION_API,
     maxAttempts = 60, // 60 attempts * 5s = 5 minutes timeout
     intervalMs = 5000,
@@ -373,20 +537,37 @@ export async function pollCircleIrisAttestation(params: {
       const res = await fetch(url, { signal });
       if (res.ok) {
         const data = (await res.json()) as IrisAttestationResponse;
-        const firstMsg = data.messages?.[0];
+        const matchingMsg = data.messages?.find((m) =>
+          expectedMessageHex
+            ? m.message?.toLowerCase() === expectedMessageHex.toLowerCase()
+            : true
+        );
+        const targetMsg = matchingMsg || data.messages?.[0];
 
-        onAttempt?.(attempt, maxAttempts, firstMsg?.status || "fetching");
+        onAttempt?.(attempt, maxAttempts, targetMsg?.status || "fetching");
 
         if (
-          firstMsg &&
-          firstMsg.status === "complete" &&
-          firstMsg.attestation &&
-          firstMsg.attestation.startsWith("0x") &&
-          firstMsg.attestation !== "0x"
+          targetMsg &&
+          targetMsg.status === "complete" &&
+          targetMsg.attestation &&
+          targetMsg.attestation.startsWith("0x") &&
+          targetMsg.attestation !== "0x"
         ) {
+          const retMessage = (targetMsg.message || "0x") as `0x${string}`;
+
+          if (
+            expectedMessageHex &&
+            retMessage !== "0x" &&
+            retMessage.toLowerCase() !== expectedMessageHex.toLowerCase()
+          ) {
+            throw new Error(
+              "Security check failed: Iris returned message does not match source transaction message bytes."
+            );
+          }
+
           return {
-            message: (firstMsg.message || "0x") as `0x${string}`,
-            attestation: firstMsg.attestation as `0x${string}`,
+            message: retMessage,
+            attestation: targetMsg.attestation as `0x${string}`,
           };
         }
       } else if (res.status === 404) {
@@ -402,6 +583,12 @@ export async function pollCircleIrisAttestation(params: {
     } catch (err: unknown) {
       if (signal?.aborted) {
         throw new Error("Circle attestation polling aborted.");
+      }
+      if (
+        err instanceof Error &&
+        err.message.startsWith("Security check failed:")
+      ) {
+        throw err;
       }
       console.warn(`[CCTP Mainnet] Transient Iris polling error:`, err);
     }
@@ -715,7 +902,10 @@ export async function executeMainnetCctpBridge(
     }
 
     // 9. Extract and validate MessageSent log from source receipt
-    messageHex = extractMessageFromReceiptLogs(burnReceipt);
+    messageHex = extractMessageFromReceiptLogs(
+      burnReceipt,
+      route.sourceConfig?.messageTransmitterV2
+    );
     const decodedMessage = decodeCctpMessage(messageHex);
 
     validateDecodedMessage({
@@ -725,6 +915,9 @@ export async function executeMainnetCctpBridge(
       expectedAmount: parsedAmount,
       expectedBurnToken: route.sourceUsdc,
       expectedMintRecipientBytes32: recipientBytes32,
+      expectedSenderBytes32: padAddressToBytes32(route.sourceTokenMessenger),
+      expectedMessageSenderBytes32: padAddressToBytes32(senderAddress),
+      expectedDestinationCallerBytes32: CCTP_V2_EMPTY_BYTES32,
     });
 
     if (signal?.aborted) throw new Error("Bridge execution aborted.");
@@ -735,12 +928,18 @@ export async function executeMainnetCctpBridge(
     const attestationRes = await pollCircleIrisAttestation({
       sourceDomain: route.sourceDomain,
       transactionHash: burnTxHash,
+      expectedMessageHex: messageHex,
       apiBaseUrl: irisApiBaseUrl,
       signal,
     });
 
     attestationHex = attestationRes.attestation;
     if (attestationRes.message && attestationRes.message !== "0x") {
+      if (attestationRes.message.toLowerCase() !== messageHex.toLowerCase()) {
+        throw new Error(
+          "Security check failed: Iris returned message does not match source transaction message."
+        );
+      }
       messageHex = attestationRes.message;
     }
 
@@ -768,7 +967,7 @@ export async function executeMainnetCctpBridge(
 
     if (signal?.aborted) throw new Error("Bridge execution aborted.");
 
-    // 12. Destination balance verification
+    // 12. Destination balance verification (incorporating CCTP V2 feeExecuted if applicable)
     setStage("verifying");
 
     const destBalanceAfter = (await destinationPublicClient.readContract({
@@ -778,9 +977,12 @@ export async function executeMainnetCctpBridge(
       args: [recipientAddress],
     })) as bigint;
 
-    if (destBalanceAfter < destBalanceBefore + parsedAmount) {
+    const executedFee = decodedMessage.feeExecuted ?? BigInt(0);
+    const expectedMintIncrement = parsedAmount > executedFee ? parsedAmount - executedFee : BigInt(0);
+
+    if (destBalanceAfter < destBalanceBefore + expectedMintIncrement) {
       throw new Error(
-        `Destination balance verification failed. Expected at least ${destBalanceBefore + parsedAmount}, got ${destBalanceAfter}.`
+        `Destination balance verification failed. Expected at least ${destBalanceBefore + expectedMintIncrement}, got ${destBalanceAfter}.`
       );
     }
 
