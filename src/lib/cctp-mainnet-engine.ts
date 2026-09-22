@@ -1,5 +1,6 @@
 import {
   decodeAbiParameters,
+  decodeFunctionData,
   encodeFunctionData,
   erc20Abi,
   getAddress,
@@ -29,6 +30,9 @@ export const tokenMessengerV2Abi = [
       { name: "destinationDomain", type: "uint32" },
       { name: "mintRecipient", type: "bytes32" },
       { name: "burnToken", type: "address" },
+      { name: "destinationCaller", type: "bytes32" },
+      { name: "maxFee", type: "uint256" },
+      { name: "minFinalityThreshold", type: "uint32" },
     ],
     outputs: [{ name: "_nonce", type: "uint64" }],
   },
@@ -57,7 +61,7 @@ export const MESSAGE_SENT_EVENT_TOPIC0 = toEventSelector(
 );
 
 export const DEPOSIT_FOR_BURN_SELECTOR = toFunctionSelector(
-  "function depositForBurn(uint256 amount, uint32 destinationDomain, bytes32 mintRecipient, address burnToken) returns (uint64)"
+  "function depositForBurn(uint256 amount, uint32 destinationDomain, bytes32 mintRecipient, address burnToken, bytes32 destinationCaller, uint256 maxFee, uint32 minFinalityThreshold) returns (uint64)"
 );
 
 export const RECEIVE_MESSAGE_SELECTOR = toFunctionSelector(
@@ -122,11 +126,19 @@ export function encodeErc20ApprovalCalldata(
   });
 }
 
+export const CCTP_V2_EMPTY_BYTES32 =
+  "0x0000000000000000000000000000000000000000000000000000000000000000" as const;
+export const CCTP_V2_STANDARD_FINALITY_THRESHOLD = 2000;
+export const CCTP_V2_DEFAULT_MAX_FEE = BigInt(0);
+
 export function encodeDepositForBurnCalldata(params: {
   amount: bigint;
   destinationDomain: number;
   mintRecipientBytes32: `0x${string}`;
   burnToken: `0x${string}`;
+  destinationCaller?: `0x${string}`;
+  maxFee?: bigint;
+  minFinalityThreshold?: number;
 }): `0x${string}` {
   return encodeFunctionData({
     abi: tokenMessengerV2Abi,
@@ -136,7 +148,17 @@ export function encodeDepositForBurnCalldata(params: {
       params.destinationDomain,
       params.mintRecipientBytes32,
       params.burnToken,
+      params.destinationCaller ?? CCTP_V2_EMPTY_BYTES32,
+      params.maxFee ?? CCTP_V2_DEFAULT_MAX_FEE,
+      params.minFinalityThreshold ?? CCTP_V2_STANDARD_FINALITY_THRESHOLD,
     ],
+  });
+}
+
+export function decodeDepositForBurnCalldata(calldata: `0x${string}`) {
+  return decodeFunctionData({
+    abi: tokenMessengerV2Abi,
+    data: calldata,
   });
 }
 
@@ -676,6 +698,9 @@ export async function executeMainnetCctpBridge(
         route.destinationDomain,
         recipientBytes32,
         route.sourceUsdc,
+        CCTP_V2_EMPTY_BYTES32,
+        CCTP_V2_DEFAULT_MAX_FEE,
+        CCTP_V2_STANDARD_FINALITY_THRESHOLD,
       ],
     });
     onTxSent?.("burn", burnTxHash);

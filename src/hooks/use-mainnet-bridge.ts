@@ -17,12 +17,15 @@ import {
   resolveMainnetCctpRoute,
 } from "@/config/cctp-mainnet";
 import {
+  CCTP_V2_DEFAULT_MAX_FEE,
+  CCTP_V2_EMPTY_BYTES32,
+  CCTP_V2_STANDARD_FINALITY_THRESHOLD,
   decodeCctpMessage,
+  encodeDepositForBurnCalldata,
   extractMessageFromReceiptLogs,
   MainnetBridgeStage,
   padAddressToBytes32,
   pollCircleIrisAttestation,
-  tokenMessengerV2Abi,
   messageTransmitterV2Abi,
   validateDecodedMessage,
   verifyCctpDeploymentBytecode,
@@ -320,22 +323,23 @@ export function useMainnetBridge() {
         // 5. Deposit For Burn
         setStatus("burning");
 
+        const depositCalldata = encodeDepositForBurnCalldata({
+          amount: parsedAmount,
+          destinationDomain: route.destinationDomain,
+          mintRecipientBytes32: recipientBytes32,
+          burnToken: route.sourceUsdc,
+          destinationCaller: CCTP_V2_EMPTY_BYTES32,
+          maxFee: CCTP_V2_DEFAULT_MAX_FEE,
+          minFinalityThreshold: CCTP_V2_STANDARD_FINALITY_THRESHOLD,
+        });
+
         const rawBurnTx = (await provider.request({
           method: "eth_sendTransaction",
           params: [
             {
               from: address,
               to: route.sourceTokenMessenger,
-              data: (await import("viem")).encodeFunctionData({
-                abi: tokenMessengerV2Abi,
-                functionName: "depositForBurn",
-                args: [
-                  parsedAmount,
-                  route.destinationDomain,
-                  recipientBytes32,
-                  route.sourceUsdc,
-                ],
-              }),
+              data: depositCalldata,
             },
           ],
         })) as `0x${string}`;

@@ -8,11 +8,15 @@ import {
   resolveMainnetCctpRoute,
 } from "../src/config/cctp-mainnet";
 import {
+  CCTP_V2_DEFAULT_MAX_FEE,
+  CCTP_V2_EMPTY_BYTES32,
+  CCTP_V2_STANDARD_FINALITY_THRESHOLD,
   DEPOSIT_FOR_BURN_SELECTOR,
   MESSAGE_SENT_EVENT_TOPIC0,
   RECEIVE_MESSAGE_SELECTOR,
   bytes32ToAddress,
   decodeCctpMessage,
+  decodeDepositForBurnCalldata,
   encodeDepositForBurnCalldata,
   encodeErc20ApprovalCalldata,
   encodeReceiveMessageCalldata,
@@ -25,9 +29,11 @@ import {
 } from "../src/lib/cctp-mainnet-engine";
 import {
   createPublicClient,
+  decodeFunctionData,
   encodeAbiParameters,
   http,
   pad,
+  parseAbi,
 } from "viem";
 import { base, arbitrum } from "viem/chains";
 
@@ -227,14 +233,28 @@ async function runTests() {
   // ---------------------------------------------------------------------------
   // 16. DepositForBurn Calldata
   // ---------------------------------------------------------------------------
-  await test("Test 16: depositForBurn calldata matches function selector", () => {
+  await test("Test 16: depositForBurn calldata matches V2 selector 0x8e0250ee with exactly 7 parameters", () => {
+    assert.strictEqual(DEPOSIT_FOR_BURN_SELECTOR, "0x8e0250ee");
+
     const calldata = encodeDepositForBurnCalldata({
-      amount: BigInt(1_000_000),
+      amount: BigInt(200_000), // 0.2 USDC
       destinationDomain: 6,
       mintRecipientBytes32: padAddressToBytes32("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"),
       burnToken: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc,
+      destinationCaller: CCTP_V2_EMPTY_BYTES32,
+      maxFee: CCTP_V2_DEFAULT_MAX_FEE,
+      minFinalityThreshold: CCTP_V2_STANDARD_FINALITY_THRESHOLD,
     });
-    assert.strictEqual(calldata.startsWith(DEPOSIT_FOR_BURN_SELECTOR), true);
+
+    assert.strictEqual(calldata.slice(0, 10).toLowerCase(), "0x8e0250ee");
+    assert.notStrictEqual(calldata.slice(0, 10).toLowerCase(), "0x6fd3504e");
+
+    // Calldata length: 2 (0x) + 8 (selector) + 7 * 64 (arguments) = 458 characters
+    assert.strictEqual(calldata.length, 458);
+
+    const decoded = decodeDepositForBurnCalldata(calldata);
+    assert.strictEqual(decoded.functionName, "depositForBurn");
+    assert.strictEqual(decoded.args.length, 7);
   });
 
   // ---------------------------------------------------------------------------
@@ -625,8 +645,208 @@ async function runTests() {
     assert.strictEqual(true, true);
   });
 
+  // ---------------------------------------------------------------------------
+  // 33. Decode EXACT Production Calldata for 0.2 USDC Arc Mainnet -> Base Mainnet
+  // ---------------------------------------------------------------------------
+  await test("Test 33: Decode EXACT production calldata for 0.2 USDC Arc Mainnet -> Base Mainnet", () => {
+    const testWallet = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
+    const expectedRecipientBytes32 = padAddressToBytes32(testWallet);
+    const amountBigInt = parseAndValidateUsdcAmount("0.2"); // 200,000
+
+    const route = resolveMainnetCctpRoute("Arc Mainnet", "Base Mainnet");
+
+    const calldata = encodeDepositForBurnCalldata({
+      amount: amountBigInt,
+      destinationDomain: route.destinationDomain,
+      mintRecipientBytes32: expectedRecipientBytes32,
+      burnToken: route.sourceUsdc,
+      destinationCaller: CCTP_V2_EMPTY_BYTES32,
+      maxFee: CCTP_V2_DEFAULT_MAX_FEE,
+      minFinalityThreshold: CCTP_V2_STANDARD_FINALITY_THRESHOLD,
+    });
+
+    // Verify selector
+    const selector = calldata.slice(0, 10).toLowerCase();
+    assert.strictEqual(selector, "0x8e0250ee", "Selector MUST be 0x8e0250ee");
+    assert.notStrictEqual(selector, "0x6fd3504e", "Old selector 0x6fd3504e MUST NOT be generated");
+
+    // Calldata length: 2 (0x) + 8 (selector) + 7 * 64 (args) = 458 characters
+    assert.strictEqual(calldata.length, 458, "Production calldata length MUST be 458 characters");
+
+    // Decode with official V2 ABI
+    const decoded = decodeDepositForBurnCalldata(calldata);
+    assert.strictEqual(decoded.functionName, "depositForBurn");
+    assert.strictEqual(decoded.args.length, 7, "Calldata MUST have exactly 7 arguments");
+
+    const [
+      decodedAmount,
+      decodedDomain,
+      decodedRecipient,
+      decodedBurnToken,
+      decodedCaller,
+      decodedMaxFee,
+      decodedThreshold,
+    ] = decoded.args;
+
+    assert.strictEqual(decodedAmount, BigInt(200000), "amount MUST be 200000");
+    assert.strictEqual(decodedDomain, 6, "destinationDomain MUST be 6 for Arc -> Base");
+    assert.strictEqual(
+      decodedRecipient.toLowerCase(),
+      expectedRecipientBytes32.toLowerCase(),
+      "mintRecipient MUST be connected destination wallet bytes32"
+    );
+    assert.strictEqual(
+      decodedBurnToken.toLowerCase(),
+      "0x3600000000000000000000000000000000000000".toLowerCase(),
+      "burnToken MUST be Arc USDC"
+    );
+    assert.strictEqual(
+      decodedCaller.toLowerCase(),
+      CCTP_V2_EMPTY_BYTES32.toLowerCase(),
+      "destinationCaller MUST be V2 empty bytes32"
+    );
+    assert.strictEqual(decodedMaxFee, BigInt(0), "maxFee MUST be 0n for standard transfer");
+    assert.strictEqual(decodedThreshold, 2000, "minFinalityThreshold MUST be 2000 for standard transfer");
+  });
+
+  // ---------------------------------------------------------------------------
+  // 34. Decode EXACT Production Calldata for Base Mainnet -> Arc Mainnet (domain 26)
+  // ---------------------------------------------------------------------------
+  await test("Test 34: Decode EXACT production calldata for 0.2 USDC Base Mainnet -> Arc Mainnet", () => {
+    const testWallet = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
+    const expectedRecipientBytes32 = padAddressToBytes32(testWallet);
+    const amountBigInt = parseAndValidateUsdcAmount("0.2"); // 200,000
+
+    const route = resolveMainnetCctpRoute("Base Mainnet", "Arc Mainnet");
+
+    const calldata = encodeDepositForBurnCalldata({
+      amount: amountBigInt,
+      destinationDomain: route.destinationDomain,
+      mintRecipientBytes32: expectedRecipientBytes32,
+      burnToken: route.sourceUsdc,
+      destinationCaller: CCTP_V2_EMPTY_BYTES32,
+      maxFee: CCTP_V2_DEFAULT_MAX_FEE,
+      minFinalityThreshold: CCTP_V2_STANDARD_FINALITY_THRESHOLD,
+    });
+
+    const selector = calldata.slice(0, 10).toLowerCase();
+    assert.strictEqual(selector, "0x8e0250ee", "Selector MUST be 0x8e0250ee");
+    assert.notStrictEqual(selector, "0x6fd3504e", "Old selector 0x6fd3504e MUST NOT be generated");
+
+    const decoded = decodeDepositForBurnCalldata(calldata);
+    assert.strictEqual(decoded.args.length, 7);
+
+    const [
+      decodedAmount,
+      decodedDomain,
+      decodedRecipient,
+      decodedBurnToken,
+      decodedCaller,
+      decodedMaxFee,
+      decodedThreshold,
+    ] = decoded.args;
+
+    assert.strictEqual(decodedAmount, BigInt(200000), "amount MUST be 200000");
+    assert.strictEqual(decodedDomain, 26, "destinationDomain MUST be 26 for Base -> Arc");
+    assert.strictEqual(decodedRecipient.toLowerCase(), expectedRecipientBytes32.toLowerCase());
+    assert.strictEqual(
+      decodedBurnToken.toLowerCase(),
+      "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".toLowerCase(),
+      "burnToken MUST be Base USDC"
+    );
+    assert.strictEqual(decodedCaller.toLowerCase(), CCTP_V2_EMPTY_BYTES32.toLowerCase());
+    assert.strictEqual(decodedMaxFee, BigInt(0));
+    assert.strictEqual(decodedThreshold, 2000);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 35. Invariant: Strict Rejection of Old 4-Arg V1 ABI & Selector 0x6fd3504e
+  // ---------------------------------------------------------------------------
+  await test("Test 35: Invariant — old 4-argument V1 ABI and 0x6fd3504e selector are strictly rejected", () => {
+    const oldV1Abi = parseAbi([
+      "function depositForBurn(uint256 amount, uint32 destinationDomain, bytes32 mintRecipient, address burnToken) returns (uint64)",
+    ]);
+    const oldV1Selector = "0x6fd3504e";
+
+    assert.notStrictEqual(DEPOSIT_FOR_BURN_SELECTOR, oldV1Selector);
+    assert.strictEqual(DEPOSIT_FOR_BURN_SELECTOR, "0x8e0250ee");
+
+    const prodCalldata = encodeDepositForBurnCalldata({
+      amount: BigInt(200000),
+      destinationDomain: 6,
+      mintRecipientBytes32: padAddressToBytes32("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045"),
+      burnToken: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc,
+    });
+
+    assert.throws(
+      () => decodeFunctionData({ abi: oldV1Abi, data: prodCalldata }),
+      /AbiFunctionSignatureNotFoundError|Function "depositForBurn" not found on ABI|AbiFunctionNotFoundError|data size/i
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 36. Live On-Chain TokenMessenger Implementation Bytecode & Getters Verification
+  // ---------------------------------------------------------------------------
+  await test("Test 36: Live deployed TokenMessengerV2 proxy implementation bytecode and getter verification", async () => {
+    const arcClient = createPublicClient({ transport: http(MAINNET_CHAINS["Arc Mainnet"].rpcUrl) });
+    const baseClient = createPublicClient({ chain: base, transport: http(MAINNET_CHAINS["Base Mainnet"].rpcUrl) });
+
+    const tm = CCTP_V2_TOKEN_MESSENGER;
+    const mt = CCTP_V2_MESSAGE_TRANSMITTER;
+    const IMPLEMENTATION_SLOT = "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc" as const;
+
+    const [arcImplSlot, baseImplSlot] = await Promise.all([
+      arcClient.getStorageAt({ address: tm, slot: IMPLEMENTATION_SLOT }),
+      baseClient.getStorageAt({ address: tm, slot: IMPLEMENTATION_SLOT }),
+    ]);
+
+    assert.strictEqual(Boolean(arcImplSlot), true, "Arc implementation slot exists");
+    assert.strictEqual(Boolean(baseImplSlot), true, "Base implementation slot exists");
+
+    const arcImplAddr = ("0x" + arcImplSlot!.slice(26)) as `0x${string}`;
+    const baseImplAddr = ("0x" + baseImplSlot!.slice(26)) as `0x${string}`;
+
+    const [arcImplCode, baseImplCode] = await Promise.all([
+      arcClient.getBytecode({ address: arcImplAddr }),
+      baseClient.getBytecode({ address: baseImplAddr }),
+    ]);
+
+    assert.strictEqual(Boolean(arcImplCode && arcImplCode.length > 1000), true);
+    assert.strictEqual(Boolean(baseImplCode && baseImplCode.length > 1000), true);
+
+    // CRITICAL: Both implementation bytecodes MUST contain V2 selector 8e0250ee and MUST NOT contain 6fd3504e
+    assert.strictEqual(arcImplCode!.toLowerCase().includes("8e0250ee"), true, "Arc TM implementation MUST contain 8e0250ee");
+    assert.strictEqual(arcImplCode!.toLowerCase().includes("6fd3504e"), false, "Arc TM implementation MUST NOT contain 6fd3504e");
+
+    assert.strictEqual(baseImplCode!.toLowerCase().includes("8e0250ee"), true, "Base TM implementation MUST contain 8e0250ee");
+    assert.strictEqual(baseImplCode!.toLowerCase().includes("6fd3504e"), false, "Base TM implementation MUST NOT contain 6fd3504e");
+
+    // Verify on-chain getters
+    const tmGetterAbi = parseAbi([
+      "function localMessageTransmitter() view returns (address)",
+      "function messageBodyVersion() view returns (uint32)",
+    ]);
+    const mtGetterAbi = parseAbi([
+      "function localDomain() view returns (uint32)",
+    ]);
+
+    const [arcLmt, baseLmt, arcDomain, baseDomain, arcMbv] = await Promise.all([
+      arcClient.readContract({ address: tm, abi: tmGetterAbi, functionName: "localMessageTransmitter" }),
+      baseClient.readContract({ address: tm, abi: tmGetterAbi, functionName: "localMessageTransmitter" }),
+      arcClient.readContract({ address: mt, abi: mtGetterAbi, functionName: "localDomain" }),
+      baseClient.readContract({ address: mt, abi: mtGetterAbi, functionName: "localDomain" }),
+      arcClient.readContract({ address: tm, abi: tmGetterAbi, functionName: "messageBodyVersion" }),
+    ]);
+
+    assert.strictEqual(arcLmt.toLowerCase(), mt.toLowerCase(), "Arc localMessageTransmitter matches MT");
+    assert.strictEqual(baseLmt.toLowerCase(), mt.toLowerCase(), "Base localMessageTransmitter matches MT");
+    assert.strictEqual(arcDomain, 26, "Arc localDomain MUST be 26");
+    assert.strictEqual(baseDomain, 6, "Base localDomain MUST be 6");
+    assert.strictEqual(arcMbv, 1, "Arc TokenMessenger messageBodyVersion MUST be 1");
+  });
+
   console.log("\n==================================================");
-  console.log(`TEST SUMMARY: ${passed} PASSED, ${failed} FAILED (32 Total)`);
+  console.log(`TEST SUMMARY: ${passed} PASSED, ${failed} FAILED (${passed + failed} Total)`);
   console.log("==================================================");
 
   if (failed > 0) {
