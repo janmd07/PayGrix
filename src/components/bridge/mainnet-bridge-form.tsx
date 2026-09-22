@@ -69,6 +69,7 @@ export function MainnetBridgeForm() {
   const [destinationChain, setDestinationChain] = useState<MainnetChainKey>("Base Mainnet");
   const [amount, setAmount] = useState<string>("");
   const [recipientAddress, setRecipientAddress] = useState<string>("");
+  const [isCustomRecipientOpen, setIsCustomRecipientOpen] = useState<boolean>(false);
   const [activeDropdown, setActiveDropdown] = useState<"source" | "destination" | null>(null);
   const [failedLogos, setFailedLogos] = useState<Record<string, boolean>>({});
 
@@ -87,10 +88,10 @@ export function MainnetBridgeForm() {
   } = useMainnetBridge();
 
   useEffect(() => {
-    if (address && !recipientAddress) {
-      setRecipientAddress(address);
+    if (!isCustomRecipientOpen) {
+      setRecipientAddress(address || "");
     }
-  }, [address, recipientAddress]);
+  }, [address, isCustomRecipientOpen]);
 
   useEffect(() => {
     refreshBalances(sourceChain, destinationChain);
@@ -117,8 +118,8 @@ export function MainnetBridgeForm() {
   const parsedSourceBalance = parseFloat(sourceBalance || "0");
   const isValidAmount = amount !== "" && !isNaN(parsedAmount) && parsedAmount >= 0.01;
   const isOverBalance = isValidAmount && !isNaN(parsedSourceBalance) && parsedAmount > parsedSourceBalance;
-  const trimmedRecipient = recipientAddress.trim();
-  const isRecipientValid = trimmedRecipient !== "" && isAddress(trimmedRecipient);
+  const effectiveRecipient = (isCustomRecipientOpen ? recipientAddress : (address || recipientAddress || "")).trim();
+  const isRecipientValid = effectiveRecipient !== "" && isAddress(effectiveRecipient);
   const isRouteAllowed = isMainnetRouteEnabled(sourceChain, destinationChain);
 
   const isFormInvalid =
@@ -138,6 +139,16 @@ export function MainnetBridgeForm() {
   const handleMaxClick = () => {
     if (sourceBalance && parseFloat(sourceBalance) > 0) {
       setAmount(sourceBalance);
+    }
+  };
+
+  const handleToggleCustomRecipient = () => {
+    if (isSelectDisabled) return;
+    if (isCustomRecipientOpen) {
+      setIsCustomRecipientOpen(false);
+      setRecipientAddress(address || "");
+    } else {
+      setIsCustomRecipientOpen(true);
     }
   };
 
@@ -499,37 +510,64 @@ export function MainnetBridgeForm() {
               </div>
             </div>
 
-            {/* Destination Recipient Address Input */}
-            <div className="rounded-xl border border-white/5 bg-[#070e1c]/40 p-3.5 space-y-2">
-              <div className="flex justify-between items-center text-xs">
-                <label
-                  htmlFor="mainnet-recipient-input"
-                  className="font-semibold text-slate-200 flex items-center gap-1.5"
-                >
-                  <Wallet className="h-3.5 w-3.5 text-indigo-400" />
-                  Destination Recipient
-                </label>
-                <span className="text-[10px] text-slate-500 font-mono">left-padded to 32 bytes</span>
-              </div>
-              <input
-                id="mainnet-recipient-input"
-                type="text"
-                placeholder="0x..."
-                value={recipientAddress}
-                onChange={(e) => setRecipientAddress(e.target.value)}
+            {/* Destination Recipient Section (Collapsed by Default) */}
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={handleToggleCustomRecipient}
                 disabled={isSelectDisabled}
-                className="w-full bg-[#040814]/80 border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-primary/50 transition-all"
-              />
-              {recipientAddress && !isRecipientValid ? (
-                <p className="text-[10.5px] text-rose-400">
-                  Invalid EVM address format. Must be a valid 20-byte hex address.
-                </p>
-              ) : recipientAddress && isRecipientValid ? (
-                <p className="text-[10.5px] text-emerald-400 flex items-center gap-1">
-                  <CheckCircle2 className="h-3 w-3" /> Valid destination address on {destinationChain}.
-                </p>
-              ) : (
-                <p className="text-[10.5px] text-slate-500">Enter your destination recipient 0x address.</p>
+                className={cn(
+                  "flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors cursor-pointer select-none py-0.5 group",
+                  isSelectDisabled && "opacity-50 cursor-not-allowed"
+                )}
+              >
+                <ChevronDown
+                  className={cn(
+                    "h-3.5 w-3.5 text-slate-500 group-hover:text-white transition-transform duration-200",
+                    isCustomRecipientOpen && "rotate-180 text-white"
+                  )}
+                />
+                <span className="font-medium">Send to a different address</span>
+                {!isCustomRecipientOpen && address && (
+                  <span className="text-[11px] text-slate-500 font-mono ml-1">
+                    (Default: {address.slice(0, 6)}...{address.slice(-4)})
+                  </span>
+                )}
+              </button>
+
+              {isCustomRecipientOpen && (
+                <div className="rounded-xl border border-white/5 bg-[#070e1c]/40 p-3.5 space-y-2 animate-in fade-in slide-in-from-top-1 duration-150">
+                  <div className="flex justify-between items-center text-xs">
+                    <label
+                      htmlFor="mainnet-recipient-input"
+                      className="font-semibold text-slate-200 flex items-center gap-1.5"
+                    >
+                      <Wallet className="h-3.5 w-3.5 text-indigo-400" />
+                      Destination Recipient
+                    </label>
+                    <span className="text-[10px] text-slate-500 font-mono">left-padded to 32 bytes</span>
+                  </div>
+                  <input
+                    id="mainnet-recipient-input"
+                    type="text"
+                    placeholder="0x..."
+                    value={recipientAddress}
+                    onChange={(e) => setRecipientAddress(e.target.value)}
+                    disabled={isSelectDisabled}
+                    className="w-full bg-[#040814]/80 border border-white/10 rounded-lg px-3 py-2 text-xs font-mono text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-primary/50 transition-all"
+                  />
+                  {recipientAddress && !isRecipientValid ? (
+                    <p className="text-[10.5px] text-rose-400">
+                      Invalid EVM address format. Must be a valid 20-byte hex address.
+                    </p>
+                  ) : recipientAddress && isRecipientValid ? (
+                    <p className="text-[10.5px] text-emerald-400 flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3" /> Valid destination address on {destinationChain}.
+                    </p>
+                  ) : (
+                    <p className="text-[10.5px] text-slate-500">Enter custom recipient 0x address.</p>
+                  )}
+                </div>
               )}
             </div>
 
@@ -638,7 +676,7 @@ export function MainnetBridgeForm() {
                     sourceChain,
                     destinationChain,
                     amount,
-                    recipientAddress: recipientAddress as `0x${string}`,
+                    recipientAddress: effectiveRecipient as `0x${string}`,
                   });
                   return;
                 }
@@ -652,7 +690,7 @@ export function MainnetBridgeForm() {
                   sourceChain,
                   destinationChain,
                   amount,
-                  recipientAddress: recipientAddress as `0x${string}`,
+                  recipientAddress: effectiveRecipient as `0x${string}`,
                 });
               }}
               className={cn(
