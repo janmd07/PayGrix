@@ -30,6 +30,7 @@ import {
   pollCircleIrisAttestation,
   messageTransmitterV2Abi,
   validateDecodedMessage,
+  verifyAllowance,
   verifyCctpDeploymentBytecode,
   verifyDestinationBalance,
 } from "@/lib/cctp-mainnet-engine";
@@ -389,16 +390,16 @@ export function useMainnetBridge() {
             throw new Error("USDC approval transaction reverted on-chain.");
           }
 
-          const updatedAllowance = (await sourcePublic.readContract({
-            address: route.sourceUsdc,
-            abi: erc20Abi,
-            functionName: "allowance",
-            args: [address, route.sourceTokenMessenger],
-          })) as bigint;
-
-          if (updatedAllowance < parsedAmount) {
-            throw new Error("USDC allowance verification failed after approval.");
-          }
+          await verifyAllowance({
+            sourcePublicClient: sourcePublic,
+            sourceUsdc: route.sourceUsdc,
+            ownerAddress: address,
+            spenderAddress: route.sourceTokenMessenger,
+            requiredAmount: parsedAmount,
+            approveReceipt,
+            signal: abortController.signal,
+            isStale,
+          });
         }
 
         if (isStale()) return false;

@@ -631,18 +631,29 @@ export function correlateSourceAndIrisMessages(params: {
   }
 
   // 6. CCTP V2 Nonce semantics:
-  // Source pre-finalized message has unassigned nonce 0
-  if (sourceDecoded.nonce !== BigInt(0)) {
-    return {
-      valid: false,
-      error: `Source message nonce must be 0 (unassigned before finalization), got ${sourceDecoded.nonce}.`,
-    };
-  }
-  // Iris finalized message must have assigned positive non-zero nonce
+  // Iris finalized message must always have an assigned positive non-zero nonce
   if (irisDecoded.nonce <= BigInt(0)) {
     return {
       valid: false,
       error: `Iris finalized message must have non-zero nonce, got ${irisDecoded.nonce}.`,
+    };
+  }
+
+  if (sourceDecoded.nonce === BigInt(0)) {
+    // Valid for chains such as Arc Mainnet where source nonce is unassigned before finalization.
+    // Iris must provide the finalized positive nonce.
+  } else if (sourceDecoded.nonce > BigInt(0)) {
+    // Valid for standard EVM chains such as Base Mainnet where source nonce is assigned on-chain.
+    if (irisDecoded.nonce !== sourceDecoded.nonce) {
+      return {
+        valid: false,
+        error: `Iris finalized nonce (${irisDecoded.nonce}) must match source assigned nonce (${sourceDecoded.nonce}).`,
+      };
+    }
+  } else {
+    return {
+      valid: false,
+      error: `Invalid negative source message nonce: ${sourceDecoded.nonce}.`,
     };
   }
 
@@ -1011,6 +1022,147 @@ export async function verifyDestinationBalance(
     });
   }
 }
+
+// -----------------------------------------------------------------------------
+// Resilient Post-Approval Allowance Verification
+// -----------------------------------------------------------------------------
+export const DEFAULT_ALLOWANCE_VERIFICATION_TIMEOUT_MS = 6000;
+export const DEFAULT_ALLOWANCE_VERIFICATION_INTERVAL_MS = 1000;
+
+export interface VerifyAllowanceParams {
+  sourcePublicClient: {
+    readContract: (args: {
+      address: `0x${string}`;
+      abi: readonly unknown[];
+      functionName: string;
+      args: readonly unknown[];
+      blockNumber?: bigint;
+    }) => Promise<unknown>;
+  };
+  sourceUsdc: `0x${string}`;
+  ownerAddress: `0x${string}`;
+  spenderAddress: `0x${string}`;
+  requiredAmount: bigint;
+  approveReceipt?: {
+    blockNumber?: bigint | null;
+    status?: string;
+  };
+  timeoutMs?: number;
+  pollingIntervalMs?: number;
+  signal?: AbortSignal;
+  isStale?: () => boolean;
+}
+
+/**
+ * Resilient post-approval allowance verification with bounded polling.
+ * Protects against public RPC read-replica lag immediately following a confirmed
+ * approve() transaction while strictly requiring allowance >= requiredAmount.
+ */
+export async function verifyAllowance(
+  params: VerifyAllowanceParams
+): Promise<bigint> {
+  const {
+    sourcePublicClient,
+    sourceUsdc,
+    ownerAddress,
+    spenderAddress,
+    requiredAmount,
+    approveReceipt,
+    timeoutMs = DEFAULT_ALLOWANCE_VERIFICATION_TIMEOUT_MS,
+    pollingIntervalMs = DEFAULT_ALLOWANCE_VERIFICATION_INTERVAL_MS,
+    signal,
+    isStale,
+  } = params;
+
+  const startTime = Date.now();
+
+  while (true) {
+    if (signal?.aborted) {
+      throw new Error("Bridge execution aborted.");
+    }
+    if (isStale?.()) {
+      throw new Error("Operation cancelled: stale operation or account changed.");
+    }
+
+    try {
+      let allowance: bigint | undefined;
+
+      // 1. Block-aware read: prefer querying allowance pinned to confirmed approveReceipt.blockNumber
+      // to avoid stale replica reads from unpinned / latest state.
+      if (approveReceipt?.blockNumber != null) {
+        try {
+          allowance = (await sourcePublicClient.readContract({
+            address: sourceUsdc,
+            abi: erc20Abi,
+            functionName: "allowance",
+            args: [ownerAddress, spenderAddress],
+            blockNumber: approveReceipt.blockNumber,
+          })) as bigint;
+        } catch {
+          allowance = undefined;
+        }
+      }
+
+      // 2. Fall back to unpinned / latest query if blockNumber query was unsupported or returned below requiredAmount
+      if (allowance === undefined || allowance < requiredAmount) {
+        try {
+          const latestAllowance = (await sourcePublicClient.readContract({
+            address: sourceUsdc,
+            abi: erc20Abi,
+            functionName: "allowance",
+            args: [ownerAddress, spenderAddress],
+          })) as bigint;
+
+          if (allowance === undefined || latestAllowance > allowance) {
+            allowance = latestAllowance;
+          }
+        } catch (latestErr) {
+          if (allowance === undefined) {
+            throw latestErr;
+          }
+        }
+      }
+
+      if (allowance !== undefined && allowance >= requiredAmount) {
+        return allowance;
+      }
+    } catch {
+      if (signal?.aborted) throw new Error("Bridge execution aborted.");
+      if (isStale?.()) throw new Error("Operation cancelled: stale operation or account changed.");
+    }
+
+    const elapsed = Date.now() - startTime;
+    if (elapsed >= timeoutMs) {
+      throw new Error("USDC allowance verification failed after approval.");
+    }
+
+    const remainingTime = timeoutMs - elapsed;
+    const waitTime = Math.min(pollingIntervalMs, Math.max(remainingTime, 0));
+    if (waitTime <= 0) {
+      throw new Error("USDC allowance verification failed after approval.");
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, waitTime);
+
+      const onAbort = () => {
+        cleanup();
+        reject(new Error("Bridge execution aborted."));
+      };
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+      };
+
+      signal?.addEventListener("abort", onAbort);
+    });
+  }
+}
+
 
 // -----------------------------------------------------------------------------
 // Core Pure Execution Pipeline

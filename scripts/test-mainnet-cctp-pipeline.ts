@@ -29,6 +29,7 @@ import {
   parseAndValidateUsdcAmount,
   pollCircleIrisAttestation,
   validateDecodedMessage,
+  verifyAllowance,
   verifyDestinationBalance,
 } from "../src/lib/cctp-mainnet-engine";
 import {
@@ -1541,7 +1542,7 @@ async function runTests() {
   // ---------------------------------------------------------------------------
   // 63. Category S: Mutation — Invalid Nonces Rejected
   // ---------------------------------------------------------------------------
-  await test("Test 63: Category S — Invalid source nonce (!= 0) or invalid Iris nonce (<= 0) is strictly rejected", () => {
+  await test("Test 63: Category S — Invalid nonces (zero Iris nonce or mismatched assigned nonces) are strictly rejected", () => {
     // Iris nonce is 0
     const srcMsg = buildV2Message({ nonce: BigInt(0), finalityThresholdExecuted: 0 });
     const irisMsgZeroNonce = buildV2Message({ nonce: BigInt(0), finalityThresholdExecuted: 2000 });
@@ -1549,12 +1550,12 @@ async function runTests() {
     assert.strictEqual(res1.valid, false);
     assert.match(res1.error || "", /Iris finalized message must have non-zero nonce/);
 
-    // Source nonce is non-zero (pre-finalized message must have nonce 0)
+    // Source nonce positive mismatch (e.g. 99 vs 100)
     const srcMsgNonzeroNonce = buildV2Message({ nonce: BigInt(99), finalityThresholdExecuted: 0 });
     const irisMsgValid = buildV2Message({ nonce: BigInt(100), finalityThresholdExecuted: 2000 });
     const res2 = correlateSourceAndIrisMessages({ sourceMessageHex: srcMsgNonzeroNonce, irisMessageHex: irisMsgValid });
     assert.strictEqual(res2.valid, false);
-    assert.match(res2.error || "", /Source message nonce must be 0/);
+    assert.match(res2.error || "", /Iris finalized nonce \(100\) must match source assigned nonce \(99\)/);
   });
 
   // ---------------------------------------------------------------------------
@@ -2250,6 +2251,299 @@ async function runTests() {
     });
     assert.strictEqual(retryAttempt, 2, "Second read successfully retrieved postMintBalance");
     assert.strictEqual(verifiedRetry, postMintBalance);
+  });
+
+  // ===========================================================================
+  // BASE -> ARC CCTP V2 & ALLOWANCE VERIFICATION REGRESSION SUITE (TESTS A - I)
+  // ===========================================================================
+
+  // ---------------------------------------------------------------------------
+  // 79. TEST A: Base -> Arc valid positive nonce correlation
+  // ---------------------------------------------------------------------------
+  await test("Test 79: TEST A — Base -> Arc valid positive nonce correlation succeeds", () => {
+    const syntheticNonce = BigInt(284729);
+    const srcMsg = buildV2Message({
+      sourceDomain: 6,
+      destinationDomain: 26,
+      nonce: syntheticNonce,
+      finalityThresholdExecuted: 0,
+    });
+    const irisMsg = buildV2Message({
+      sourceDomain: 6,
+      destinationDomain: 26,
+      nonce: syntheticNonce,
+      finalityThresholdExecuted: 2000,
+    });
+    const res = correlateSourceAndIrisMessages({
+      sourceMessageHex: srcMsg,
+      irisMessageHex: irisMsg,
+    });
+    assert.strictEqual(res.valid, true, "Base -> Arc with matching assigned nonces must correlate as valid");
+    assert.strictEqual(res.sourceDecoded?.nonce, syntheticNonce);
+    assert.strictEqual(res.irisDecoded?.nonce, syntheticNonce);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 80. TEST B: Arc -> Base existing behavior (source nonce 0) preserved
+  // ---------------------------------------------------------------------------
+  await test("Test 80: TEST B — Arc -> Base existing behavior with source nonce 0 is preserved", () => {
+    const srcMsg = buildV2Message({
+      sourceDomain: 26,
+      destinationDomain: 6,
+      nonce: BigInt(0),
+      finalityThresholdExecuted: 0,
+    });
+    const irisMsg = buildV2Message({
+      sourceDomain: 26,
+      destinationDomain: 6,
+      nonce: BigInt(54321),
+      finalityThresholdExecuted: 2000,
+    });
+    const res = correlateSourceAndIrisMessages({
+      sourceMessageHex: srcMsg,
+      irisMessageHex: irisMsg,
+    });
+    assert.strictEqual(res.valid, true, "Arc -> Base unassigned source nonce 0 with positive Iris nonce must remain valid");
+    assert.strictEqual(res.sourceDecoded?.nonce, BigInt(0));
+    assert.strictEqual(res.irisDecoded?.nonce, BigInt(54321));
+  });
+
+  // ---------------------------------------------------------------------------
+  // 81. TEST C: Positive nonce mismatch rejected
+  // ---------------------------------------------------------------------------
+  await test("Test 81: TEST C — Positive nonce mismatch is strictly rejected", () => {
+    const srcMsg = buildV2Message({
+      sourceDomain: 6,
+      destinationDomain: 26,
+      nonce: BigInt(100),
+      finalityThresholdExecuted: 0,
+    });
+    const irisMsg = buildV2Message({
+      sourceDomain: 6,
+      destinationDomain: 26,
+      nonce: BigInt(101),
+      finalityThresholdExecuted: 2000,
+    });
+    const res = correlateSourceAndIrisMessages({
+      sourceMessageHex: srcMsg,
+      irisMessageHex: irisMsg,
+    });
+    assert.strictEqual(res.valid, false);
+    assert.match(res.error || "", /Iris finalized nonce \(101\) must match source assigned nonce \(100\)/);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 82. TEST D: Iris nonce zero rejected
+  // ---------------------------------------------------------------------------
+  await test("Test 82: TEST D — Iris nonce zero is strictly rejected", () => {
+    const srcMsg = buildV2Message({
+      sourceDomain: 6,
+      destinationDomain: 26,
+      nonce: BigInt(100),
+      finalityThresholdExecuted: 0,
+    });
+    const irisMsgZero = buildV2Message({
+      sourceDomain: 6,
+      destinationDomain: 26,
+      nonce: BigInt(0),
+      finalityThresholdExecuted: 2000,
+    });
+    const res = correlateSourceAndIrisMessages({
+      sourceMessageHex: srcMsg,
+      irisMessageHex: irisMsgZero,
+    });
+    assert.strictEqual(res.valid, false);
+    assert.match(res.error || "", /Iris finalized message must have non-zero nonce/);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 83. TEST E: Base -> Arc candidate selection from multiple Iris candidates
+  // ---------------------------------------------------------------------------
+  await test("Test 83: TEST E — Base -> Arc candidate selection from multiple Iris candidates selects ONLY exact match", async () => {
+    const syntheticNonce = BigInt(284729);
+    const mySourceMsg = buildV2Message({
+      sourceDomain: 6,
+      destinationDomain: 26,
+      amount: BigInt(50000),
+      mintRecipient: WALLET_A,
+      nonce: syntheticNonce,
+      finalityThresholdExecuted: 0,
+    });
+
+    const candidateUnrelated = buildV2Message({
+      sourceDomain: 6,
+      destinationDomain: 26,
+      amount: BigInt(99999),
+      mintRecipient: WALLET_B,
+      nonce: BigInt(111111),
+      finalityThresholdExecuted: 2000,
+    });
+    const candidateWrongNonce = buildV2Message({
+      sourceDomain: 6,
+      destinationDomain: 26,
+      amount: BigInt(50000),
+      mintRecipient: WALLET_A,
+      nonce: BigInt(999999),
+      finalityThresholdExecuted: 2000,
+    });
+    const candidateWrongRecipient = buildV2Message({
+      sourceDomain: 6,
+      destinationDomain: 26,
+      amount: BigInt(50000),
+      mintRecipient: WALLET_C,
+      nonce: syntheticNonce,
+      finalityThresholdExecuted: 2000,
+    });
+    const candidateMatching = buildV2Message({
+      sourceDomain: 6,
+      destinationDomain: 26,
+      amount: BigInt(50000),
+      mintRecipient: WALLET_A,
+      nonce: syntheticNonce,
+      finalityThresholdExecuted: 2000,
+    });
+
+    const originalFetch = global.fetch;
+    try {
+      global.fetch = async () =>
+        ({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            messages: [
+              { status: "complete", attestation: "0xattest_unrelated", message: candidateUnrelated },
+              { status: "complete", attestation: "0xattest_wrong_nonce", message: candidateWrongNonce },
+              { status: "complete", attestation: "0xattest_wrong_recipient", message: candidateWrongRecipient },
+              { status: "complete", attestation: "0xattest_EXACT_MATCH", message: candidateMatching },
+            ],
+          }),
+        } as unknown as Response);
+
+      const result = await pollCircleIrisAttestation({
+        sourceDomain: 6,
+        transactionHash: "0x3333333333333333333333333333333333333333333333333333333333333333",
+        expectedMessageHex: mySourceMsg,
+        maxAttempts: 1,
+      });
+
+      assert.strictEqual(result.attestation, "0xattest_EXACT_MATCH", "Must select exact candidate 3 rather than candidates 0, 1, or 2");
+      assert.strictEqual(result.message, candidateMatching);
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // 84. TEST F: Allowance RPC lag recovery
+  // ---------------------------------------------------------------------------
+  await test("Test 84: TEST F — Allowance verification recovers from transient RPC replica lag", async () => {
+    let calls = 0;
+    const requiredAmount = BigInt(10000); // 0.01 USDC
+    const mockClient = {
+      readContract: async () => {
+        calls++;
+        if (calls < 3) return BigInt(0); // Lagging replica returns 0 on attempts 1 and 2
+        return requiredAmount;           // Updated replica returns full allowance on attempt 3
+      },
+    };
+
+    const res = await verifyAllowance({
+      sourcePublicClient: mockClient,
+      sourceUsdc: MAINNET_CHAINS["Base Mainnet"].nativeUsdc,
+      ownerAddress: WALLET_A,
+      spenderAddress: CCTP_V2_TOKEN_MESSENGER,
+      requiredAmount,
+      timeoutMs: 500,
+      pollingIntervalMs: 20,
+    });
+
+    assert.strictEqual(res, requiredAmount);
+    assert.strictEqual(calls, 3, "Verified after 3 polling attempts");
+  });
+
+  // ---------------------------------------------------------------------------
+  // 85. TEST G: Permanent insufficient allowance fails with expected error
+  // ---------------------------------------------------------------------------
+  await test("Test 85: TEST G — Permanent insufficient allowance (even 1-unit shortfall) strictly fails", async () => {
+    const requiredAmount = BigInt(10000);
+    const mockShortfallClient = {
+      readContract: async () => requiredAmount - BigInt(1), // 1 base unit short
+    };
+
+    await assert.rejects(
+      async () => {
+        await verifyAllowance({
+          sourcePublicClient: mockShortfallClient,
+          sourceUsdc: MAINNET_CHAINS["Base Mainnet"].nativeUsdc,
+          ownerAddress: WALLET_A,
+          spenderAddress: CCTP_V2_TOKEN_MESSENGER,
+          requiredAmount,
+          timeoutMs: 80,
+          pollingIntervalMs: 20,
+        });
+      },
+      (err: Error) => {
+        assert.strictEqual(
+          err.message,
+          "USDC allowance verification failed after approval."
+        );
+        return true;
+      }
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 86. TEST H: Multi-user account/session isolation during allowance retry
+  // ---------------------------------------------------------------------------
+  await test("Test 86: TEST H — Stale account/session immediately aborts allowance polling without validating new wallet", async () => {
+    let isStaleState = false;
+    const mockClient = {
+      readContract: async () => {
+        isStaleState = true; // Account switched mid-flight
+        return BigInt(0);
+      },
+    };
+
+    await assert.rejects(
+      async () => {
+        await verifyAllowance({
+          sourcePublicClient: mockClient,
+          sourceUsdc: MAINNET_CHAINS["Base Mainnet"].nativeUsdc,
+          ownerAddress: WALLET_A,
+          spenderAddress: CCTP_V2_TOKEN_MESSENGER,
+          requiredAmount: BigInt(10000),
+          timeoutMs: 500,
+          pollingIntervalMs: 20,
+          isStale: () => isStaleState,
+        });
+      },
+      (err: Error) => {
+        assert.match(err.message, /stale operation or account changed/);
+        return true;
+      }
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 87. TEST I: Arbitrary amount verification
+  // ---------------------------------------------------------------------------
+  await test("Test 87: TEST I — Allowance verification works for arbitrary amounts (not hardcoded to 0.01 USDC)", async () => {
+    const arbitraryAmount = BigInt(75_432_100); // 75.4321 USDC
+    const mockArbitraryClient = {
+      readContract: async () => arbitraryAmount,
+    };
+
+    const res = await verifyAllowance({
+      sourcePublicClient: mockArbitraryClient,
+      sourceUsdc: MAINNET_CHAINS["Base Mainnet"].nativeUsdc,
+      ownerAddress: WALLET_B,
+      spenderAddress: CCTP_V2_TOKEN_MESSENGER,
+      requiredAmount: arbitraryAmount,
+      timeoutMs: 100,
+      pollingIntervalMs: 20,
+    });
+
+    assert.strictEqual(res, arbitraryAmount);
   });
 
   console.log("\n==================================================");
