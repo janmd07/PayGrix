@@ -18,6 +18,7 @@ import {
 } from "@/config/cctp-mainnet";
 import {
   assertCorrelatedSourceAndIrisMessages,
+  calculateExpectedMintIncrement,
   CCTP_V2_DEFAULT_MAX_FEE,
   CCTP_V2_EMPTY_BYTES32,
   CCTP_V2_STANDARD_FINALITY_THRESHOLD,
@@ -30,6 +31,7 @@ import {
   messageTransmitterV2Abi,
   validateDecodedMessage,
   verifyCctpDeploymentBytecode,
+  verifyDestinationBalance,
 } from "@/lib/cctp-mainnet-engine";
 
 export interface MainnetBridgeTransferRecord {
@@ -550,9 +552,11 @@ export function useMainnetBridge() {
       bridgeInFlightRef.current = true;
       setError(null);
 
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
       try {
         const route = resolveMainnetCctpRoute(sourceChain, destinationChain);
-        const parsedAmount = parseUnits(amount, 6);
         const destPublic = getPublicClientForChain(destinationChain);
 
         // 1. Snapshot destination balance before mint
@@ -584,6 +588,9 @@ export function useMainnetBridge() {
 
         setStatus("minting");
 
+        const targetMessageHex = messageHex as `0x${string}`;
+        const targetAttestationHex = attestationHex as `0x${string}`;
+
         // 3. Submit receiveMessage
         const rawMintTx = (await provider.request({
           method: "eth_sendTransaction",
@@ -595,8 +602,8 @@ export function useMainnetBridge() {
                 abi: messageTransmitterV2Abi,
                 functionName: "receiveMessage",
                 args: [
-                  messageHex as `0x${string}`,
-                  attestationHex as `0x${string}`,
+                  targetMessageHex,
+                  targetAttestationHex,
                 ],
               }),
             },
@@ -616,25 +623,21 @@ export function useMainnetBridge() {
           throw new Error("receiveMessage transaction reverted on destination chain.");
         }
 
-        // 4. Verify destination balance increment (accounting for CCTP V2 feeExecuted)
+        // 4. Verify destination balance increment (accounting for CCTP V2 feeExecuted from authoritative finalized message)
         setStatus("verifying");
 
-        const destBalanceAfter = (await destPublic.readContract({
-          address: route.destinationUsdc,
-          abi: erc20Abi,
-          functionName: "balanceOf",
-          args: [recipientAddress],
-        })) as bigint;
+        const expectedMintIncrement = calculateExpectedMintIncrement(targetMessageHex);
 
-        const decoded = decodeCctpMessage(messageHex as `0x${string}`);
-        const executedFee = decoded.feeExecuted ?? BigInt(0);
-        const expectedMintIncrement = parsedAmount > executedFee ? parsedAmount - executedFee : BigInt(0);
-
-        if (destBalanceAfter < destBalanceBefore + expectedMintIncrement) {
-          throw new Error(
-            `Destination balance verification failed. Expected at least ${destBalanceBefore + expectedMintIncrement}, got ${destBalanceAfter}.`
-          );
-        }
+        await verifyDestinationBalance({
+          destinationPublicClient: destPublic,
+          destinationUsdc: route.destinationUsdc,
+          recipientAddress,
+          destBalanceBefore,
+          expectedMintIncrement,
+          mintReceipt,
+          signal: abortController.signal,
+          isStale,
+        });
 
         if (isStale()) return false;
 
@@ -664,6 +667,7 @@ export function useMainnetBridge() {
       } finally {
         if (!isStale()) {
           bridgeInFlightRef.current = false;
+          abortControllerRef.current = null;
         }
       }
     },

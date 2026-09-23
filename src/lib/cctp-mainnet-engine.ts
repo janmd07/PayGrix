@@ -845,6 +845,174 @@ export async function verifyCctpDeploymentBytecode(params: {
 }
 
 // -----------------------------------------------------------------------------
+// Destination Balance Verification & Amount Helpers
+// -----------------------------------------------------------------------------
+export const DEFAULT_DEST_VERIFICATION_TIMEOUT_MS = 40_000;
+export const DEFAULT_DEST_VERIFICATION_INTERVAL_MS = 2_000;
+
+/**
+ * Authoritatively calculates the expected destination USDC mint increment
+ * strictly from the finalized Iris CCTP V2 message.
+ *
+ * expectedMintIncrement = decoded.amount > executedFee ? decoded.amount - executedFee : 0n
+ */
+export function calculateExpectedMintIncrement(
+  message: `0x${string}` | DecodedCctpMessage
+): bigint {
+  const decoded = typeof message === "string" ? decodeCctpMessage(message) : message;
+  const executedFee = decoded.feeExecuted ?? BigInt(0);
+  return decoded.amount > executedFee ? decoded.amount - executedFee : BigInt(0);
+}
+
+export interface VerifyDestinationBalanceParams {
+  destinationPublicClient: {
+    readContract: (args: {
+      address: `0x${string}`;
+      abi: readonly unknown[];
+      functionName: string;
+      args: readonly unknown[];
+      blockNumber?: bigint;
+    }) => Promise<unknown>;
+  };
+  destinationUsdc: `0x${string}`;
+  recipientAddress: `0x${string}`;
+  destBalanceBefore: bigint;
+  expectedMintIncrement: bigint;
+  mintReceipt?: {
+    blockNumber?: bigint | null;
+    status?: string;
+  };
+  timeoutMs?: number;
+  pollingIntervalMs?: number;
+  signal?: AbortSignal;
+  isStale?: () => boolean;
+}
+
+/**
+ * Resilient, block-aware destination balance verification with bounded polling.
+ * Replaces vulnerable single-shot unpinned reads with retry protection against
+ * lagging RPC replicas while strictly maintaining currentBalance >= destBalanceBefore + expectedMintIncrement.
+ */
+export async function verifyDestinationBalance(
+  params: VerifyDestinationBalanceParams
+): Promise<bigint> {
+  const {
+    destinationPublicClient,
+    destinationUsdc,
+    recipientAddress,
+    destBalanceBefore,
+    expectedMintIncrement,
+    mintReceipt,
+    timeoutMs = DEFAULT_DEST_VERIFICATION_TIMEOUT_MS,
+    pollingIntervalMs = DEFAULT_DEST_VERIFICATION_INTERVAL_MS,
+    signal,
+    isStale,
+  } = params;
+
+  const expectedBalance = destBalanceBefore + expectedMintIncrement;
+  const startTime = Date.now();
+  let lastObservedBalance: bigint | null = null;
+
+  while (true) {
+    if (signal?.aborted) {
+      throw new Error("Bridge execution aborted.");
+    }
+    if (isStale?.()) {
+      throw new Error("Operation cancelled: stale operation or account changed.");
+    }
+
+    try {
+      let balance: bigint | undefined;
+
+      // 1. Block-aware read: prefer querying balance pinned to confirmed mintReceipt.blockNumber
+      // to avoid stale replica reads from unpinned / latest state.
+      if (mintReceipt?.blockNumber != null) {
+        try {
+          balance = (await destinationPublicClient.readContract({
+            address: destinationUsdc,
+            abi: erc20Abi,
+            functionName: "balanceOf",
+            args: [recipientAddress],
+            blockNumber: mintReceipt.blockNumber,
+          })) as bigint;
+        } catch {
+          // If blockNumber query is unsupported by RPC or fails, fall back to undefined
+          balance = undefined;
+        }
+      }
+
+      // 2. If blockNumber read wasn't used or failed, or returned below threshold on later retries, query latest
+      if (balance === undefined || balance < expectedBalance) {
+        try {
+          const latestBalance = (await destinationPublicClient.readContract({
+            address: destinationUsdc,
+            abi: erc20Abi,
+            functionName: "balanceOf",
+            args: [recipientAddress],
+          })) as bigint;
+
+          if (balance === undefined || latestBalance > balance) {
+            balance = latestBalance;
+          }
+        } catch (latestErr) {
+          if (balance === undefined) {
+            throw latestErr;
+          }
+        }
+      }
+
+      lastObservedBalance = balance;
+
+      if (balance >= expectedBalance) {
+        return balance;
+      }
+      // Balance is below expected — treat as not verified yet (replica lag), retry within timeout window
+    } catch {
+      if (signal?.aborted) throw new Error("Bridge execution aborted.");
+      if (isStale?.()) throw new Error("Operation cancelled: stale operation or account changed.");
+
+      // Transient RPC read error — do not fail immediately, retry within timeout
+    }
+
+    const elapsed = Date.now() - startTime;
+    if (elapsed >= timeoutMs) {
+      const gotStr = lastObservedBalance !== null ? lastObservedBalance.toString() : "unknown";
+      throw new Error(
+        `Destination balance verification failed. Expected at least ${expectedBalance}, got ${gotStr}.`
+      );
+    }
+
+    const remainingTime = timeoutMs - elapsed;
+    const waitTime = Math.min(pollingIntervalMs, Math.max(remainingTime, 0));
+    if (waitTime <= 0) {
+      const gotStr = lastObservedBalance !== null ? lastObservedBalance.toString() : "unknown";
+      throw new Error(
+        `Destination balance verification failed. Expected at least ${expectedBalance}, got ${gotStr}.`
+      );
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve();
+      }, waitTime);
+
+      const onAbort = () => {
+        cleanup();
+        reject(new Error("Bridge execution aborted."));
+      };
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+      };
+
+      signal?.addEventListener("abort", onAbort);
+    });
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Core Pure Execution Pipeline
 // -----------------------------------------------------------------------------
 export type MainnetBridgeStage =
@@ -901,12 +1069,14 @@ export interface MainnetBridgeEngineParams {
       abi: readonly unknown[];
       functionName: string;
       args: readonly unknown[];
+      blockNumber?: bigint;
     }) => Promise<unknown>;
     waitForTransactionReceipt: (args: {
       hash: `0x${string}`;
       timeout?: number;
     }) => Promise<{
       status: "success" | "reverted" | string;
+      blockNumber?: bigint;
     }>;
     getBytecode: (args: { address: `0x${string}` }) => Promise<`0x${string}` | undefined>;
   };
@@ -915,6 +1085,8 @@ export interface MainnetBridgeEngineParams {
   onTxSent?: (type: "approve" | "burn" | "mint", hash: `0x${string}`) => void;
   signal?: AbortSignal;
   irisApiBaseUrl?: string;
+  destinationVerificationTimeoutMs?: number;
+  destinationVerificationIntervalMs?: number;
 }
 
 export interface MainnetBridgeExecutionResult {
@@ -1166,24 +1338,22 @@ export async function executeMainnetCctpBridge(
 
     if (signal?.aborted) throw new Error("Bridge execution aborted.");
 
-    // 12. Destination balance verification (incorporating CCTP V2 feeExecuted if applicable)
+    // 12. Destination balance verification (incorporating CCTP V2 feeExecuted from authoritative finalized message)
     setStage("verifying");
 
-    const destBalanceAfter = (await destinationPublicClient.readContract({
-      address: route.destinationUsdc,
-      abi: erc20Abi,
-      functionName: "balanceOf",
-      args: [recipientAddress],
-    })) as bigint;
+    const expectedMintIncrement = calculateExpectedMintIncrement(messageHex);
 
-    const executedFee = decodedMessage.feeExecuted ?? BigInt(0);
-    const expectedMintIncrement = parsedAmount > executedFee ? parsedAmount - executedFee : BigInt(0);
-
-    if (destBalanceAfter < destBalanceBefore + expectedMintIncrement) {
-      throw new Error(
-        `Destination balance verification failed. Expected at least ${destBalanceBefore + expectedMintIncrement}, got ${destBalanceAfter}.`
-      );
-    }
+    const destBalanceAfter = await verifyDestinationBalance({
+      destinationPublicClient,
+      destinationUsdc: route.destinationUsdc,
+      recipientAddress,
+      destBalanceBefore,
+      expectedMintIncrement,
+      mintReceipt,
+      timeoutMs: params.destinationVerificationTimeoutMs,
+      pollingIntervalMs: params.destinationVerificationIntervalMs,
+      signal,
+    });
 
     // 13. Bridge completed successfully
     setStage("complete");

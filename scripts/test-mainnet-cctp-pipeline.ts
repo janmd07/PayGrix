@@ -16,6 +16,7 @@ import {
   RECEIVE_MESSAGE_SELECTOR,
   assertCorrelatedSourceAndIrisMessages,
   bytes32ToAddress,
+  calculateExpectedMintIncrement,
   correlateSourceAndIrisMessages,
   decodeCctpMessage,
   decodeDepositForBurnCalldata,
@@ -28,6 +29,7 @@ import {
   parseAndValidateUsdcAmount,
   pollCircleIrisAttestation,
   validateDecodedMessage,
+  verifyDestinationBalance,
 } from "../src/lib/cctp-mainnet-engine";
 import {
   createPublicClient,
@@ -1784,6 +1786,470 @@ async function runTests() {
     } finally {
       global.fetch = originalFetch;
     }
+  });
+
+  // ===========================================================================
+  // DESTINATION BALANCE VERIFICATION RESILIENCE SUITE (TESTS 69 - 78)
+  // ===========================================================================
+
+  // ---------------------------------------------------------------------------
+  // 69. Immediate stale balance
+  // ---------------------------------------------------------------------------
+  await test("Test 69: Immediate stale balance — first post-mint read below expected, second reaches expected, verification succeeds without false failure", async () => {
+    const destUsdc = MAINNET_CHAINS["Base Mainnet"].nativeUsdc as `0x${string}`;
+    const recipient = WALLET_A;
+    const destBalanceBefore = BigInt(107943261);
+    const expectedMintIncrement = BigInt(10000);
+    const expectedBalance = destBalanceBefore + expectedMintIncrement; // 107953261
+    const staleBalance = BigInt(107948261); // 5000 units behind
+
+    let callCount = 0;
+    const mockClient = {
+      readContract: async () => {
+        callCount++;
+        if (callCount === 1) return staleBalance;
+        return expectedBalance;
+      },
+    };
+
+    const verifiedBalance = await verifyDestinationBalance({
+      destinationPublicClient: mockClient,
+      destinationUsdc: destUsdc,
+      recipientAddress: recipient,
+      destBalanceBefore,
+      expectedMintIncrement,
+      mintReceipt: { blockNumber: BigInt(51650428) },
+      timeoutMs: 500,
+      pollingIntervalMs: 20,
+    });
+
+    assert.strictEqual(callCount, 2, "Must retry exactly once after stale initial read");
+    assert.strictEqual(verifiedBalance, expectedBalance, "Must return verified destination balance");
+    assert.strictEqual(verifiedBalance >= expectedBalance, true);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 70. Multiple stale reads
+  // ---------------------------------------------------------------------------
+  await test("Test 70: Multiple stale reads — several reads return below expected, later read reaches expected within timeout", async () => {
+    const destUsdc = MAINNET_CHAINS["Base Mainnet"].nativeUsdc as `0x${string}`;
+    const recipient = WALLET_B;
+    const destBalanceBefore = BigInt(50000000);
+    const expectedMintIncrement = BigInt(25000);
+    const expectedBalance = destBalanceBefore + expectedMintIncrement; // 50025000
+
+    let callCount = 0;
+    const mockClient = {
+      readContract: async () => {
+        callCount++;
+        if (callCount === 1) return destBalanceBefore;
+        if (callCount === 2) return destBalanceBefore + BigInt(10000);
+        if (callCount === 3) return destBalanceBefore + BigInt(20000);
+        return expectedBalance;
+      },
+    };
+
+    const verifiedBalance = await verifyDestinationBalance({
+      destinationPublicClient: mockClient,
+      destinationUsdc: destUsdc,
+      recipientAddress: recipient,
+      destBalanceBefore,
+      expectedMintIncrement,
+      timeoutMs: 1000,
+      pollingIntervalMs: 25,
+    });
+
+    assert.strictEqual(callCount, 4, "Must retry until fourth read reaches expected balance");
+    assert.strictEqual(verifiedBalance, expectedBalance);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 71. Permanent insufficient balance
+  // ---------------------------------------------------------------------------
+  await test("Test 71: Permanent insufficient balance — all reads remain below expected, times out deterministically, bridge is NOT reported successful", async () => {
+    const destUsdc = MAINNET_CHAINS["Base Mainnet"].nativeUsdc as `0x${string}`;
+    const recipient = WALLET_A;
+    const destBalanceBefore = BigInt(50000000);
+    const expectedMintIncrement = BigInt(25000);
+    const permanentlyInsufficient = destBalanceBefore + BigInt(10000); // 50010000
+
+    let callCount = 0;
+    const mockClient = {
+      readContract: async () => {
+        callCount++;
+        return permanentlyInsufficient;
+      },
+    };
+
+    await assert.rejects(
+      async () => {
+        await verifyDestinationBalance({
+          destinationPublicClient: mockClient,
+          destinationUsdc: destUsdc,
+          recipientAddress: recipient,
+          destBalanceBefore,
+          expectedMintIncrement,
+          timeoutMs: 100,
+          pollingIntervalMs: 20,
+        });
+      },
+      (err: Error) => {
+        assert.match(
+          err.message,
+          /Destination balance verification failed\. Expected at least 50025000, got 50010000\./
+        );
+        return true;
+      }
+    );
+
+    assert.strictEqual(callCount > 1, true, "Must have retried before timing out");
+  });
+
+  // ---------------------------------------------------------------------------
+  // 72. Authoritative message amount
+  // ---------------------------------------------------------------------------
+  await test("Test 72: Authoritative message amount — UI/form input differs, finalized CCTP message amount is authoritative", async () => {
+    // UI input amount is 0.05 USDC (50,000 units), but Iris finalized message specifies 0.01 USDC (10,000 units)
+    const finalizedIrisMsg = buildV2Message({
+      sourceDomain: 26,
+      destinationDomain: 6,
+      amount: BigInt(10000), // 0.01 USDC
+      feeExecuted: BigInt(0),
+      mintRecipient: WALLET_A,
+    });
+
+    const expectedIncrement = calculateExpectedMintIncrement(finalizedIrisMsg);
+    assert.strictEqual(expectedIncrement, BigInt(10000), "Authoritative increment must be 10000, NOT 50000 from UI state");
+
+    const destBalanceBefore = BigInt(20000000);
+    const mockClient = {
+      readContract: async () => destBalanceBefore + BigInt(10000),
+    };
+
+    const verified = await verifyDestinationBalance({
+      destinationPublicClient: mockClient,
+      destinationUsdc: MAINNET_CHAINS["Base Mainnet"].nativeUsdc as `0x${string}`,
+      recipientAddress: WALLET_A,
+      destBalanceBefore,
+      expectedMintIncrement: expectedIncrement,
+      timeoutMs: 200,
+      pollingIntervalMs: 20,
+    });
+
+    assert.strictEqual(verified, destBalanceBefore + BigInt(10000));
+  });
+
+  // ---------------------------------------------------------------------------
+  // 73. Fee-aware verification
+  // ---------------------------------------------------------------------------
+  await test("Test 73: Fee-aware verification — non-zero feeExecuted reduces expected increment, exact fee-aware math enforced", async () => {
+    // 0.1 USDC burn, 0.015 USDC fee executed -> 0.085 USDC expected mint increment
+    const msgWithFee = buildV2Message({
+      sourceDomain: 26,
+      destinationDomain: 6,
+      amount: BigInt(100000),
+      feeExecuted: BigInt(15000),
+      mintRecipient: WALLET_B,
+    });
+
+    const increment = calculateExpectedMintIncrement(msgWithFee);
+    assert.strictEqual(increment, BigInt(85000), "expectedMintIncrement must be 100000 - 15000 = 85000");
+
+    const destBalanceBefore = BigInt(1000000);
+    // Insufficient by 1 unit
+    const mockClientShort = {
+      readContract: async () => destBalanceBefore + BigInt(84999),
+    };
+
+    await assert.rejects(
+      async () => {
+        await verifyDestinationBalance({
+          destinationPublicClient: mockClientShort,
+          destinationUsdc: MAINNET_CHAINS["Base Mainnet"].nativeUsdc as `0x${string}`,
+          recipientAddress: WALLET_B,
+          destBalanceBefore,
+          expectedMintIncrement: increment,
+          timeoutMs: 100,
+          pollingIntervalMs: 20,
+        });
+      },
+      /Destination balance verification failed/
+    );
+
+    // Exact fee-aware balance succeeds
+    const mockClientSufficient = {
+      readContract: async () => destBalanceBefore + BigInt(85000),
+    };
+    const verified = await verifyDestinationBalance({
+      destinationPublicClient: mockClientSufficient,
+      destinationUsdc: MAINNET_CHAINS["Base Mainnet"].nativeUsdc as `0x${string}`,
+      recipientAddress: WALLET_B,
+      destBalanceBefore,
+      expectedMintIncrement: increment,
+      timeoutMs: 200,
+      pollingIntervalMs: 20,
+    });
+    assert.strictEqual(verified, destBalanceBefore + BigInt(85000));
+
+    // Zero fee case
+    const zeroFeeMsg = buildV2Message({ amount: BigInt(50000), feeExecuted: BigInt(0) });
+    assert.strictEqual(calculateExpectedMintIncrement(zeroFeeMsg), BigInt(50000));
+
+    // Fee exceeds amount case
+    const highFeeMsg = buildV2Message({ amount: BigInt(50000), feeExecuted: BigInt(60000) });
+    assert.strictEqual(calculateExpectedMintIncrement(highFeeMsg), BigInt(0));
+  });
+
+  // ---------------------------------------------------------------------------
+  // 74. Multi-user recipients
+  // ---------------------------------------------------------------------------
+  await test("Test 74: Multi-user recipients — operations A->A, A->B, B->C, C->A maintain independent, unshared balance state", async () => {
+    const operations: Array<{
+      sender: `0x${string}`;
+      recipient: `0x${string}`;
+      amount: bigint;
+      beforeBalance: bigint;
+    }> = [
+      { sender: WALLET_A, recipient: WALLET_A, amount: BigInt(10000), beforeBalance: BigInt(100000) },
+      { sender: WALLET_A, recipient: WALLET_B, amount: BigInt(20000), beforeBalance: BigInt(200000) },
+      { sender: WALLET_B, recipient: WALLET_C, amount: BigInt(30000), beforeBalance: BigInt(300000) },
+      { sender: WALLET_C, recipient: WALLET_A, amount: BigInt(40000), beforeBalance: BigInt(110000) },
+    ];
+
+    // State ledger strictly per recipient
+    const recipientBalances: Record<string, bigint> = {
+      [WALLET_A.toLowerCase()]: BigInt(100000),
+      [WALLET_B.toLowerCase()]: BigInt(200000),
+      [WALLET_C.toLowerCase()]: BigInt(300000),
+    };
+
+    for (const op of operations) {
+      const msg = buildV2Message({
+        messageSender: op.sender,
+        mintRecipient: op.recipient,
+        amount: op.amount,
+        feeExecuted: BigInt(0),
+      });
+
+      const increment = calculateExpectedMintIncrement(msg);
+      assert.strictEqual(increment, op.amount);
+
+      const before = recipientBalances[op.recipient.toLowerCase()];
+      assert.strictEqual(before, op.beforeBalance, "Baseline must match recipient's isolated state");
+
+      // Credit balance
+      recipientBalances[op.recipient.toLowerCase()] += increment;
+
+      const mockClient = {
+        readContract: async ({ args }: { args: readonly unknown[] }) => {
+          const targetAddr = (args[0] as string).toLowerCase();
+          return recipientBalances[targetAddr];
+        },
+      };
+
+      const verified = await verifyDestinationBalance({
+        destinationPublicClient: mockClient,
+        destinationUsdc: MAINNET_CHAINS["Base Mainnet"].nativeUsdc as `0x${string}`,
+        recipientAddress: op.recipient,
+        destBalanceBefore: before,
+        expectedMintIncrement: increment,
+        timeoutMs: 200,
+        pollingIntervalMs: 20,
+      });
+
+      assert.strictEqual(verified, before + increment);
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // 75. RPC read failure/retry
+  // ---------------------------------------------------------------------------
+  await test("Test 75: RPC read failure/retry — transient readContract network error recovers on subsequent poll", async () => {
+    const destUsdc = MAINNET_CHAINS["Base Mainnet"].nativeUsdc as `0x${string}`;
+    const recipient = WALLET_A;
+    const destBalanceBefore = BigInt(1000000);
+    const expectedMintIncrement = BigInt(10000);
+    const expectedBalance = destBalanceBefore + expectedMintIncrement;
+
+    let callCount = 0;
+    const mockClient = {
+      readContract: async () => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error("RPC request timed out (connection reset by peer)");
+        }
+        return expectedBalance;
+      },
+    };
+
+    const verified = await verifyDestinationBalance({
+      destinationPublicClient: mockClient,
+      destinationUsdc: destUsdc,
+      recipientAddress: recipient,
+      destBalanceBefore,
+      expectedMintIncrement,
+      timeoutMs: 500,
+      pollingIntervalMs: 20,
+    });
+
+    assert.strictEqual(callCount >= 2, true, "Must have retried after transient RPC error");
+    assert.strictEqual(verified, expectedBalance);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 76. Account switch / stale operation
+  // ---------------------------------------------------------------------------
+  await test("Test 76: Account switch / stale operation — account change cancels verification and prevents state pollution", async () => {
+    let isStaleState = false;
+    const destUsdc = MAINNET_CHAINS["Base Mainnet"].nativeUsdc as `0x${string}`;
+    const recipient = WALLET_A;
+    const destBalanceBefore = BigInt(1000000);
+    const expectedMintIncrement = BigInt(10000);
+
+    let callCount = 0;
+    const mockClient = {
+      readContract: async () => {
+        callCount++;
+        // Switch account immediately after first stale read
+        isStaleState = true;
+        return destBalanceBefore;
+      },
+    };
+
+    await assert.rejects(
+      async () => {
+        await verifyDestinationBalance({
+          destinationPublicClient: mockClient,
+          destinationUsdc: destUsdc,
+          recipientAddress: recipient,
+          destBalanceBefore,
+          expectedMintIncrement,
+          timeoutMs: 500,
+          pollingIntervalMs: 20,
+          isStale: () => isStaleState,
+        });
+      },
+      (err: Error) => {
+        assert.match(err.message, /stale operation or account changed/);
+        return true;
+      }
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 77. No arbitrary tolerance
+  // ---------------------------------------------------------------------------
+  await test("Test 77: No arbitrary tolerance — balance below expected by exactly 1 unit must NOT succeed", async () => {
+    const destUsdc = MAINNET_CHAINS["Base Mainnet"].nativeUsdc as `0x${string}`;
+    const recipient = WALLET_A;
+    const destBalanceBefore = BigInt(100000000);
+    const expectedMintIncrement = BigInt(10000);
+    const expectedBalance = destBalanceBefore + expectedMintIncrement; // 100010000
+    const oneUnitShort = expectedBalance - BigInt(1); // 100009999
+
+    let calls = 0;
+    const mockClient = {
+      readContract: async () => {
+        calls++;
+        return oneUnitShort;
+      },
+    };
+
+    await assert.rejects(
+      async () => {
+        await verifyDestinationBalance({
+          destinationPublicClient: mockClient,
+          destinationUsdc: destUsdc,
+          recipientAddress: recipient,
+          destBalanceBefore,
+          expectedMintIncrement,
+          timeoutMs: 100,
+          pollingIntervalMs: 20,
+        });
+      },
+      (err: Error) => {
+        assert.match(
+          err.message,
+          /Destination balance verification failed\. Expected at least 100010000, got 100009999\./
+        );
+        return true;
+      }
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 78. Real production regression
+  // ---------------------------------------------------------------------------
+  await test("Test 78: Real production regression — static fixture replicates production incident and proves resolution without false negative", async () => {
+    // Production parameters from incident:
+    // Arc tx: 0xec3169fb9a474fd0b713f6f8bd39a22e1a8136c72d3d2aa946da5e023ffcb5489
+    // Base tx: 0x5be7f51c6c342c23319cccb6364025444913f2fe5cafebe4a49d3bc5dfb300a1
+    const prodRecipient = "0x89abcdef0123456789abcdef0123456789abcdef" as `0x${string}`;
+    const prodBaseUsdc = MAINNET_CHAINS["Base Mainnet"].nativeUsdc as `0x${string}`;
+    const preMintBalance = BigInt(107943261); // at block 51650427
+    const postMintBalance = BigInt(107953261); // at block 51650428
+    const staleUnpinnedRead = BigInt(107948261); // the false-negative observation
+    const mintBlock = BigInt(51650428);
+
+    const prodFinalizedMsg = buildV2Message({
+      sourceDomain: 26,
+      destinationDomain: 6,
+      mintRecipient: prodRecipient,
+      amount: BigInt(10000), // 0.01 USDC
+      feeExecuted: BigInt(0), // feeExecuted was 0
+    });
+
+    // 1. Authoritative increment calculation
+    const expectedIncrement = calculateExpectedMintIncrement(prodFinalizedMsg);
+    assert.strictEqual(expectedIncrement, BigInt(10000));
+    assert.strictEqual(preMintBalance + expectedIncrement, postMintBalance);
+
+    // 2. Proving why old single-shot unpinned read threw false failure:
+    const oldSingleReadFailed = staleUnpinnedRead < preMintBalance + expectedIncrement;
+    assert.strictEqual(oldSingleReadFailed, true, "Old unpinned read was indeed 5000 below expected");
+
+    // 3. New verification with block-aware read succeeds immediately on block-pinned query:
+    const mockBlockAwareClient = {
+      readContract: async (args: { blockNumber?: bigint }) => {
+        if (args.blockNumber === mintBlock) return postMintBalance;
+        return staleUnpinnedRead;
+      },
+    };
+
+    const verifiedBlockAware = await verifyDestinationBalance({
+      destinationPublicClient: mockBlockAwareClient,
+      destinationUsdc: prodBaseUsdc,
+      recipientAddress: prodRecipient,
+      destBalanceBefore: preMintBalance,
+      expectedMintIncrement: expectedIncrement,
+      mintReceipt: { blockNumber: mintBlock },
+      timeoutMs: 500,
+      pollingIntervalMs: 20,
+    });
+    assert.strictEqual(verifiedBlockAware, postMintBalance, "Block-aware query returns authoritative post-mint balance");
+
+    // 4. Even if first read returns staleUnpinnedRead (e.g. replica sync lag), bounded retry recovers:
+    let retryAttempt = 0;
+    const mockLaggingClient = {
+      readContract: async () => {
+        retryAttempt++;
+        if (retryAttempt === 1) return staleUnpinnedRead;
+        return postMintBalance;
+      },
+    };
+
+    const verifiedRetry = await verifyDestinationBalance({
+      destinationPublicClient: mockLaggingClient,
+      destinationUsdc: prodBaseUsdc,
+      recipientAddress: prodRecipient,
+      destBalanceBefore: preMintBalance,
+      expectedMintIncrement: expectedIncrement,
+      mintReceipt: { blockNumber: mintBlock },
+      timeoutMs: 500,
+      pollingIntervalMs: 20,
+    });
+    assert.strictEqual(retryAttempt, 2, "Second read successfully retrieved postMintBalance");
+    assert.strictEqual(verifiedRetry, postMintBalance);
   });
 
   console.log("\n==================================================");
