@@ -171,3 +171,21 @@ export function getMainnetExplorerTxUrl(chain: MainnetChainKey, txHash: string):
   if (!config) return `https://explorer.arc.io/tx/${txHash}`;
   return `${config.explorerUrl}/tx/${txHash}`;
 }
+
+export function getChainByDomain(domain: number): MainnetChainKey | undefined {
+  for (const [chainKey, cfg] of Object.entries(MAINNET_CHAINS)) {
+    if (cfg.domain === domain) {
+      return chainKey as MainnetChainKey;
+    }
+  }
+  return undefined;
+}
+
+export const SUPPORTED_RECOVERY_DOMAINS = [6, 26] as const;
+
+export function isSupportedRecoveryRoute(sourceDomain: number, destinationDomain: number): boolean {
+  return (
+    (sourceDomain === 6 && destinationDomain === 26) ||
+    (sourceDomain === 26 && destinationDomain === 6)
+  );
+}

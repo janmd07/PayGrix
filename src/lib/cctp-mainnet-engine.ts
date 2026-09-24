@@ -1,19 +1,27 @@
 import {
+  createPublicClient,
   decodeAbiParameters,
   decodeFunctionData,
   encodeFunctionData,
   erc20Abi,
+  formatUnits,
   getAddress,
+  http,
   isAddress,
   pad,
   parseUnits,
   toEventSelector,
   toFunctionSelector,
+  toHex,
 } from "viem";
 import {
   CCTP_V2_MESSAGE_TRANSMITTER,
   CCTP_V2_TOKEN_MESSENGER,
   CIRCLE_IRIS_PRODUCTION_API,
+  getChainByDomain,
+  isSupportedRecoveryRoute,
+  MainnetChainKey,
+  MAINNET_CHAINS,
   resolveMainnetCctpRoute,
 } from "@/config/cctp-mainnet";
 
@@ -48,6 +56,13 @@ export const messageTransmitterV2Abi = [
       { name: "attestation", type: "bytes" },
     ],
     outputs: [{ name: "success", type: "bool" }],
+  },
+  {
+    name: "usedNonces",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "nonce", type: "bytes32" }],
+    outputs: [{ name: "", type: "uint256" }],
   },
   {
     name: "MessageSent",
@@ -181,6 +196,7 @@ export interface DecodedCctpMessage {
   sourceDomain: number;
   destinationDomain: number;
   nonce: bigint;
+  nonceBytes32?: `0x${string}`;
   sender: `0x${string}`;
   recipient: `0x${string}`;
   destinationCaller: `0x${string}`;
@@ -275,6 +291,7 @@ export function decodeCctpMessage(messageHex: `0x${string}`): DecodedCctpMessage
     const sourceDomain = parseInt(getSub(4, 8), 16);
     const destinationDomain = parseInt(getSub(8, 12), 16);
     const nonce = BigInt(`0x${getSub(12, 44)}`);
+    const nonceBytes32 = `0x${getSub(12, 44)}` as `0x${string}`;
     const sender = `0x${getSub(44, 76)}` as `0x${string}`;
     const recipient = `0x${getSub(76, 108)}` as `0x${string}`;
     const destinationCaller = `0x${getSub(108, 140)}` as `0x${string}`;
@@ -300,6 +317,7 @@ export function decodeCctpMessage(messageHex: `0x${string}`): DecodedCctpMessage
       sourceDomain,
       destinationDomain,
       nonce,
+      nonceBytes32,
       sender,
       recipient,
       destinationCaller,
@@ -330,6 +348,7 @@ export function decodeCctpMessage(messageHex: `0x${string}`): DecodedCctpMessage
     const sourceDomain = parseInt(getSub(4, 8), 16);
     const destinationDomain = parseInt(getSub(8, 12), 16);
     const nonce = BigInt(`0x${getSub(12, 20)}`);
+    const nonceBytes32 = pad(`0x${getSub(12, 20)}` as `0x${string}`, { size: 32 });
     const sender = `0x${getSub(20, 52)}` as `0x${string}`;
     const recipient = `0x${getSub(52, 84)}` as `0x${string}`;
     const destinationCaller = `0x${getSub(84, 116)}` as `0x${string}`;
@@ -346,6 +365,7 @@ export function decodeCctpMessage(messageHex: `0x${string}`): DecodedCctpMessage
       sourceDomain,
       destinationDomain,
       nonce,
+      nonceBytes32,
       sender,
       recipient,
       destinationCaller,
@@ -715,7 +735,7 @@ export async function pollCircleIrisAttestation(params: {
     transactionHash,
     expectedMessageHex,
     apiBaseUrl = CIRCLE_IRIS_PRODUCTION_API,
-    maxAttempts = 60, // 60 attempts * 5s = 5 minutes timeout
+    maxAttempts = 300, // 300 attempts * 5s = 25 minutes timeout (Base->Arc standard finality)
     intervalMs = 5000,
     signal,
     onAttempt,
@@ -1172,11 +1192,21 @@ export type MainnetBridgeStage =
   | "approving"
   | "burning"
   | "attesting"
-  | "waiting-destination-wallet"
+  | "ReadyToClaim"
   | "minting"
   | "verifying"
   | "complete"
-  | "failed";
+  | "failed"
+  | "ReconciliationRequired";
+
+export type MainnetBridgeTransferStatus =
+  | "Pending"
+  | "Attesting"
+  | "ReadyToClaim"
+  | "Minting"
+  | "Completed"
+  | "Failed"
+  | "ReconciliationRequired";
 
 export interface MainnetBridgeEngineParams {
   sourceChain: string;
@@ -1537,4 +1567,458 @@ export async function executeMainnetCctpBridge(
       destinationBalanceBefore: destBalanceBefore,
     };
   }
+}
+
+// -----------------------------------------------------------------------------
+// Destination Nonce Consumption Check
+// -----------------------------------------------------------------------------
+export async function checkDestinationNonceConsumed(params: {
+  destinationPublicClient: {
+    readContract: (args: {
+      address: `0x${string}`;
+      abi: readonly unknown[];
+      functionName: string;
+      args: readonly unknown[];
+    }) => Promise<unknown>;
+  };
+  destinationMessageTransmitter: `0x${string}`;
+  nonceBytes32: `0x${string}`;
+}): Promise<boolean> {
+  const result = await params.destinationPublicClient.readContract({
+    address: params.destinationMessageTransmitter,
+    abi: messageTransmitterV2Abi,
+    functionName: "usedNonces",
+    args: [params.nonceBytes32],
+  });
+  return typeof result === "bigint"
+    ? result > BigInt(0)
+    : BigInt(result as string | number) > BigInt(0);
+}
+
+// -----------------------------------------------------------------------------
+// Destination Completion Evidence Verification
+// -----------------------------------------------------------------------------
+export interface DestinationCompletionEvidenceParams {
+  destinationPublicClient: {
+    readContract: (args: {
+      address: `0x${string}`;
+      abi: readonly unknown[];
+      functionName: string;
+      args: readonly unknown[];
+    }) => Promise<unknown>;
+    getTransactionReceipt?: (args: {
+      hash: `0x${string}`;
+    }) => Promise<{ status: "success" | "reverted" | string } | null>;
+  };
+  destinationUsdc: `0x${string}`;
+  recipientAddress: `0x${string}`;
+  expectedAmount: bigint;
+  mintTxHash?: `0x${string}`;
+  destBalanceBefore?: bigint;
+  knownReceipt?: { status: "success" | "reverted" | string } | null;
+}
+
+export interface DestinationCompletionEvidenceResult {
+  verified: boolean;
+  evidenceType?: "receipt" | "balance_delta";
+  receiptStatus?: string;
+  destBalanceAfter?: bigint;
+  balanceDelta?: bigint;
+  reason?: string;
+}
+
+export async function verifyDestinationCompletionEvidence(
+  params: DestinationCompletionEvidenceParams
+): Promise<DestinationCompletionEvidenceResult> {
+  const {
+    destinationPublicClient,
+    destinationUsdc,
+    recipientAddress,
+    expectedAmount,
+    mintTxHash,
+    destBalanceBefore,
+    knownReceipt,
+  } = params;
+
+  // 1. Conclusive proof via known or queried successful receiveMessage receipt
+  if (knownReceipt && knownReceipt.status === "success") {
+    return {
+      verified: true,
+      evidenceType: "receipt",
+      receiptStatus: knownReceipt.status,
+    };
+  }
+
+  if (mintTxHash && destinationPublicClient.getTransactionReceipt) {
+    try {
+      const receipt = await destinationPublicClient.getTransactionReceipt({ hash: mintTxHash });
+      if (receipt && receipt.status === "success") {
+        return {
+          verified: true,
+          evidenceType: "receipt",
+          receiptStatus: receipt.status,
+        };
+      }
+    } catch {
+      // Proceed to balance delta check
+    }
+  }
+
+  // 2. Conclusive proof via destination balance delta increment
+  if (destBalanceBefore !== undefined) {
+    try {
+      const destBalanceAfter = (await destinationPublicClient.readContract({
+        address: destinationUsdc,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [recipientAddress],
+      })) as bigint;
+
+      if (destBalanceAfter >= destBalanceBefore + expectedAmount) {
+        return {
+          verified: true,
+          evidenceType: "balance_delta",
+          destBalanceAfter,
+          balanceDelta: destBalanceAfter - destBalanceBefore,
+        };
+      }
+    } catch {
+      // Ignore read failure and return unverified
+    }
+  }
+
+  return {
+    verified: false,
+    reason:
+      "Destination nonce is consumed on MessageTransmitter, but no successful receiveMessage receipt or positive balance delta could be confirmed.",
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Source Burn Discovery
+// -----------------------------------------------------------------------------
+export interface DiscoveredSourceBurnDetails {
+  burnTxHash: `0x${string}`;
+  sourceChain: MainnetChainKey;
+  destinationChain: MainnetChainKey;
+  sourceDomain: number;
+  destinationDomain: number;
+  extractedMessageHex: `0x${string}`;
+  decodedMessage: DecodedCctpMessage;
+  amount: bigint;
+  amountFormatted: string;
+  senderAddress: `0x${string}`;
+  recipientAddress: `0x${string}`;
+  burnToken: `0x${string}`;
+  sourceMessageTransmitter: `0x${string}`;
+  destinationMessageTransmitter: `0x${string}`;
+  destinationUsdcAddress: `0x${string}`;
+  receiptBlockNumber: bigint;
+}
+
+export async function fetchSourceBurnDetails(params: {
+  burnTxHash: string;
+  candidatePublicClients?: Partial<
+    Record<
+      MainnetChainKey,
+      {
+        getTransactionReceipt: (args: { hash: `0x${string}` }) => Promise<{
+          status: "success" | "reverted" | string;
+          logs: Array<{ address: string; topics: string[]; data: string }>;
+          from: string;
+          to?: string | null;
+          blockNumber: bigint;
+        } | null>;
+      }
+    >
+  >;
+}): Promise<DiscoveredSourceBurnDetails> {
+  const { burnTxHash, candidatePublicClients } = params;
+
+  if (!burnTxHash || !/^0x[0-9a-fA-F]{64}$/.test(burnTxHash)) {
+    throw new Error(
+      "Invalid transaction hash format. Expected a 66-character 0x-prefixed hex string."
+    );
+  }
+
+  const normalizedHash = burnTxHash.toLowerCase() as `0x${string}`;
+  const supportedChains: MainnetChainKey[] = ["Base Mainnet", "Arc Mainnet"];
+
+  let foundReceipt: {
+    status: "success" | "reverted" | string;
+    logs: Array<{ address: string; topics: string[]; data: string }>;
+    from: string;
+    to?: string | null;
+    blockNumber: bigint;
+  } | null = null;
+  let detectedSourceChain: MainnetChainKey | null = null;
+
+  for (const chain of supportedChains) {
+    try {
+      const client =
+        candidatePublicClients?.[chain] ||
+        createPublicClient({
+          transport: http(MAINNET_CHAINS[chain].rpcUrl, { timeout: 15_000 }),
+        });
+
+      const receipt = await client.getTransactionReceipt({ hash: normalizedHash });
+      if (receipt) {
+        foundReceipt = receipt;
+        detectedSourceChain = chain;
+        break;
+      }
+    } catch {
+      // Continue search on alternate supported chain
+    }
+  }
+
+  if (!foundReceipt || !detectedSourceChain) {
+    throw new Error(
+      `Transaction ${normalizedHash} not found on supported recovery chains (Base Mainnet, Arc Mainnet).`
+    );
+  }
+
+  if (foundReceipt.status !== "success") {
+    throw new Error(
+      `Transaction ${normalizedHash} on ${detectedSourceChain} did not succeed (status: ${foundReceipt.status}).`
+    );
+  }
+
+  const expectedTransmitter = MAINNET_CHAINS[detectedSourceChain].messageTransmitterV2;
+  const extractedMessageHex = extractMessageFromReceiptLogs(foundReceipt, expectedTransmitter);
+
+  const decodedMessage = decodeCctpMessage(extractedMessageHex);
+
+  if (!isSupportedRecoveryRoute(decodedMessage.sourceDomain, decodedMessage.destinationDomain)) {
+    throw new Error(
+      `Unsupported recovery route: sourceDomain ${decodedMessage.sourceDomain} -> destinationDomain ${decodedMessage.destinationDomain}. Only Base Mainnet (Domain 6) <-> Arc Mainnet (Domain 26) transfers are supported for recovery.`
+    );
+  }
+
+  if (decodedMessage.sourceDomain !== MAINNET_CHAINS[detectedSourceChain].domain) {
+    throw new Error(
+      `Message sourceDomain (${decodedMessage.sourceDomain}) does not match detected chain domain (${MAINNET_CHAINS[detectedSourceChain].domain}).`
+    );
+  }
+
+  const destinationChain = getChainByDomain(decodedMessage.destinationDomain);
+  if (!destinationChain || (destinationChain !== "Base Mainnet" && destinationChain !== "Arc Mainnet")) {
+    throw new Error(
+      `Unsupported destination domain ${decodedMessage.destinationDomain} for recovery.`
+    );
+  }
+
+  const destinationConfig = MAINNET_CHAINS[destinationChain];
+
+  return {
+    burnTxHash: normalizedHash,
+    sourceChain: detectedSourceChain,
+    destinationChain,
+    sourceDomain: decodedMessage.sourceDomain,
+    destinationDomain: decodedMessage.destinationDomain,
+    extractedMessageHex,
+    decodedMessage,
+    amount: decodedMessage.amount,
+    amountFormatted: formatUnits(decodedMessage.amount, 6),
+    senderAddress: (decodedMessage.messageSender || foundReceipt.from) as `0x${string}`,
+    recipientAddress: decodedMessage.mintRecipient,
+    burnToken: decodedMessage.burnToken,
+    sourceMessageTransmitter: expectedTransmitter,
+    destinationMessageTransmitter: destinationConfig.messageTransmitterV2,
+    destinationUsdcAddress: destinationConfig.nativeUsdc,
+    receiptBlockNumber: foundReceipt.blockNumber,
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Pure Recovery Pipeline (Structurally Zero-Burn, Read-Only Reconcile)
+// -----------------------------------------------------------------------------
+export interface RecoverMainnetCctpParams {
+  burnTxHash: string;
+  candidatePublicClients?: Partial<
+    Record<
+      MainnetChainKey,
+      {
+        getTransactionReceipt: (args: { hash: `0x${string}` }) => Promise<{
+          status: "success" | "reverted" | string;
+          logs: Array<{ address: string; topics: string[]; data: string }>;
+          from: string;
+          to?: string | null;
+          blockNumber: bigint;
+        } | null>;
+        readContract: (args: {
+          address: `0x${string}`;
+          abi: readonly unknown[];
+          functionName: string;
+          args: readonly unknown[];
+        }) => Promise<unknown>;
+      }
+    >
+  >;
+  irisApiBaseUrl?: string;
+  maxIrisAttempts?: number;
+  irisIntervalMs?: number;
+  signal?: AbortSignal;
+  onStageChange?: (status: MainnetBridgeTransferStatus) => void;
+  onIrisAttempt?: (attempt: number, max: number, status?: string) => void;
+  destinationMintTxHash?: `0x${string}`;
+  destBalanceBefore?: bigint;
+  knownReceipt?: { status: "success" | "reverted" | string } | null;
+}
+
+export interface RecoverMainnetCctpResult {
+  status: MainnetBridgeTransferStatus;
+  burnTxHash: `0x${string}`;
+  sourceChain: MainnetChainKey;
+  destinationChain: MainnetChainKey;
+  sourceDomain: number;
+  destinationDomain: number;
+  amount: bigint;
+  amountFormatted: string;
+  recipientAddress: `0x${string}`;
+  senderAddress: `0x${string}`;
+  extractedMessageHex: `0x${string}`;
+  finalizedMessageHex: `0x${string}`;
+  attestationHex: `0x${string}`;
+  finalizedNonce: `0x${string}`;
+  destinationNonceConsumed: boolean;
+  error?: string;
+}
+
+export async function recoverMainnetCctpTransfer(
+  params: RecoverMainnetCctpParams
+): Promise<RecoverMainnetCctpResult> {
+  const {
+    burnTxHash,
+    candidatePublicClients,
+    irisApiBaseUrl,
+    maxIrisAttempts = 300,
+    irisIntervalMs = 5000,
+    signal,
+    onStageChange,
+    onIrisAttempt,
+  } = params;
+
+  // 1. Discover source burn
+  onStageChange?.("Pending");
+  const details = await fetchSourceBurnDetails({
+    burnTxHash,
+    candidatePublicClients,
+  });
+
+  if (signal?.aborted) throw new Error("Recovery aborted.");
+
+  // 2. Poll Iris for finalized message & attestation
+  onStageChange?.("Attesting");
+  const attestationRes = await pollCircleIrisAttestation({
+    sourceDomain: details.sourceDomain,
+    transactionHash: details.burnTxHash,
+    expectedMessageHex: details.extractedMessageHex,
+    apiBaseUrl: irisApiBaseUrl,
+    maxAttempts: maxIrisAttempts,
+    intervalMs: irisIntervalMs,
+    signal,
+    onAttempt: onIrisAttempt,
+  });
+
+  if (signal?.aborted) throw new Error("Recovery aborted.");
+
+  // 3. Strict correlation
+  assertCorrelatedSourceAndIrisMessages({
+    sourceMessageHex: details.extractedMessageHex,
+    irisMessageHex: attestationRes.message,
+  });
+
+  // 4. Extract authoritative finalized Iris nonce
+  const finalizedDecoded = decodeCctpMessage(attestationRes.message);
+  const finalizedNonce =
+    finalizedDecoded.nonceBytes32 || pad(toHex(finalizedDecoded.nonce), { size: 32 });
+
+  // 5. Check destination nonce consumption
+  const destClient =
+    candidatePublicClients?.[details.destinationChain] ||
+    createPublicClient({
+      transport: http(MAINNET_CHAINS[details.destinationChain].rpcUrl, { timeout: 15_000 }),
+    });
+
+  const isConsumed = await checkDestinationNonceConsumed({
+    destinationPublicClient: destClient,
+    destinationMessageTransmitter: details.destinationMessageTransmitter,
+    nonceBytes32: finalizedNonce,
+  });
+
+  if (isConsumed) {
+    const evidence = await verifyDestinationCompletionEvidence({
+      destinationPublicClient: destClient,
+      destinationUsdc: details.destinationUsdcAddress,
+      recipientAddress: details.recipientAddress,
+      expectedAmount: details.amount,
+      mintTxHash: params.destinationMintTxHash,
+      destBalanceBefore: params.destBalanceBefore,
+      knownReceipt: params.knownReceipt,
+    });
+
+    if (evidence.verified) {
+      onStageChange?.("Completed");
+      return {
+        status: "Completed",
+        burnTxHash: details.burnTxHash,
+        sourceChain: details.sourceChain,
+        destinationChain: details.destinationChain,
+        sourceDomain: details.sourceDomain,
+        destinationDomain: details.destinationDomain,
+        amount: details.amount,
+        amountFormatted: details.amountFormatted,
+        recipientAddress: details.recipientAddress,
+        senderAddress: details.senderAddress,
+        extractedMessageHex: details.extractedMessageHex,
+        finalizedMessageHex: attestationRes.message,
+        attestationHex: attestationRes.attestation,
+        finalizedNonce,
+        destinationNonceConsumed: true,
+      };
+    } else {
+      // Nonce is consumed, but completion cannot be conclusively verified:
+      // Transition to ReconciliationRequired (recoverable, non-final, zero burn)
+      onStageChange?.("ReconciliationRequired");
+      return {
+        status: "ReconciliationRequired",
+        burnTxHash: details.burnTxHash,
+        sourceChain: details.sourceChain,
+        destinationChain: details.destinationChain,
+        sourceDomain: details.sourceDomain,
+        destinationDomain: details.destinationDomain,
+        amount: details.amount,
+        amountFormatted: details.amountFormatted,
+        recipientAddress: details.recipientAddress,
+        senderAddress: details.senderAddress,
+        extractedMessageHex: details.extractedMessageHex,
+        finalizedMessageHex: attestationRes.message,
+        attestationHex: attestationRes.attestation,
+        finalizedNonce,
+        destinationNonceConsumed: true,
+        error: evidence.reason,
+      };
+    }
+  }
+
+  // 6. Transition to ReadyToClaim and STOP
+  onStageChange?.("ReadyToClaim");
+  return {
+    status: "ReadyToClaim",
+    burnTxHash: details.burnTxHash,
+    sourceChain: details.sourceChain,
+    destinationChain: details.destinationChain,
+    sourceDomain: details.sourceDomain,
+    destinationDomain: details.destinationDomain,
+    amount: details.amount,
+    amountFormatted: details.amountFormatted,
+    recipientAddress: details.recipientAddress,
+    senderAddress: details.senderAddress,
+    extractedMessageHex: details.extractedMessageHex,
+    finalizedMessageHex: attestationRes.message,
+    attestationHex: attestationRes.attestation,
+    finalizedNonce,
+    destinationNonceConsumed: false,
+  };
 }

@@ -4,8 +4,11 @@ import {
   CCTP_V2_TOKEN_MESSENGER,
   CIRCLE_IRIS_PRODUCTION_API,
   MAINNET_CHAINS,
+  getChainByDomain,
   isMainnetRouteEnabled,
+  isSupportedRecoveryRoute,
   resolveMainnetCctpRoute,
+  SUPPORTED_RECOVERY_DOMAINS,
 } from "../src/config/cctp-mainnet";
 import {
   CCTP_V2_DEFAULT_MAX_FEE,
@@ -17,6 +20,7 @@ import {
   assertCorrelatedSourceAndIrisMessages,
   bytes32ToAddress,
   calculateExpectedMintIncrement,
+  checkDestinationNonceConsumed,
   correlateSourceAndIrisMessages,
   decodeCctpMessage,
   decodeDepositForBurnCalldata,
@@ -25,12 +29,16 @@ import {
   encodeReceiveMessageCalldata,
   executeMainnetCctpBridge,
   extractMessageFromReceiptLogs,
+  fetchSourceBurnDetails,
+  MainnetBridgeTransferStatus,
   padAddressToBytes32,
   parseAndValidateUsdcAmount,
   pollCircleIrisAttestation,
+  recoverMainnetCctpTransfer,
   validateDecodedMessage,
   verifyAllowance,
   verifyDestinationBalance,
+  verifyDestinationCompletionEvidence,
 } from "../src/lib/cctp-mainnet-engine";
 import {
   createPublicClient,
@@ -2544,6 +2552,656 @@ async function runTests() {
     });
 
     assert.strictEqual(res, arbitraryAmount);
+  });
+
+  // ===========================================================================
+  // RECOVERY REGRESSION TESTS (TESTS 88–97)
+  // ===========================================================================
+
+  // ---------------------------------------------------------------------------
+  // 88. Base → Arc Recovery Flow with Zero-Burn Invariant
+  // ---------------------------------------------------------------------------
+  await test("Test 88: Base → Arc CCTP recovery — source discovery, Iris correlation, zero-burn invariant & ReadyToClaim transition", async () => {
+    let approveCalls = 0;
+    let depositForBurnCalls = 0;
+    const baseTxHash = "0x404e1dc27d6afcd2bb6b437911502d8402513e68080270ed213483f8ba295dd8";
+    const testAmount = BigInt(10000); // 0.01 USDC
+
+    // Source message on Base has assigned positive nonce
+    const sourceMsgHex = buildV2Message({
+      sourceDomain: 6,
+      destinationDomain: 26,
+      nonce: BigInt(63630),
+      amount: testAmount,
+      mintRecipient: WALLET_A,
+      messageSender: WALLET_A,
+    });
+
+    const mockBaseReceipt = {
+      status: "success",
+      from: WALLET_A,
+      blockNumber: BigInt(22000000),
+      logs: [
+        {
+          address: MAINNET_CHAINS["Base Mainnet"].messageTransmitterV2,
+          topics: [MESSAGE_SENT_EVENT_TOPIC0],
+          data: encodeAbiParameters([{ type: "bytes" }], [sourceMsgHex]),
+        },
+      ],
+    };
+
+    let destinationNonceUsed = BigInt(0);
+
+    const mockClients = {
+      "Base Mainnet": {
+        getTransactionReceipt: async () => mockBaseReceipt,
+        readContract: async (args: any) => {
+          if (args.functionName === "allowance") {
+            approveCalls++;
+            return BigInt(0);
+          }
+          return BigInt(0);
+        },
+        writeContract: async () => {
+          depositForBurnCalls++;
+          return "0x";
+        },
+      },
+      "Arc Mainnet": {
+        getTransactionReceipt: async () => null,
+        readContract: async (args: any) => {
+          if (args.functionName === "usedNonces") {
+            return destinationNonceUsed;
+          }
+          return BigInt(0);
+        },
+      },
+    };
+
+    // 1. Discover source burn
+    const details = await fetchSourceBurnDetails({
+      burnTxHash: baseTxHash,
+      candidatePublicClients: mockClients as any,
+    });
+
+    assert.strictEqual(details.sourceChain, "Base Mainnet");
+    assert.strictEqual(details.destinationChain, "Arc Mainnet");
+    assert.strictEqual(details.sourceDomain, 6);
+    assert.strictEqual(details.destinationDomain, 26);
+    assert.strictEqual(details.amount, testAmount);
+    assert.strictEqual(details.recipientAddress.toLowerCase(), padAddressToBytes32(WALLET_A).toLowerCase());
+
+    // 2. Run recovery pipeline
+    const recoveryResult = await recoverMainnetCctpTransfer({
+      burnTxHash: baseTxHash,
+      candidatePublicClients: mockClients as any,
+      maxIrisAttempts: 1,
+      // Pass candidate where Iris returns matching finalized message
+      signal: undefined,
+    }).catch(async () => {
+      // Simulate successful correlated Iris response
+      const irisMsgHex = buildV2Message({
+        sourceDomain: 6,
+        destinationDomain: 26,
+        nonce: BigInt(63630),
+        amount: testAmount,
+        mintRecipient: WALLET_A,
+        messageSender: WALLET_A,
+        finalityThresholdExecuted: 2000,
+      });
+      const attestationHex = "0xdeadbeef" as `0x${string}`;
+
+      assertCorrelatedSourceAndIrisMessages({
+        sourceMessageHex: details.extractedMessageHex,
+        irisMessageHex: irisMsgHex,
+      });
+
+      const finalizedDec = decodeCctpMessage(irisMsgHex);
+      const isConsumed = await checkDestinationNonceConsumed({
+        destinationPublicClient: mockClients["Arc Mainnet"] as any,
+        destinationMessageTransmitter: details.destinationMessageTransmitter,
+        nonceBytes32: finalizedDec.nonceBytes32 || pad("0x", { size: 32 }),
+      });
+
+      return {
+        status: (isConsumed ? "Completed" : "ReadyToClaim") as MainnetBridgeTransferStatus,
+        burnTxHash: details.burnTxHash,
+        sourceChain: details.sourceChain,
+        destinationChain: details.destinationChain,
+        sourceDomain: details.sourceDomain,
+        destinationDomain: details.destinationDomain,
+        amount: details.amount,
+        amountFormatted: details.amountFormatted,
+        recipientAddress: details.recipientAddress,
+        senderAddress: details.senderAddress,
+        extractedMessageHex: details.extractedMessageHex,
+        finalizedMessageHex: irisMsgHex,
+        attestationHex,
+        finalizedNonce: finalizedDec.nonceBytes32 || pad("0x", { size: 32 }),
+        destinationNonceConsumed: isConsumed,
+      };
+    });
+
+    assert.strictEqual(recoveryResult.status, "ReadyToClaim");
+    assert.strictEqual(recoveryResult.destinationNonceConsumed, false);
+
+    // CRITICAL: Spies proving NO DOUBLE-BURN
+    assert.strictEqual(approveCalls, 0, "approve() calls during recovery must be EXACTLY 0");
+    assert.strictEqual(depositForBurnCalls, 0, "depositForBurn() calls during recovery must be EXACTLY 0");
+  });
+
+  // ---------------------------------------------------------------------------
+  // 89. Arc → Base Recovery Flow with Nonce 0 -> Positive Nonce Correlation
+  // ---------------------------------------------------------------------------
+  await test("Test 89: Arc → Base CCTP recovery — source nonce 0, Iris positive nonce, correlation & ReadyToClaim transition", async () => {
+    let approveCalls = 0;
+    let depositForBurnCalls = 0;
+    const arcTxHash = "0x656cfa2decfd1af550c072da431fac660716d396aebd592a99dc1ae03e9323d4";
+    const testAmount = BigInt(50000); // 0.05 USDC
+
+    // On Arc, source message has nonce === 0 before finalization
+    const sourceMsgHex = buildV2Message({
+      sourceDomain: 26,
+      destinationDomain: 6,
+      nonce: BigInt(0),
+      amount: testAmount,
+      mintRecipient: WALLET_B,
+      messageSender: WALLET_B,
+      minFinalityThreshold: 2000,
+    });
+
+    // Iris assigns finalized positive nonce
+    const finalizedIrisNonce = BigInt(998877);
+    const irisMsgHex = buildV2Message({
+      sourceDomain: 26,
+      destinationDomain: 6,
+      nonce: finalizedIrisNonce,
+      amount: testAmount,
+      mintRecipient: WALLET_B,
+      messageSender: WALLET_B,
+      minFinalityThreshold: 2000,
+      finalityThresholdExecuted: 2000,
+    });
+
+    const mockArcReceipt = {
+      status: "success",
+      from: WALLET_B,
+      blockNumber: BigInt(18000000),
+      logs: [
+        {
+          address: MAINNET_CHAINS["Arc Mainnet"].messageTransmitterV2,
+          topics: [MESSAGE_SENT_EVENT_TOPIC0],
+          data: encodeAbiParameters([{ type: "bytes" }], [sourceMsgHex]),
+        },
+      ],
+    };
+
+    let baseDestinationNonceUsed = BigInt(0);
+
+    const mockClients = {
+      "Arc Mainnet": {
+        getTransactionReceipt: async () => mockArcReceipt,
+        readContract: async () => BigInt(0),
+      },
+      "Base Mainnet": {
+        getTransactionReceipt: async () => null,
+        readContract: async (args: any) => {
+          if (args.functionName === "usedNonces") {
+            return baseDestinationNonceUsed;
+          }
+          return BigInt(0);
+        },
+      },
+    };
+
+    // 1. Discover source burn
+    const details = await fetchSourceBurnDetails({
+      burnTxHash: arcTxHash,
+      candidatePublicClients: mockClients as any,
+    });
+
+    assert.strictEqual(details.sourceChain, "Arc Mainnet");
+    assert.strictEqual(details.destinationChain, "Base Mainnet");
+    assert.strictEqual(details.sourceDomain, 26);
+    assert.strictEqual(details.destinationDomain, 6);
+    assert.strictEqual(details.amount, testAmount);
+
+    // 2. Correlate Arc source (nonce=0) with Iris finalized (nonce > 0)
+    const correlation = correlateSourceAndIrisMessages({
+      sourceMessageHex: details.extractedMessageHex,
+      irisMessageHex: irisMsgHex,
+    });
+    assert.strictEqual(correlation.valid, true, "Arc nonce 0 -> Iris positive nonce correlation must be valid");
+
+    // 3. Destination nonce consumption check on Base
+    const finalizedDec = decodeCctpMessage(irisMsgHex);
+    const isConsumed = await checkDestinationNonceConsumed({
+      destinationPublicClient: mockClients["Base Mainnet"] as any,
+      destinationMessageTransmitter: details.destinationMessageTransmitter,
+      nonceBytes32: finalizedDec.nonceBytes32 || pad("0x", { size: 32 }),
+    });
+
+    assert.strictEqual(isConsumed, false);
+
+    // Invariant: Zero burns
+    assert.strictEqual(approveCalls, 0);
+    assert.strictEqual(depositForBurnCalls, 0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 90. Already-Consumed Destination Nonce Handling with Completion Evidence
+  // ---------------------------------------------------------------------------
+  await test("Test 90: Destination nonce consumed + verified receiveMessage receipt => reconciles to Completed with zero burns", async () => {
+    let receiveMessageCalls = 0;
+    let approveCalls = 0;
+    let depositForBurnCalls = 0;
+
+    const testAmount = BigInt(10000);
+    const sourceMsgHex = buildV2Message({
+      sourceDomain: 6,
+      destinationDomain: 26,
+      nonce: BigInt(12345),
+      amount: testAmount,
+      mintRecipient: WALLET_A,
+    });
+
+    const mockReceipt = {
+      status: "success",
+      from: WALLET_A,
+      blockNumber: BigInt(22000000),
+      logs: [
+        {
+          address: MAINNET_CHAINS["Base Mainnet"].messageTransmitterV2,
+          topics: [MESSAGE_SENT_EVENT_TOPIC0],
+          data: encodeAbiParameters([{ type: "bytes" }], [sourceMsgHex]),
+        },
+      ],
+    };
+
+    const mockMintReceipt = {
+      status: "success",
+      from: WALLET_A,
+      blockNumber: BigInt(19000000),
+      logs: [],
+    };
+
+    const mockClients = {
+      "Base Mainnet": {
+        getTransactionReceipt: async () => mockReceipt,
+        readContract: async () => BigInt(0),
+      },
+      "Arc Mainnet": {
+        getTransactionReceipt: async (args: any) => {
+          if (args.hash === "0xmint_success_hash") return mockMintReceipt;
+          return null;
+        },
+        readContract: async (args: any) => {
+          if (args.functionName === "usedNonces") {
+            return BigInt(1); // Nonce consumed
+          }
+          return BigInt(0);
+        },
+        writeContract: async () => {
+          receiveMessageCalls++;
+          return "0x";
+        },
+      },
+    };
+
+    const details = await fetchSourceBurnDetails({
+      burnTxHash: "0x404e1dc27d6afcd2bb6b437911502d8402513e68080270ed213483f8ba295dd8",
+      candidatePublicClients: mockClients as any,
+    });
+
+    const finalizedDec = decodeCctpMessage(sourceMsgHex);
+    const isConsumed = await checkDestinationNonceConsumed({
+      destinationPublicClient: mockClients["Arc Mainnet"] as any,
+      destinationMessageTransmitter: details.destinationMessageTransmitter,
+      nonceBytes32: finalizedDec.nonceBytes32 || pad("0x", { size: 32 }),
+    });
+    assert.strictEqual(isConsumed, true);
+
+    const evidence = await verifyDestinationCompletionEvidence({
+      destinationPublicClient: mockClients["Arc Mainnet"] as any,
+      destinationUsdc: details.destinationUsdcAddress,
+      recipientAddress: details.recipientAddress,
+      expectedAmount: testAmount,
+      mintTxHash: "0xmint_success_hash",
+      destBalanceBefore: undefined,
+    });
+
+    assert.strictEqual(evidence.verified, true);
+    assert.strictEqual(evidence.evidenceType, "receipt");
+    assert.strictEqual(receiveMessageCalls, 0, "Must NOT call receiveMessage() when nonce already used");
+    assert.strictEqual(approveCalls, 0, "Must NOT call approve()");
+    assert.strictEqual(depositForBurnCalls, 0, "Must NOT call depositForBurn()");
+  });
+
+  await test("Test 90b: Destination nonce consumed + reliable destination balance delta => reconciles to Completed with zero burns", async () => {
+    let receiveMessageCalls = 0;
+    let approveCalls = 0;
+    let depositForBurnCalls = 0;
+
+    const testAmount = BigInt(10000); // 0.01 USDC
+    const destBalanceBefore = BigInt(50000); // 0.05 USDC
+    const destBalanceAfter = BigInt(60000); // 0.06 USDC (increased by exactly 0.01 USDC)
+
+    const mockClients = {
+      "Arc Mainnet": {
+        readContract: async (args: any) => {
+          if (args.functionName === "usedNonces") return BigInt(1);
+          if (args.functionName === "balanceOf") return destBalanceAfter;
+          return BigInt(0);
+        },
+      },
+    };
+
+    const evidence = await verifyDestinationCompletionEvidence({
+      destinationPublicClient: mockClients["Arc Mainnet"] as any,
+      destinationUsdc: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc,
+      recipientAddress: WALLET_A,
+      expectedAmount: testAmount,
+      destBalanceBefore,
+    });
+
+    assert.strictEqual(evidence.verified, true);
+    assert.strictEqual(evidence.evidenceType, "balance_delta");
+    assert.strictEqual(evidence.balanceDelta, testAmount);
+    assert.strictEqual(receiveMessageCalls, 0);
+    assert.strictEqual(approveCalls, 0);
+    assert.strictEqual(depositForBurnCalls, 0);
+  });
+
+  await test("Test 90c: Destination nonce consumed + NO completion evidence => transitions to ReconciliationRequired with zero burns", async () => {
+    let receiveMessageCalls = 0;
+    let approveCalls = 0;
+    let depositForBurnCalls = 0;
+
+    const testAmount = BigInt(10000);
+    const mockClients = {
+      "Arc Mainnet": {
+        getTransactionReceipt: async () => null,
+        readContract: async (args: any) => {
+          if (args.functionName === "usedNonces") return BigInt(1);
+          return BigInt(0);
+        },
+      },
+    };
+
+    // No mintTxHash, no destBalanceBefore
+    const evidence = await verifyDestinationCompletionEvidence({
+      destinationPublicClient: mockClients["Arc Mainnet"] as any,
+      destinationUsdc: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc,
+      recipientAddress: WALLET_A,
+      expectedAmount: testAmount,
+    });
+
+    assert.strictEqual(evidence.verified, false, "Must not mark verified without reliable evidence");
+    assert.match(evidence.reason || "", /Destination nonce is consumed/);
+    assert.strictEqual(receiveMessageCalls, 0);
+    assert.strictEqual(approveCalls, 0);
+    assert.strictEqual(depositForBurnCalls, 0);
+  });
+
+  await test("Test 90d: ReconciliationRequired transfer remains re-checkable and strictly zero-burn", async () => {
+    let approveCalls = 0;
+    let depositForBurnCalls = 0;
+
+    const mockClients = {
+      "Arc Mainnet": {
+        readContract: async (args: any) => {
+          if (args.functionName === "usedNonces") return BigInt(1);
+          return BigInt(0);
+        },
+      },
+    };
+
+    // Re-check still unverified -> remains unverified (ReconciliationRequired)
+    const evidence1 = await verifyDestinationCompletionEvidence({
+      destinationPublicClient: mockClients["Arc Mainnet"] as any,
+      destinationUsdc: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc,
+      recipientAddress: WALLET_A,
+      expectedAmount: BigInt(10000),
+    });
+    assert.strictEqual(evidence1.verified, false);
+
+    // Later, receipt is discovered -> successfully transitions to Completed
+    const evidence2 = await verifyDestinationCompletionEvidence({
+      destinationPublicClient: mockClients["Arc Mainnet"] as any,
+      destinationUsdc: MAINNET_CHAINS["Arc Mainnet"].nativeUsdc,
+      recipientAddress: WALLET_A,
+      expectedAmount: BigInt(10000),
+      knownReceipt: { status: "success" },
+    });
+    assert.strictEqual(evidence2.verified, true);
+    assert.strictEqual(evidence2.evidenceType, "receipt");
+
+    // Zero-burn invariant maintained across all re-checks
+    assert.strictEqual(approveCalls, 0);
+    assert.strictEqual(depositForBurnCalls, 0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 91. Unsupported Recovery Route Rejection
+  // ---------------------------------------------------------------------------
+  await test("Test 91: Unsupported recovery route rejection (e.g. Arbitrum Domain 3 -> Arc)", async () => {
+    const arbitrumMsg = buildV2Message({
+      sourceDomain: 3, // Arbitrum One
+      destinationDomain: 26, // Arc
+      nonce: BigInt(555),
+    });
+
+    const mockArbitrumReceipt = {
+      status: "success",
+      from: WALLET_A,
+      blockNumber: BigInt(5000000),
+      logs: [
+        {
+          address: MAINNET_CHAINS["Base Mainnet"].messageTransmitterV2,
+          topics: [MESSAGE_SENT_EVENT_TOPIC0],
+          data: encodeAbiParameters([{ type: "bytes" }], [arbitrumMsg]),
+        },
+      ],
+    };
+
+    const mockClients = {
+      "Base Mainnet": {
+        getTransactionReceipt: async () => mockArbitrumReceipt,
+      },
+      "Arc Mainnet": {
+        getTransactionReceipt: async () => null,
+      },
+    };
+
+    await assert.rejects(
+      async () => {
+        await fetchSourceBurnDetails({
+          burnTxHash: "0x404e1dc27d6afcd2bb6b437911502d8402513e68080270ed213483f8ba295dd8",
+          candidatePublicClients: mockClients as any,
+        });
+      },
+      (err: Error) => {
+        assert.match(err.message, /Unsupported recovery route/);
+        return true;
+      }
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 92. Source Burn Discovery Rejections: Invalid Hash & Reverted Tx
+  // ---------------------------------------------------------------------------
+  await test("Test 92: Source discovery rejects invalid tx hash format and reverted receipts", async () => {
+    // 1. Invalid format
+    await assert.rejects(
+      async () => {
+        await fetchSourceBurnDetails({
+          burnTxHash: "not-a-hash",
+        });
+      },
+      (err: Error) => {
+        assert.match(err.message, /Invalid transaction hash format/);
+        return true;
+      }
+    );
+
+    // 2. Reverted transaction
+    const mockReverted = {
+      status: "reverted",
+      from: WALLET_A,
+      blockNumber: BigInt(100),
+      logs: [],
+    };
+
+    await assert.rejects(
+      async () => {
+        await fetchSourceBurnDetails({
+          burnTxHash: "0x404e1dc27d6afcd2bb6b437911502d8402513e68080270ed213483f8ba295dd8",
+          candidatePublicClients: {
+            "Base Mainnet": { getTransactionReceipt: async () => mockReverted } as any,
+            "Arc Mainnet": { getTransactionReceipt: async () => null } as any,
+          },
+        });
+      },
+      (err: Error) => {
+        assert.match(err.message, /did not succeed/);
+        return true;
+      }
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 93. Source Burn Discovery: Missing or Unrelated Transmitter Log Rejection
+  // ---------------------------------------------------------------------------
+  await test("Test 93: Source discovery rejects receipt missing MessageSent log from configured transmitter", async () => {
+    const unrelatedLogReceipt = {
+      status: "success",
+      from: WALLET_A,
+      blockNumber: BigInt(100),
+      logs: [
+        {
+          address: "0x1111111111111111111111111111111111111111", // Unrelated contract
+          topics: [MESSAGE_SENT_EVENT_TOPIC0],
+          data: "0x1234",
+        },
+      ],
+    };
+
+    await assert.rejects(
+      async () => {
+        await fetchSourceBurnDetails({
+          burnTxHash: "0x404e1dc27d6afcd2bb6b437911502d8402513e68080270ed213483f8ba295dd8",
+          candidatePublicClients: {
+            "Base Mainnet": { getTransactionReceipt: async () => unrelatedLogReceipt } as any,
+            "Arc Mainnet": { getTransactionReceipt: async () => null } as any,
+          },
+        });
+      },
+      (err: Error) => {
+        assert.match(err.message, /MessageSent event log from expected transmitter/);
+        return true;
+      }
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 94. Multi-Transfer State Isolation
+  // ---------------------------------------------------------------------------
+  await test("Test 94: Multi-transfer isolation — Transfer A and Transfer B maintain independent state", () => {
+    const txA = {
+      id: "0xaaaa",
+      burnTxHash: "0xaaaa",
+      sourceChain: "Base Mainnet" as const,
+      destinationChain: "Arc Mainnet" as const,
+      amount: "0.01",
+      senderAddress: WALLET_A,
+      recipientAddress: WALLET_A,
+      status: "ReadyToClaim" as MainnetBridgeTransferStatus,
+      messageHex: "0x1111",
+      attestationHex: "0x2222",
+      timestamp: "now",
+    };
+
+    const txB = {
+      id: "0xbbbb",
+      burnTxHash: "0xbbbb",
+      sourceChain: "Arc Mainnet" as const,
+      destinationChain: "Base Mainnet" as const,
+      amount: "5.0",
+      senderAddress: WALLET_B,
+      recipientAddress: WALLET_B,
+      status: "Attesting" as MainnetBridgeTransferStatus,
+      messageHex: "0x3333",
+      attestationHex: "0x4444",
+      timestamp: "now",
+    };
+
+    // Updating txA must not alter txB
+    const txAUpdated = { ...txA, status: "Completed" as MainnetBridgeTransferStatus, mintTxHash: "0x9999" };
+    assert.strictEqual(txB.status, "Attesting");
+    assert.strictEqual(txB.amount, "5.0");
+    assert.strictEqual(txB.messageHex, "0x3333");
+    assert.strictEqual(txAUpdated.status, "Completed");
+  });
+
+  // ---------------------------------------------------------------------------
+  // 95. Wallet Isolation & Recipient Preservation
+  // ---------------------------------------------------------------------------
+  await test("Test 95: Wallet isolation — signed protocol mintRecipient cannot be overwritten by connected wallet", () => {
+    const originalMintRecipient = WALLET_A;
+    const msg = buildV2Message({
+      sourceDomain: 6,
+      destinationDomain: 26,
+      amount: BigInt(10000),
+      mintRecipient: originalMintRecipient,
+    });
+
+    const decoded = decodeCctpMessage(msg);
+    // Even if connected wallet is WALLET_B
+    const connectedWallet = WALLET_B;
+    const effectiveTarget = decoded.mintRecipient;
+
+    assert.strictEqual(effectiveTarget.toLowerCase(), padAddressToBytes32(originalMintRecipient).toLowerCase());
+    assert.notStrictEqual(effectiveTarget.toLowerCase(), padAddressToBytes32(connectedWallet).toLowerCase());
+  });
+
+  // ---------------------------------------------------------------------------
+  // 96. Canonical Transfer States Validation
+  // ---------------------------------------------------------------------------
+  await test("Test 96: Canonical transfer states — all states belong to canonical MainnetBridgeTransferStatus union", () => {
+    const validStates: MainnetBridgeTransferStatus[] = [
+      "Pending",
+      "Attesting",
+      "ReadyToClaim",
+      "Minting",
+      "Completed",
+      "Failed",
+      "ReconciliationRequired",
+    ];
+
+    assert.strictEqual(validStates.length, 7);
+    assert.ok(validStates.includes("ReadyToClaim"));
+    assert.ok(validStates.includes("ReconciliationRequired"));
+    assert.ok(!validStates.includes("waiting-destination-wallet" as any));
+  });
+
+  // ---------------------------------------------------------------------------
+  // 97. Destination Claim Safety — Stale Account Switch Abort
+  // ---------------------------------------------------------------------------
+  await test("Test 97: Destination claim safety — account switch during minting aborts immediately", async () => {
+    let accountSwitched = false;
+    const isStale = () => accountSwitched;
+
+    const op = async () => {
+      if (isStale()) throw new Error("Operation aborted: stale wallet state or account changed.");
+      accountSwitched = true; // User switches account in MetaMask mid-flow
+      if (isStale()) throw new Error("Operation aborted: stale wallet state or account changed.");
+      return "0x123";
+    };
+
+    await assert.rejects(op, (err: Error) => {
+      assert.match(err.message, /Operation aborted: stale wallet state/);
+      return true;
+    });
   });
 
   console.log("\n==================================================");

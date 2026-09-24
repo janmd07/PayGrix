@@ -81,11 +81,17 @@ export function MainnetBridgeForm() {
     destBalance,
     isLoadingBalance,
     error,
+    pendingTransfers,
     refreshBalances,
     resetBridgeState,
     startSourceBridgeFlow,
+    resumeExistingTransfer,
     completeDestinationMint,
   } = useMainnetBridge();
+
+  const [manualRecoveryTx, setManualRecoveryTx] = useState<string>("");
+  const [isRecovering, setIsRecovering] = useState<boolean>(false);
+  const [recoveryError, setRecoveryError] = useState<string | null>(null);
 
   useEffect(() => {
     setRecipientAddress(address || "");
@@ -300,13 +306,24 @@ export function MainnetBridgeForm() {
         </span>
       );
     }
-    if (status === "waiting-destination-wallet") {
-      return `Switch to ${destinationChain} & Complete Mint`;
+    if (status === "ReadyToClaim") {
+      return (
+        <span className="flex items-center justify-center gap-2">
+          <CheckCircle2 className="h-4 w-4" /> Claim Transfer
+        </span>
+      );
     }
     if (status === "complete") {
       return (
         <span className="flex items-center justify-center gap-2">
           <CheckCircle2 className="h-4 w-4" /> Bridge Another Amount
+        </span>
+      );
+    }
+    if (status === "ReconciliationRequired") {
+      return (
+        <span className="flex items-center justify-center gap-2">
+          <RefreshCw className="h-4 w-4" /> Reconcile Consumed Transfer
         </span>
       );
     }
@@ -649,15 +666,32 @@ export function MainnetBridgeForm() {
               </div>
             </div>
 
+            {/* Double-burn Prevention Warning Banner */}
+            {pendingTransfers.length > 0 && status === "idle" && (
+              <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3.5 flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+                <div className="text-xs space-y-1">
+                  <span className="font-semibold text-amber-300 block">
+                    Active Transfer Detected ({pendingTransfers.length})
+                  </span>
+                  <span className="text-slate-400 block leading-relaxed">
+                    You have an existing in-flight transfer. To prevent double-burning USDC, claim or resume your transfer below before bridging again.
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Action Button */}
             <Button
               type="button"
               disabled={
                 !isConnected
                   ? false
-                  : status === "waiting-destination-wallet"
+                  : status === "ReadyToClaim"
                   ? false
                   : status === "complete"
+                  ? false
+                  : status === "ReconciliationRequired"
                   ? false
                   : isFormInvalid || status !== "idle"
               }
@@ -670,7 +704,7 @@ export function MainnetBridgeForm() {
                   }
                   return;
                 }
-                if (status === "waiting-destination-wallet") {
+                if (status === "ReadyToClaim") {
                   completeDestinationMint({
                     sourceChain,
                     destinationChain,
@@ -681,6 +715,12 @@ export function MainnetBridgeForm() {
                 }
                 if (status === "complete") {
                   resetBridgeState();
+                  return;
+                }
+                if (status === "ReconciliationRequired") {
+                  if (burnTxHash) {
+                    resumeExistingTransfer(burnTxHash as `0x${string}`);
+                  }
                   return;
                 }
                 if (isFormInvalid || status !== "idle") return;
@@ -694,10 +734,12 @@ export function MainnetBridgeForm() {
               }}
               className={cn(
                 "w-full h-12 text-sm font-bold text-white rounded-xl shadow-[0_4px_20px_rgba(79,70,229,0.3)] transition-all duration-300 cursor-pointer disabled:opacity-50 disabled:from-slate-800 disabled:via-slate-800 disabled:to-slate-800 disabled:text-slate-200 disabled:shadow-none disabled:cursor-not-allowed",
-                status === "waiting-destination-wallet"
+                status === "ReadyToClaim"
                   ? "bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 animate-pulse shadow-[0_4px_20px_rgba(168,85,247,0.3)]"
                   : status === "complete"
                   ? "bg-emerald-600 hover:bg-emerald-500 shadow-[0_4px_20px_rgba(16,185,129,0.3)]"
+                  : status === "ReconciliationRequired"
+                  ? "bg-amber-600 hover:bg-amber-500 shadow-[0_4px_20px_rgba(245,158,11,0.3)]"
                   : !isConnected || !isFormInvalid
                   ? "bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:via-indigo-500 hover:to-purple-500"
                   : "bg-slate-800 text-slate-400"
@@ -728,11 +770,19 @@ export function MainnetBridgeForm() {
                       Completed
                     </Badge>
                   )}
-                  {["approving", "burning", "attesting", "waiting-destination-wallet", "minting", "verifying"].includes(
+                  {status === "ReconciliationRequired" && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] py-0 px-2 bg-amber-500/10 border border-amber-500/30 text-amber-300 font-semibold"
+                    >
+                      Reconciliation Required
+                    </Badge>
+                  )}
+                  {["approving", "burning", "attesting", "ReadyToClaim", "minting", "verifying"].includes(
                     status
                   ) && (
                     <Badge className="text-[10px] py-0 px-2 bg-blue-500/20 text-blue-400 border border-blue-500/30 animate-pulse font-mono">
-                      {status === "waiting-destination-wallet" ? "Waiting Network Switch" : status.toUpperCase()}
+                      {status === "ReadyToClaim" ? "READY TO CLAIM" : status.toUpperCase()}
                     </Badge>
                   )}
                 </div>
@@ -746,7 +796,7 @@ export function MainnetBridgeForm() {
                         "approving",
                         "burning",
                         "attesting",
-                        "waiting-destination-wallet",
+                        "ReadyToClaim",
                         "minting",
                         "verifying",
                         "complete",
@@ -763,7 +813,7 @@ export function MainnetBridgeForm() {
                           : [
                               "burning",
                               "attesting",
-                              "waiting-destination-wallet",
+                              "ReadyToClaim",
                               "minting",
                               "verifying",
                               "complete",
@@ -782,7 +832,7 @@ export function MainnetBridgeForm() {
                       [
                         "burning",
                         "attesting",
-                        "waiting-destination-wallet",
+                        "ReadyToClaim",
                         "minting",
                         "verifying",
                         "complete",
@@ -798,7 +848,7 @@ export function MainnetBridgeForm() {
                           ? "bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]"
                           : [
                               "attesting",
-                              "waiting-destination-wallet",
+                              "ReadyToClaim",
                               "minting",
                               "verifying",
                               "complete",
@@ -814,7 +864,7 @@ export function MainnetBridgeForm() {
                   <div
                     className={cn(
                       "flex items-center gap-2 text-xs",
-                      ["attesting", "waiting-destination-wallet", "minting", "verifying", "complete"].includes(status)
+                      ["attesting", "ReadyToClaim", "minting", "verifying", "complete"].includes(status)
                         ? "text-slate-300"
                         : "text-slate-500 opacity-50"
                     )}
@@ -824,7 +874,7 @@ export function MainnetBridgeForm() {
                         "h-2 w-2 rounded-full",
                         status === "attesting"
                           ? "bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]"
-                          : ["waiting-destination-wallet", "minting", "verifying", "complete"].includes(status)
+                          : ["ReadyToClaim", "minting", "verifying", "complete"].includes(status)
                           ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]"
                           : "bg-slate-600"
                       )}
@@ -836,7 +886,7 @@ export function MainnetBridgeForm() {
                   <div
                     className={cn(
                       "flex items-center gap-2 text-xs",
-                      ["waiting-destination-wallet", "minting", "verifying", "complete"].includes(status)
+                      ["ReadyToClaim", "minting", "verifying", "complete"].includes(status)
                         ? "text-slate-300"
                         : "text-slate-500 opacity-50"
                     )}
@@ -844,7 +894,7 @@ export function MainnetBridgeForm() {
                     <div
                       className={cn(
                         "h-2 w-2 rounded-full",
-                        status === "waiting-destination-wallet" || status === "minting"
+                        status === "ReadyToClaim" || status === "minting"
                           ? "bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]"
                           : ["verifying", "complete"].includes(status)
                           ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]"
@@ -889,7 +939,7 @@ export function MainnetBridgeForm() {
               [
                 "burning",
                 "attesting",
-                "waiting-destination-wallet",
+                "ReadyToClaim",
                 "minting",
                 "verifying",
                 "complete",
@@ -958,6 +1008,10 @@ export function MainnetBridgeForm() {
                     </div>
                   ) : status === "complete" ? (
                     <span className="text-xs text-emerald-400 font-medium">Completed</span>
+                  ) : status === "ReconciliationRequired" ? (
+                    <span className="text-xs text-amber-400 font-medium">
+                      Destination nonce consumed — reconciliation required
+                    </span>
                   ) : status === "burning" ? (
                     <span className="text-xs text-slate-400 italic">
                       Awaiting source burn confirmation
@@ -967,7 +1021,7 @@ export function MainnetBridgeForm() {
                       <Loader2 className="h-3 w-3 animate-spin shrink-0 text-blue-400" />
                       <span>Awaiting Circle Iris attestation</span>
                     </div>
-                  ) : status === "waiting-destination-wallet" ? (
+                  ) : status === "ReadyToClaim" ? (
                     <span className="text-xs text-indigo-400 font-medium">
                       Ready for destination claim (switch network)
                     </span>
@@ -994,6 +1048,164 @@ export function MainnetBridgeForm() {
               <Lock className="h-3 w-3 text-slate-500 shrink-0" />
               <span>Non-custodial transfer via Circle CCTP V2 official smart contracts.</span>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Pending & Recoverable Transfers Section */}
+      <Card className="w-full max-w-lg bg-[#040814]/90 border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)] backdrop-blur-xl rounded-2xl overflow-hidden mt-4">
+        <CardHeader className="p-5 pb-3 border-b border-white/5">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
+              <RefreshCw className="h-4 w-4 text-primary" />
+              <span>Pending &amp; Recoverable Transfers</span>
+            </CardTitle>
+            <Badge variant="outline" className="text-[10px] text-slate-400 border-white/10">
+              CCTP V2 Recovery
+            </Badge>
+          </div>
+          <CardDescription className="text-xs text-slate-400 pt-1">
+            Transfers are restored automatically for your connected wallet. You can also manually resume any transaction by hash.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="p-5 space-y-4">
+          {/* List of active transfers */}
+          {pendingTransfers.length === 0 ? (
+            <div className="text-center py-4 text-xs text-slate-500 bg-white/[0.01] border border-white/5 rounded-xl">
+              No pending transfers detected for this wallet.
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {pendingTransfers.map((tx) => (
+                <div
+                  key={tx.id}
+                  className="bg-white/[0.02] border border-white/5 hover:border-white/10 rounded-xl p-3 flex flex-col gap-2 transition-all"
+                >
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-slate-200">
+                        {tx.sourceChain} → {tx.destinationChain}
+                      </span>
+                      <span className="text-emerald-400 font-mono font-medium">
+                        {tx.amount} USDC
+                      </span>
+                    </div>
+                    <Badge
+                      className={cn(
+                        "text-[10px] py-0 px-2 font-mono",
+                        tx.status === "ReadyToClaim"
+                          ? "bg-purple-500/20 text-purple-300 border border-purple-500/30 animate-pulse"
+                          : tx.status === "Attesting"
+                          ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                          : tx.status === "ReconciliationRequired"
+                          ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                          : "bg-slate-500/20 text-slate-400 border border-slate-500/30"
+                      )}
+                    >
+                      {tx.status === "ReconciliationRequired" ? "Reconcile Needed" : tx.status}
+                    </Badge>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-slate-400">
+                    <div className="flex items-center gap-1 font-mono">
+                      <span>Tx: {tx.burnTxHash.slice(0, 10)}...{tx.burnTxHash.slice(-8)}</span>
+                      <a
+                        href={getMainnetExplorerTxUrl(tx.sourceChain, tx.burnTxHash)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary hover:text-white"
+                      >
+                        <ExternalLink className="h-3 w-3 inline" />
+                      </a>
+                    </div>
+
+                    <div>
+                      {tx.status === "ReadyToClaim" ? (
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-lg px-3 shadow-[0_2px_10px_rgba(168,85,247,0.3)] cursor-pointer"
+                          onClick={() => completeDestinationMint({ transferRecord: tx })}
+                        >
+                          Claim Transfer
+                        </Button>
+                      ) : tx.status === "ReconciliationRequired" ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs border-amber-500/30 hover:bg-amber-500/10 text-amber-300 rounded-lg px-3 cursor-pointer"
+                          onClick={() => resumeExistingTransfer(tx.burnTxHash)}
+                        >
+                          Reconcile
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs border-white/10 hover:bg-white/5 text-slate-300 rounded-lg px-3 cursor-pointer"
+                          onClick={() => resumeExistingTransfer(tx.burnTxHash)}
+                        >
+                          Check Status
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Manual Recovery Input */}
+          <div className="border-t border-white/5 pt-3.5 space-y-2">
+            <span className="text-xs font-semibold text-slate-300 block">
+              Recover by Transaction Hash
+            </span>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="0x... (Base or Arc burn transaction hash)"
+                value={manualRecoveryTx}
+                onChange={(e) => {
+                  setManualRecoveryTx(e.target.value.trim());
+                  setRecoveryError(null);
+                }}
+                className="flex-1 bg-white/[0.03] border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-primary font-mono"
+              />
+              <Button
+                type="button"
+                disabled={!manualRecoveryTx || isRecovering}
+                onClick={async () => {
+                  if (!manualRecoveryTx) return;
+                  setIsRecovering(true);
+                  setRecoveryError(null);
+                  try {
+                    const ok = await resumeExistingTransfer(manualRecoveryTx);
+                    if (ok) {
+                      setManualRecoveryTx("");
+                    }
+                  } catch (err: unknown) {
+                    const msg = err instanceof Error ? err.message : String(err);
+                    setRecoveryError(msg);
+                  } finally {
+                    setIsRecovering(false);
+                  }
+                }}
+                className="h-9 px-4 text-xs font-bold bg-primary/20 hover:bg-primary/30 text-primary border border-primary/30 rounded-xl cursor-pointer disabled:opacity-50"
+              >
+                {isRecovering ? (
+                  <span className="flex items-center gap-1.5">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Recovering...
+                  </span>
+                ) : (
+                  "Recover Transfer"
+                )}
+              </Button>
+            </div>
+
+            {recoveryError && (
+              <div className="text-[11px] text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-lg p-2 font-sans">
+                {recoveryError}
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
