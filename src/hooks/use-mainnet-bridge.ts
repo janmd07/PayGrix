@@ -16,6 +16,9 @@ import {
   MainnetChainKey,
   MAINNET_CHAINS,
   resolveMainnetCctpRoute,
+  isForwardingSupportedRoute,
+  CCTP_FORWARD_HOOK_DATA,
+  CCTP_V2_FAST_FINALITY_THRESHOLD,
 } from "@/config/cctp-mainnet";
 import {
   assertCorrelatedSourceAndIrisMessages,
@@ -26,11 +29,14 @@ import {
   checkDestinationNonceConsumed,
   decodeCctpMessage,
   encodeDepositForBurnCalldata,
+  encodeDepositForBurnWithHookCalldata,
   extractMessageFromReceiptLogs,
+  fetchCctpForwardingFee,
   fetchSourceBurnDetails,
   MainnetBridgeStage,
   MainnetBridgeTransferStatus,
   padAddressToBytes32,
+  pollCircleForwardingStatus,
   pollCircleIrisAttestation,
   messageTransmitterV2Abi,
   validateDecodedMessage,
@@ -38,6 +44,7 @@ import {
   verifyCctpDeploymentBytecode,
   verifyDestinationBalance,
   verifyDestinationCompletionEvidence,
+  CircleForwardingState,
 } from "@/lib/cctp-mainnet-engine";
 
 export interface MainnetBridgeTransferRecord {
@@ -60,6 +67,9 @@ export interface MainnetBridgeTransferRecord {
   finalizedNonce?: string;
   feeExecuted?: string;
   error?: string;
+  isForwarded?: boolean;
+  forwardState?: CircleForwardingState;
+  forwardTxHash?: string;
 }
 
 export const arcMainnetPublicClient = createPublicClient({
@@ -98,6 +108,10 @@ export function useMainnetBridge() {
   const [isLoadingBalance, setIsLoadingBalance] = useState<boolean>(false);
   const [pendingTransfers, setPendingTransfers] = useState<MainnetBridgeTransferRecord[]>([]);
 
+  const [forwardState, setForwardState] = useState<CircleForwardingState | undefined>(undefined);
+  const [forwardTxHash, setForwardTxHash] = useState<string | undefined>(undefined);
+  const [isForwarded, setIsForwarded] = useState<boolean>(false);
+
   const bridgeInFlightRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
   const operationIdRef = useRef(0);
@@ -122,6 +136,7 @@ export function useMainnetBridge() {
             (r) =>
               r.status === "Pending" ||
               r.status === "Attesting" ||
+              r.status === "Forwarding" ||
               r.status === "ReadyToClaim" ||
               r.status === "Minting" ||
               r.status === "ReconciliationRequired"
@@ -158,6 +173,9 @@ export function useMainnetBridge() {
       setMintTxHash("");
       setAttestationHex("");
       setMessageHex("");
+      setForwardState(undefined);
+      setForwardTxHash(undefined);
+      setIsForwarded(false);
       setError(null);
 
       // 3. Clear balance cache if disconnected
@@ -254,6 +272,9 @@ export function useMainnetBridge() {
     setMintTxHash("");
     setAttestationHex("");
     setMessageHex("");
+    setForwardState(undefined);
+    setForwardTxHash(undefined);
+    setIsForwarded(false);
     setError(null);
   }, []);
 
@@ -458,18 +479,56 @@ export function useMainnetBridge() {
 
         if (isStale()) return false;
 
+        const isForwarding = isForwardingSupportedRoute(route.sourceDomain, route.destinationDomain);
+        let depositCalldata: `0x${string}`;
+        let expectedMaxFee: bigint = CCTP_V2_DEFAULT_MAX_FEE;
+        let expectedMinFinalityThreshold: number = CCTP_V2_STANDARD_FINALITY_THRESHOLD;
+        let expectedHookData: `0x${string}` | undefined = undefined;
+
+        if (isForwarding) {
+          setIsForwarded(true);
+          setForwardState("PENDING");
+
+          // Dynamic fee calculation from Circle Iris API (no arbitrary fallback)
+          const feeQuote = await fetchCctpForwardingFee({
+            sourceDomain: route.sourceDomain,
+            destinationDomain: route.destinationDomain,
+            amount: parsedAmount,
+            signal: abortController.signal,
+          });
+
+          expectedMaxFee = feeQuote.maxFee;
+          expectedMinFinalityThreshold = CCTP_V2_FAST_FINALITY_THRESHOLD;
+          expectedHookData = CCTP_FORWARD_HOOK_DATA;
+
+          depositCalldata = encodeDepositForBurnWithHookCalldata({
+            amount: parsedAmount,
+            destinationDomain: route.destinationDomain,
+            mintRecipientBytes32: recipientBytes32,
+            burnToken: route.sourceUsdc,
+            destinationCaller: CCTP_V2_EMPTY_BYTES32,
+            maxFee: feeQuote.maxFee,
+            minFinalityThreshold: CCTP_V2_FAST_FINALITY_THRESHOLD,
+            hookData: CCTP_FORWARD_HOOK_DATA,
+          });
+        } else {
+          setIsForwarded(false);
+          setForwardState(undefined);
+          setForwardTxHash(undefined);
+
+          depositCalldata = encodeDepositForBurnCalldata({
+            amount: parsedAmount,
+            destinationDomain: route.destinationDomain,
+            mintRecipientBytes32: recipientBytes32,
+            burnToken: route.sourceUsdc,
+            destinationCaller: CCTP_V2_EMPTY_BYTES32,
+            maxFee: CCTP_V2_DEFAULT_MAX_FEE,
+            minFinalityThreshold: CCTP_V2_STANDARD_FINALITY_THRESHOLD,
+          });
+        }
+
         // 5. Deposit For Burn
         setStatus("burning");
-
-        const depositCalldata = encodeDepositForBurnCalldata({
-          amount: parsedAmount,
-          destinationDomain: route.destinationDomain,
-          mintRecipientBytes32: recipientBytes32,
-          burnToken: route.sourceUsdc,
-          destinationCaller: CCTP_V2_EMPTY_BYTES32,
-          maxFee: CCTP_V2_DEFAULT_MAX_FEE,
-          minFinalityThreshold: CCTP_V2_STANDARD_FINALITY_THRESHOLD,
-        });
 
         const rawBurnTx = (await provider.request({
           method: "eth_sendTransaction",
@@ -485,7 +544,7 @@ export function useMainnetBridge() {
         if (isStale()) return false;
         setBurnTxHash(rawBurnTx);
 
-        // Record pending transfer (wallet-scoped)
+        // Record pending transfer (wallet-scoped) immediately after source submission
         saveTransferRecord({
           id: rawBurnTx,
           sourceChain,
@@ -496,6 +555,8 @@ export function useMainnetBridge() {
           burnTxHash: rawBurnTx,
           status: "Pending",
           timestamp: new Date().toLocaleString(),
+          isForwarded: isForwarding,
+          forwardState: isForwarding ? "PENDING" : undefined,
         });
 
         const burnReceipt = await sourcePublic.waitForTransactionReceipt({
@@ -526,126 +587,282 @@ export function useMainnetBridge() {
           expectedSenderBytes32: padAddressToBytes32(route.sourceTokenMessenger),
           expectedMessageSenderBytes32: padAddressToBytes32(address),
           expectedDestinationCallerBytes32: CCTP_V2_EMPTY_BYTES32,
+          expectedMinFinalityThreshold,
+          expectedHookData,
+          expectedMaxFee,
         });
 
         if (isStale()) return false;
 
-        // 7. Poll Circle Production Iris API
-        setStatus("attesting");
+        // 7. Attestation & Completion verification
+        if (isForwarding) {
+          setStatus("forwarding");
+          setForwardState("PENDING");
 
-        const attestationRes = await pollCircleIrisAttestation({
-          sourceDomain: route.sourceDomain,
-          transactionHash: rawBurnTx,
-          expectedMessageHex: extractedMessage,
-          signal: abortController.signal,
-        });
-
-        if (isStale()) return false;
-
-        setAttestationHex(attestationRes.attestation);
-        if (attestationRes.message && attestationRes.message !== "0x") {
-          assertCorrelatedSourceAndIrisMessages({
-            sourceMessageHex: extractedMessage,
-            irisMessageHex: attestationRes.message,
-          });
-          setMessageHex(attestationRes.message);
-        }
-
-        const finalizedMsg =
-          attestationRes.message && attestationRes.message !== "0x"
-            ? attestationRes.message
-            : extractedMessage;
-        const finalizedDecoded = decodeCctpMessage(finalizedMsg);
-        const finalizedNonce =
-          finalizedDecoded.nonceBytes32 ||
-          (await import("viem")).pad(
-            (await import("viem")).toHex(finalizedDecoded.nonce),
-            { size: 32 }
-          );
-
-        const destinationClient = getPublicClientForChain(destinationChain);
-        const isConsumed = await checkDestinationNonceConsumed({
-          destinationPublicClient: destinationClient,
-          destinationMessageTransmitter: route.destinationMessageTransmitter,
-          nonceBytes32: finalizedNonce,
-        });
-
-        if (isConsumed) {
-          const evidence = await verifyDestinationCompletionEvidence({
-            destinationPublicClient: destinationClient,
-            destinationUsdc: route.destinationUsdc,
-            recipientAddress,
-            expectedAmount: (await import("viem")).parseUnits(amount, 6),
-            mintTxHash: undefined,
-            destBalanceBefore: undefined,
+          const forwardRes = await pollCircleForwardingStatus({
+            sourceDomain: route.sourceDomain,
+            transactionHash: rawBurnTx,
+            expectedMessageHex: extractedMessage,
+            signal: abortController.signal,
           });
 
-          if (evidence.verified) {
-            saveTransferRecord({
-              id: rawBurnTx,
-              sourceChain,
-              destinationChain,
-              amount,
-              senderAddress: address,
-              recipientAddress,
-              burnTxHash: rawBurnTx,
-              status: "Completed",
-              timestamp: new Date().toLocaleString(),
-              updatedAt: new Date().toISOString(),
-              sourceDomain: route.sourceDomain,
-              destinationDomain: route.destinationDomain,
-              messageHex: finalizedMsg,
-              attestationHex: attestationRes.attestation,
-              finalizedNonce,
-            });
-            setStatus("complete");
-            refreshBalances(sourceChain, destinationChain);
-            return true;
-          } else {
-            saveTransferRecord({
-              id: rawBurnTx,
-              sourceChain,
-              destinationChain,
-              amount,
-              senderAddress: address,
-              recipientAddress,
-              burnTxHash: rawBurnTx,
-              status: "ReconciliationRequired",
-              timestamp: new Date().toLocaleString(),
-              updatedAt: new Date().toISOString(),
-              sourceDomain: route.sourceDomain,
-              destinationDomain: route.destinationDomain,
-              messageHex: finalizedMsg,
-              attestationHex: attestationRes.attestation,
-              finalizedNonce,
-            });
-            setStatus("ReconciliationRequired");
-            refreshBalances(sourceChain, destinationChain);
-            return true;
+          if (isStale()) return false;
+
+          setAttestationHex(forwardRes.attestation);
+          setForwardState(forwardRes.forwardState);
+          if (forwardRes.forwardTxHash) {
+            setForwardTxHash(forwardRes.forwardTxHash);
           }
+
+          const finalizedMsg =
+            forwardRes.message && forwardRes.message !== "0x"
+              ? forwardRes.message
+              : extractedMessage;
+          setMessageHex(finalizedMsg);
+
+          const finalizedDecoded = decodeCctpMessage(finalizedMsg);
+          const finalizedNonce =
+            finalizedDecoded.nonceBytes32 ||
+            (await import("viem")).pad(
+              (await import("viem")).toHex(finalizedDecoded.nonce),
+              { size: 32 }
+            );
+
+          const destinationClient = getPublicClientForChain(destinationChain);
+          const isConsumed = await checkDestinationNonceConsumed({
+            destinationPublicClient: destinationClient,
+            destinationMessageTransmitter: route.destinationMessageTransmitter,
+            nonceBytes32: finalizedNonce,
+          });
+
+          if (isConsumed) {
+            const evidence = await verifyDestinationCompletionEvidence({
+              destinationPublicClient: destinationClient,
+              destinationUsdc: route.destinationUsdc,
+              recipientAddress,
+              expectedAmount: (await import("viem")).parseUnits(amount, 6),
+              mintTxHash: forwardRes.forwardTxHash as `0x${string}` | undefined,
+              destBalanceBefore: undefined,
+              expectedNonce: finalizedDecoded.nonce,
+              expectedNonceBytes32: finalizedNonce,
+              expectedSourceDomain: route.sourceDomain,
+              expectedDestinationMessageTransmitter: route.destinationMessageTransmitter,
+            });
+
+            if (evidence.verified) {
+              saveTransferRecord({
+                id: rawBurnTx,
+                sourceChain,
+                destinationChain,
+                amount,
+                senderAddress: address,
+                recipientAddress,
+                burnTxHash: rawBurnTx,
+                mintTxHash: forwardRes.forwardTxHash,
+                status: "Completed",
+                timestamp: new Date().toLocaleString(),
+                updatedAt: new Date().toISOString(),
+                sourceDomain: route.sourceDomain,
+                destinationDomain: route.destinationDomain,
+                messageHex: finalizedMsg,
+                attestationHex: forwardRes.attestation,
+                finalizedNonce,
+                isForwarded: true,
+                forwardState: "COMPLETE",
+                forwardTxHash: forwardRes.forwardTxHash,
+              });
+              setStatus("complete");
+              refreshBalances(sourceChain, destinationChain);
+              return true;
+            } else {
+              saveTransferRecord({
+                id: rawBurnTx,
+                sourceChain,
+                destinationChain,
+                amount,
+                senderAddress: address,
+                recipientAddress,
+                burnTxHash: rawBurnTx,
+                mintTxHash: forwardRes.forwardTxHash,
+                status: "ReconciliationRequired",
+                timestamp: new Date().toLocaleString(),
+                updatedAt: new Date().toISOString(),
+                sourceDomain: route.sourceDomain,
+                destinationDomain: route.destinationDomain,
+                messageHex: finalizedMsg,
+                attestationHex: forwardRes.attestation,
+                finalizedNonce,
+                isForwarded: true,
+                forwardState: forwardRes.forwardState,
+                forwardTxHash: forwardRes.forwardTxHash,
+              });
+              setStatus("ReconciliationRequired");
+              refreshBalances(sourceChain, destinationChain);
+              return true;
+            }
+          }
+
+          // If relayer delayed or failed, fall back safely to ReadyToClaim ONLY if receiveMessage simulation succeeds!
+          let simulationPassed = true;
+          const simClient = destinationClient as { simulateContract?: (args: unknown) => Promise<unknown> } | null | undefined;
+          if (simClient && typeof simClient.simulateContract === "function") {
+            try {
+              await simClient.simulateContract({
+                address: route.destinationMessageTransmitter,
+                abi: messageTransmitterV2Abi,
+                functionName: "receiveMessage",
+                args: [finalizedMsg, forwardRes.attestation],
+              });
+            } catch (simErr: unknown) {
+              simulationPassed = false;
+              const errMsg = simErr instanceof Error ? simErr.message : String(simErr);
+              console.warn("[CCTP Mainnet] Preflight receiveMessage simulation failed on destination:", errMsg);
+            }
+          }
+
+          const fallbackStatus = simulationPassed ? "ReadyToClaim" : "ReconciliationRequired";
+          saveTransferRecord({
+            id: rawBurnTx,
+            sourceChain,
+            destinationChain,
+            amount,
+            senderAddress: address,
+            recipientAddress,
+            burnTxHash: rawBurnTx,
+            status: fallbackStatus,
+            timestamp: new Date().toLocaleString(),
+            updatedAt: new Date().toISOString(),
+            sourceDomain: route.sourceDomain,
+            destinationDomain: route.destinationDomain,
+            messageHex: finalizedMsg,
+            attestationHex: forwardRes.attestation,
+            finalizedNonce,
+            isForwarded: true,
+            forwardState: forwardRes.forwardState,
+            forwardTxHash: forwardRes.forwardTxHash,
+          });
+
+          setStatus(fallbackStatus);
+          refreshBalances(sourceChain, destinationChain);
+          return true;
+        } else {
+          // Standard Arc -> Base path (100% untouched behavior)
+          setStatus("attesting");
+
+          const attestationRes = await pollCircleIrisAttestation({
+            sourceDomain: route.sourceDomain,
+            transactionHash: rawBurnTx,
+            expectedMessageHex: extractedMessage,
+            signal: abortController.signal,
+          });
+
+          if (isStale()) return false;
+
+          setAttestationHex(attestationRes.attestation);
+          if (attestationRes.message && attestationRes.message !== "0x") {
+            assertCorrelatedSourceAndIrisMessages({
+              sourceMessageHex: extractedMessage,
+              irisMessageHex: attestationRes.message,
+            });
+            setMessageHex(attestationRes.message);
+          }
+
+          const finalizedMsg =
+            attestationRes.message && attestationRes.message !== "0x"
+              ? attestationRes.message
+              : extractedMessage;
+          const finalizedDecoded = decodeCctpMessage(finalizedMsg);
+          const finalizedNonce =
+            finalizedDecoded.nonceBytes32 ||
+            (await import("viem")).pad(
+              (await import("viem")).toHex(finalizedDecoded.nonce),
+              { size: 32 }
+            );
+
+          const destinationClient = getPublicClientForChain(destinationChain);
+          const isConsumed = await checkDestinationNonceConsumed({
+            destinationPublicClient: destinationClient,
+            destinationMessageTransmitter: route.destinationMessageTransmitter,
+            nonceBytes32: finalizedNonce,
+          });
+
+          if (isConsumed) {
+            const evidence = await verifyDestinationCompletionEvidence({
+              destinationPublicClient: destinationClient,
+              destinationUsdc: route.destinationUsdc,
+              recipientAddress,
+              expectedAmount: (await import("viem")).parseUnits(amount, 6),
+              mintTxHash: undefined,
+              destBalanceBefore: undefined,
+            });
+
+            if (evidence.verified) {
+              saveTransferRecord({
+                id: rawBurnTx,
+                sourceChain,
+                destinationChain,
+                amount,
+                senderAddress: address,
+                recipientAddress,
+                burnTxHash: rawBurnTx,
+                status: "Completed",
+                timestamp: new Date().toLocaleString(),
+                updatedAt: new Date().toISOString(),
+                sourceDomain: route.sourceDomain,
+                destinationDomain: route.destinationDomain,
+                messageHex: finalizedMsg,
+                attestationHex: attestationRes.attestation,
+                finalizedNonce,
+              });
+              setStatus("complete");
+              refreshBalances(sourceChain, destinationChain);
+              return true;
+            } else {
+              saveTransferRecord({
+                id: rawBurnTx,
+                sourceChain,
+                destinationChain,
+                amount,
+                senderAddress: address,
+                recipientAddress,
+                burnTxHash: rawBurnTx,
+                status: "ReconciliationRequired",
+                timestamp: new Date().toLocaleString(),
+                updatedAt: new Date().toISOString(),
+                sourceDomain: route.sourceDomain,
+                destinationDomain: route.destinationDomain,
+                messageHex: finalizedMsg,
+                attestationHex: attestationRes.attestation,
+                finalizedNonce,
+              });
+              setStatus("ReconciliationRequired");
+              refreshBalances(sourceChain, destinationChain);
+              return true;
+            }
+          }
+
+          saveTransferRecord({
+            id: rawBurnTx,
+            sourceChain,
+            destinationChain,
+            amount,
+            senderAddress: address,
+            recipientAddress,
+            burnTxHash: rawBurnTx,
+            status: "ReadyToClaim",
+            timestamp: new Date().toLocaleString(),
+            updatedAt: new Date().toISOString(),
+            sourceDomain: route.sourceDomain,
+            destinationDomain: route.destinationDomain,
+            messageHex: finalizedMsg,
+            attestationHex: attestationRes.attestation,
+            finalizedNonce,
+          });
+
+          setStatus("ReadyToClaim");
+          refreshBalances(sourceChain, destinationChain);
+          return true;
         }
-
-        saveTransferRecord({
-          id: rawBurnTx,
-          sourceChain,
-          destinationChain,
-          amount,
-          senderAddress: address,
-          recipientAddress,
-          burnTxHash: rawBurnTx,
-          status: "ReadyToClaim",
-          timestamp: new Date().toLocaleString(),
-          updatedAt: new Date().toISOString(),
-          sourceDomain: route.sourceDomain,
-          destinationDomain: route.destinationDomain,
-          messageHex: finalizedMsg,
-          attestationHex: attestationRes.attestation,
-          finalizedNonce,
-        });
-
-        setStatus("ReadyToClaim");
-        refreshBalances(sourceChain, destinationChain);
-        return true;
       } catch (err: unknown) {
         if (isStale()) return false;
         const msg = err instanceof Error ? err.message : "Source bridge failed.";
@@ -717,21 +934,57 @@ export function useMainnetBridge() {
         });
 
         // 2. Iris attestation polling & correlation
-        const attestationRes = await pollCircleIrisAttestation({
-          sourceDomain: details.sourceDomain,
-          transactionHash: details.burnTxHash,
-          expectedMessageHex: details.extractedMessageHex,
-          signal: abortController.signal,
-        });
+        const decodedSource = decodeCctpMessage(details.extractedMessageHex);
+        const isForwarding =
+          isForwardingSupportedRoute(details.sourceDomain, details.destinationDomain) &&
+          Boolean(decodedSource.hookData && decodedSource.hookData.toLowerCase().startsWith("0x636374702d666f7277617264"));
+        let irisMsg = details.extractedMessageHex;
+        let irisAttest = "";
+        let recForwardState: CircleForwardingState | undefined = undefined;
+        let recForwardTxHash: string | undefined = undefined;
 
-        if (isStale()) return false;
+        if (isForwarding) {
+          setStatus("forwarding");
+          const forwardRes = await pollCircleForwardingStatus({
+            sourceDomain: details.sourceDomain,
+            transactionHash: details.burnTxHash,
+            expectedMessageHex: details.extractedMessageHex,
+            signal: abortController.signal,
+          });
 
-        assertCorrelatedSourceAndIrisMessages({
-          sourceMessageHex: details.extractedMessageHex,
-          irisMessageHex: attestationRes.message,
-        });
+          if (isStale()) return false;
+          irisMsg =
+            forwardRes.message && forwardRes.message !== "0x"
+              ? forwardRes.message
+              : details.extractedMessageHex;
+          irisAttest = forwardRes.attestation;
+          recForwardState = forwardRes.forwardState;
+          recForwardTxHash = forwardRes.forwardTxHash;
+        } else {
+          // Standard Arc -> Base recovery
+          const attestationRes = await pollCircleIrisAttestation({
+            sourceDomain: details.sourceDomain,
+            transactionHash: details.burnTxHash,
+            expectedMessageHex: details.extractedMessageHex,
+            signal: abortController.signal,
+          });
 
-        const finalizedDecoded = decodeCctpMessage(attestationRes.message);
+          if (isStale()) return false;
+          irisMsg =
+            attestationRes.message && attestationRes.message !== "0x"
+              ? attestationRes.message
+              : details.extractedMessageHex;
+          irisAttest = attestationRes.attestation;
+        }
+
+        if (irisMsg && irisMsg !== "0x") {
+          assertCorrelatedSourceAndIrisMessages({
+            sourceMessageHex: details.extractedMessageHex,
+            irisMessageHex: irisMsg,
+          });
+        }
+
+        const finalizedDecoded = decodeCctpMessage(irisMsg);
         const finalizedNonce =
           finalizedDecoded.nonceBytes32 ||
           (await import("viem")).pad(
@@ -739,8 +992,8 @@ export function useMainnetBridge() {
             { size: 32 }
           );
 
-        setMessageHex(attestationRes.message);
-        setAttestationHex(attestationRes.attestation);
+        setMessageHex(irisMsg);
+        setAttestationHex(irisAttest);
 
         // 3. Destination nonce consumption check
         const destClient = getPublicClientForChain(details.destinationChain);
@@ -752,18 +1005,24 @@ export function useMainnetBridge() {
 
         if (isStale()) return false;
 
-        if (isConsumed) {
-          const existingRecord = pendingTransfers.find(
+        const effectiveMintTx =
+          recForwardTxHash ||
+          pendingTransfers.find(
             (r) => r.burnTxHash?.toLowerCase() === details.burnTxHash.toLowerCase()
-          );
+          )?.mintTxHash;
 
+        if (isConsumed) {
           const evidence = await verifyDestinationCompletionEvidence({
             destinationPublicClient: destClient,
             destinationUsdc: details.destinationUsdcAddress,
             recipientAddress: details.recipientAddress,
             expectedAmount: details.amount,
-            mintTxHash: existingRecord?.mintTxHash as `0x${string}` | undefined,
+            mintTxHash: effectiveMintTx as `0x${string}` | undefined,
             destBalanceBefore: undefined,
+            expectedNonce: finalizedDecoded.nonce,
+            expectedNonceBytes32: finalizedNonce,
+            expectedSourceDomain: details.sourceDomain,
+            expectedDestinationMessageTransmitter: details.destinationMessageTransmitter,
           });
 
           if (evidence.verified) {
@@ -777,13 +1036,16 @@ export function useMainnetBridge() {
               senderAddress: details.senderAddress,
               recipientAddress: details.recipientAddress,
               burnTxHash: details.burnTxHash,
-              mintTxHash: existingRecord?.mintTxHash,
+              mintTxHash: effectiveMintTx,
               status: "Completed",
               timestamp: new Date().toLocaleString(),
               updatedAt: new Date().toISOString(),
-              messageHex: attestationRes.message,
-              attestationHex: attestationRes.attestation,
+              messageHex: irisMsg,
+              attestationHex: irisAttest,
               finalizedNonce,
+              isForwarded: isForwarding,
+              forwardState: isForwarding ? "COMPLETE" : undefined,
+              forwardTxHash: recForwardTxHash,
             });
             setStatus("complete");
             refreshBalances(details.sourceChain, details.destinationChain);
@@ -799,13 +1061,16 @@ export function useMainnetBridge() {
               senderAddress: details.senderAddress,
               recipientAddress: details.recipientAddress,
               burnTxHash: details.burnTxHash,
-              mintTxHash: existingRecord?.mintTxHash,
+              mintTxHash: effectiveMintTx,
               status: "ReconciliationRequired",
               timestamp: new Date().toLocaleString(),
               updatedAt: new Date().toISOString(),
-              messageHex: attestationRes.message,
-              attestationHex: attestationRes.attestation,
+              messageHex: irisMsg,
+              attestationHex: irisAttest,
               finalizedNonce,
+              isForwarded: isForwarding,
+              forwardState: recForwardState,
+              forwardTxHash: recForwardTxHash,
             });
             setStatus("ReconciliationRequired");
             refreshBalances(details.sourceChain, details.destinationChain);
@@ -813,7 +1078,25 @@ export function useMainnetBridge() {
           }
         }
 
-        // 4. Transition to ReadyToClaim and STOP
+        // 4. Preflight simulate receiveMessage before transitioning to ReadyToClaim
+        let simulationPassed = true;
+        const simClientRecovery = destClient as { simulateContract?: (args: unknown) => Promise<unknown> } | null | undefined;
+        if (simClientRecovery && typeof simClientRecovery.simulateContract === "function") {
+          try {
+            await simClientRecovery.simulateContract({
+              address: details.destinationMessageTransmitter,
+              abi: messageTransmitterV2Abi,
+              functionName: "receiveMessage",
+              args: [irisMsg as `0x${string}`, irisAttest as `0x${string}`],
+            });
+          } catch (simErr: unknown) {
+            simulationPassed = false;
+            const errMsg = simErr instanceof Error ? simErr.message : String(simErr);
+            console.warn("[CCTP Mainnet] Preflight receiveMessage simulation failed during recovery:", errMsg);
+          }
+        }
+
+        const recoveryStatus = simulationPassed ? "ReadyToClaim" : "ReconciliationRequired";
         saveTransferRecord({
           id: details.burnTxHash,
           sourceChain: details.sourceChain,
@@ -824,15 +1107,18 @@ export function useMainnetBridge() {
           senderAddress: details.senderAddress,
           recipientAddress: details.recipientAddress,
           burnTxHash: details.burnTxHash,
-          status: "ReadyToClaim",
+          status: recoveryStatus,
           timestamp: new Date().toLocaleString(),
           updatedAt: new Date().toISOString(),
-          messageHex: attestationRes.message,
-          attestationHex: attestationRes.attestation,
+          messageHex: irisMsg,
+          attestationHex: irisAttest,
           finalizedNonce,
+          isForwarded: isForwarding,
+          forwardState: recForwardState,
+          forwardTxHash: recForwardTxHash,
         });
 
-        setStatus("ReadyToClaim");
+        setStatus(recoveryStatus);
         refreshBalances(details.sourceChain, details.destinationChain);
         return true;
       } catch (err: unknown) {
@@ -929,6 +1215,10 @@ export function useMainnetBridge() {
             expectedAmount: decoded.amount,
             mintTxHash: targetRecord?.mintTxHash as `0x${string}` | undefined,
             destBalanceBefore: undefined,
+            expectedNonce: decoded.nonce,
+            expectedNonceBytes32: finalizedNonce,
+            expectedSourceDomain: route.sourceDomain,
+            expectedDestinationMessageTransmitter: route.destinationMessageTransmitter,
           });
 
           if (evidence.verified) {
@@ -1115,6 +1405,9 @@ export function useMainnetBridge() {
     isLoadingBalance,
     error,
     pendingTransfers,
+    isForwarded,
+    forwardState,
+    forwardTxHash,
     refreshBalances,
     resetBridgeState,
     startSourceBridgeFlow,

@@ -189,3 +189,22 @@ export function isSupportedRecoveryRoute(sourceDomain: number, destinationDomain
     (sourceDomain === 26 && destinationDomain === 6)
   );
 }
+
+// -----------------------------------------------------------------------------
+// CCTP V2 Forwarding & Fast Finality Constants (Base -> Arc Only)
+// -----------------------------------------------------------------------------
+export const CCTP_V2_FAST_FINALITY_THRESHOLD = 1000 as const;
+export const CCTP_FORWARD_MAGIC_PREFIX = "cctp-forward" as const;
+export const CCTP_FORWARD_HOOK_DATA =
+  "0x636374702d666f72776172640000000000000000000000000000000000000000" as const;
+export const CIRCLE_IRIS_FEES_API =
+  "https://iris-api.circle.com/v2/burn/USDC/fees" as const;
+
+export function isForwardingSupportedRoute(
+  sourceDomain: number,
+  destinationDomain: number
+): boolean {
+  // Production forwarding is enabled strictly for Base Mainnet (6) -> Arc Mainnet (26)
+  return sourceDomain === 6 && destinationDomain === 26;
+}
+

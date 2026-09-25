@@ -15,8 +15,11 @@ import {
   toHex,
 } from "viem";
 import {
+  CCTP_FORWARD_HOOK_DATA,
+  CCTP_V2_FAST_FINALITY_THRESHOLD,
   CCTP_V2_MESSAGE_TRANSMITTER,
   CCTP_V2_TOKEN_MESSENGER,
+  CIRCLE_IRIS_FEES_API,
   CIRCLE_IRIS_PRODUCTION_API,
   getChainByDomain,
   isSupportedRecoveryRoute,
@@ -41,6 +44,22 @@ export const tokenMessengerV2Abi = [
       { name: "destinationCaller", type: "bytes32" },
       { name: "maxFee", type: "uint256" },
       { name: "minFinalityThreshold", type: "uint32" },
+    ],
+    outputs: [{ name: "_nonce", type: "uint64" }],
+  },
+  {
+    name: "depositForBurnWithHook",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "amount", type: "uint256" },
+      { name: "destinationDomain", type: "uint32" },
+      { name: "mintRecipient", type: "bytes32" },
+      { name: "burnToken", type: "address" },
+      { name: "destinationCaller", type: "bytes32" },
+      { name: "maxFee", type: "uint256" },
+      { name: "minFinalityThreshold", type: "uint32" },
+      { name: "hookData", type: "bytes" },
     ],
     outputs: [{ name: "_nonce", type: "uint64" }],
   },
@@ -77,6 +96,10 @@ export const MESSAGE_SENT_EVENT_TOPIC0 = toEventSelector(
 
 export const DEPOSIT_FOR_BURN_SELECTOR = toFunctionSelector(
   "function depositForBurn(uint256 amount, uint32 destinationDomain, bytes32 mintRecipient, address burnToken, bytes32 destinationCaller, uint256 maxFee, uint32 minFinalityThreshold) returns (uint64)"
+);
+
+export const DEPOSIT_FOR_BURN_WITH_HOOK_SELECTOR = toFunctionSelector(
+  "function depositForBurnWithHook(uint256 amount, uint32 destinationDomain, bytes32 mintRecipient, address burnToken, bytes32 destinationCaller, uint256 maxFee, uint32 minFinalityThreshold, bytes hookData) returns (uint64)"
 );
 
 export const RECEIVE_MESSAGE_SELECTOR = toFunctionSelector(
@@ -171,11 +194,81 @@ export function encodeDepositForBurnCalldata(params: {
 }
 
 export function decodeDepositForBurnCalldata(calldata: `0x${string}`) {
-  return decodeFunctionData({
+  const decoded = decodeFunctionData({
     abi: tokenMessengerV2Abi,
     data: calldata,
   });
+  const args = decoded.args as [bigint, number, `0x${string}`, `0x${string}`, `0x${string}`, bigint, number];
+  return {
+    ...decoded,
+    amount: args[0],
+    destinationDomain: args[1],
+    mintRecipientBytes32: args[2],
+    burnToken: args[3],
+    destinationCaller: args[4],
+    maxFee: args[5],
+    minFinalityThreshold: args[6],
+  };
 }
+
+export function buildForwardingHookData(): `0x${string}` {
+  return CCTP_FORWARD_HOOK_DATA;
+}
+
+export function encodeDepositForBurnWithHookCalldata(params: {
+  amount: bigint;
+  destinationDomain: number;
+  mintRecipientBytes32: `0x${string}`;
+  burnToken: `0x${string}`;
+  destinationCaller?: `0x${string}`;
+  maxFee: bigint;
+  minFinalityThreshold: number;
+  hookData: `0x${string}`;
+}): `0x${string}` {
+  return encodeFunctionData({
+    abi: tokenMessengerV2Abi,
+    functionName: "depositForBurnWithHook",
+    args: [
+      params.amount,
+      params.destinationDomain,
+      params.mintRecipientBytes32,
+      params.burnToken,
+      params.destinationCaller ?? CCTP_V2_EMPTY_BYTES32,
+      params.maxFee,
+      params.minFinalityThreshold,
+      params.hookData,
+    ],
+  });
+}
+
+export function decodeDepositForBurnWithHookCalldata(calldata: `0x${string}`) {
+  const decoded = decodeFunctionData({
+    abi: tokenMessengerV2Abi,
+    data: calldata,
+  });
+  const args = decoded.args as [
+    bigint,
+    number,
+    `0x${string}`,
+    `0x${string}`,
+    `0x${string}`,
+    bigint,
+    number,
+    `0x${string}`
+  ];
+  return {
+    ...decoded,
+    amount: args[0],
+    destinationDomain: args[1],
+    mintRecipientBytes32: args[2],
+    burnToken: args[3],
+    destinationCaller: args[4],
+    maxFee: args[5],
+    minFinalityThreshold: args[6],
+    hookData: args[7],
+  };
+}
+
 
 export function encodeReceiveMessageCalldata(params: {
   message: `0x${string}`;
@@ -396,6 +489,9 @@ export function validateDecodedMessage(params: {
   expectedDestinationCallerBytes32?: `0x${string}`;
   expectedNonce?: bigint;
   currentBlockNumber?: bigint;
+  expectedMinFinalityThreshold?: number;
+  expectedHookData?: `0x${string}`;
+  expectedMaxFee?: bigint;
 }): void {
   const {
     decoded,
@@ -410,6 +506,9 @@ export function validateDecodedMessage(params: {
     expectedDestinationCallerBytes32,
     expectedNonce,
     currentBlockNumber,
+    expectedMinFinalityThreshold,
+    expectedHookData,
+    expectedMaxFee,
   } = params;
 
   if (decoded.sourceDomain !== expectedSourceDomain) {
@@ -506,6 +605,43 @@ export function validateDecodedMessage(params: {
   ) {
     throw new Error(
       `Security check failed: Message expired at block ${decoded.expirationBlock}. Current block: ${currentBlockNumber}.`
+    );
+  }
+
+  if (
+    expectedMinFinalityThreshold !== undefined &&
+    decoded.minFinalityThreshold !== expectedMinFinalityThreshold
+  ) {
+    throw new Error(
+      `Security check failed: minFinalityThreshold mismatch. Expected ${expectedMinFinalityThreshold}, got ${decoded.minFinalityThreshold}.`
+    );
+  }
+
+  if (
+    expectedHookData !== undefined &&
+    (decoded.hookData || "0x").toLowerCase() !== expectedHookData.toLowerCase()
+  ) {
+    throw new Error(
+      `Security check failed: hookData mismatch. Expected ${expectedHookData}, got ${decoded.hookData}.`
+    );
+  }
+
+  if (
+    decoded.feeExecuted !== undefined &&
+    expectedMaxFee !== undefined &&
+    decoded.feeExecuted > expectedMaxFee
+  ) {
+    throw new Error(
+      `Security check failed: Executed fee (${decoded.feeExecuted}) exceeds authorized maxFee (${expectedMaxFee}).`
+    );
+  }
+
+  if (
+    expectedMaxFee !== undefined &&
+    decoded.maxFee !== expectedMaxFee
+  ) {
+    throw new Error(
+      `Security check failed: maxFee mismatch. Expected ${expectedMaxFee}, got ${decoded.maxFee}.`
     );
   }
 }
@@ -706,12 +842,169 @@ export function assertCorrelatedSourceAndIrisMessages(params: {
 }
 
 // -----------------------------------------------------------------------------
+// CCTP V2 Forwarding Fee Estimation
+// -----------------------------------------------------------------------------
+export interface CctpForwardFeeTiers {
+  low: number;
+  med: number;
+  high: number;
+}
+
+export interface CctpIrisFeeResponseItem {
+  finalityThreshold: number;
+  minimumFee: number;
+  forwardFee?: CctpForwardFeeTiers;
+}
+
+export interface CctpForwardingFeeQuote {
+  maxFee: bigint;
+  providerFee: bigint;
+  forwarderFee: bigint;
+  minimumFeeBps: number;
+  finalityThreshold: number;
+  minFinalityThreshold: number;
+  forwardFeeHigh: bigint;
+}
+
+/**
+ * Dynamically fetches the authoritative CCTP V2 forwarding fee from Circle Iris API.
+ * Formula (derived from Circle's official provider-cctp-v2 reference):
+ * - Queries: GET /v2/burn/USDC/fees/{sourceDomain}/{destinationDomain}?forward=true
+ * - Finds tier with finalityThreshold === 1000 (fast finality)
+ * - Minimum fast-burn fee in bps (e.g. 0.325) scaled by 100 => 33
+ * - baseFee = ceil((scaledBps * amount) / 1,000,000)
+ * - providerFee = baseFee + (baseFee / 10) (10% buffer)
+ * - forwarderFee = forwardFee.high (gas compensation for destination mint on Arc)
+ * - total maxFee = providerFee + forwarderFee
+ */
+export async function fetchCctpForwardingFee(params: {
+  sourceDomain: number;
+  destinationDomain: number;
+  amount: bigint;
+  apiBaseUrl?: string;
+  feeTier?: "low" | "med" | "high";
+  safetyBufferBps?: number;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+  fetcher?: (url: string, init?: RequestInit) => Promise<Response>;
+}): Promise<CctpForwardingFeeQuote> {
+  const {
+    sourceDomain,
+    destinationDomain,
+    amount,
+    apiBaseUrl = CIRCLE_IRIS_FEES_API,
+    feeTier = "high",
+    safetyBufferBps = 0,
+    signal,
+    timeoutMs = 10_000,
+    fetcher = fetch,
+  } = params;
+
+  if (amount <= BigInt(0)) {
+    throw new Error("Amount must be greater than zero to fetch forwarding fee.");
+  }
+
+  const url = `${apiBaseUrl}/${sourceDomain}/${destinationDomain}?forward=true`;
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  const abortListener = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) {
+      clearTimeout(timeoutId);
+      throw new Error("CCTP forwarding fee request aborted.");
+    }
+    signal.addEventListener("abort", abortListener);
+  }
+
+  try {
+    const res = await fetcher(url, { signal: controller.signal });
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      throw new Error(
+        `Circle Iris fee API returned status ${res.status}: ${errText}`
+      );
+    }
+
+    const data = (await res.json()) as unknown;
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error("Invalid response from Circle Iris fee API: expected non-empty array.");
+    }
+
+    const tier = (data as CctpIrisFeeResponseItem[]).find(
+      (t) => t.finalityThreshold === CCTP_V2_FAST_FINALITY_THRESHOLD
+    );
+
+    if (!tier) {
+      throw new Error(
+        `No fee tier with finalityThreshold ${CCTP_V2_FAST_FINALITY_THRESHOLD} available in Circle fee API response.`
+      );
+    }
+
+    const minimumFeeBps = Number(tier.minimumFee);
+    if (isNaN(minimumFeeBps) || !isFinite(minimumFeeBps) || minimumFeeBps < 0) {
+      throw new Error(`Invalid minimumFee in fee API response: ${tier.minimumFee}`);
+    }
+
+    if (!tier.forwardFee || typeof tier.forwardFee[feeTier] !== "number") {
+      throw new Error(`Missing forwardFee.${feeTier} in Circle fee API response.`);
+    }
+
+    const forwarderFee = BigInt(Math.round(tier.forwardFee[feeTier]));
+    // 0.325 basis points = 0.00325% = 0.0000325
+    // Precision: bpsNumerator = round(minimumFeeBps * 1000)
+    // Division: ceil((amount * bpsNumerator) / 10,000,000)
+    const bpsNumerator = BigInt(Math.round(minimumFeeBps * 1000));
+    const providerFee =
+      bpsNumerator > BigInt(0)
+        ? (amount * bpsNumerator + BigInt(9999999)) / BigInt(10000000)
+        : BigInt(0);
+
+    // Optional safety buffer on forwarderFee
+    const buffer =
+      safetyBufferBps > 0
+        ? (forwarderFee * BigInt(safetyBufferBps) + BigInt(9999)) / BigInt(10000)
+        : BigInt(0);
+
+    const maxFee = providerFee + forwarderFee + buffer;
+
+    return {
+      maxFee,
+      providerFee,
+      forwarderFee,
+      minimumFeeBps,
+      finalityThreshold: tier.finalityThreshold,
+      minFinalityThreshold: tier.finalityThreshold,
+      forwardFeeHigh: forwarderFee,
+    };
+  } catch (err: unknown) {
+    if (signal?.aborted || controller.signal.aborted) {
+      throw new Error("CCTP forwarding fee request aborted.");
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Failed to obtain authoritative CCTP forwarding fee from Circle Iris API: ${msg}. Aborting to prevent submitting an underfunded or failing transaction.`
+    );
+  } finally {
+    clearTimeout(timeoutId);
+    if (signal) {
+      signal.removeEventListener("abort", abortListener);
+    }
+  }
+}
+
+// -----------------------------------------------------------------------------
 // Iris Attestation Polling
 // -----------------------------------------------------------------------------
 export interface IrisAttestationMessage {
   attestation?: string;
   message?: string;
   status: "pending" | "complete" | string;
+  eventNonce?: string;
+  cctpVersion?: number;
+  forwardState?: "PENDING" | "CONFIRMED" | "COMPLETE" | "FAILED" | string;
+  forwardTxHash?: string;
   error?: string;
 }
 
@@ -729,7 +1022,12 @@ export async function pollCircleIrisAttestation(params: {
   intervalMs?: number;
   signal?: AbortSignal;
   onAttempt?: (attempt: number, max: number, status?: string) => void;
-}): Promise<{ message: `0x${string}`; attestation: `0x${string}` }> {
+}): Promise<{
+  message: `0x${string}`;
+  attestation: `0x${string}`;
+  forwardState?: string;
+  forwardTxHash?: `0x${string}`;
+}> {
   const {
     sourceDomain,
     transactionHash,
@@ -799,12 +1097,17 @@ export async function pollCircleIrisAttestation(params: {
           return {
             message: retMessage,
             attestation: targetMsg.attestation as `0x${string}`,
+            forwardState: targetMsg.forwardState,
+            forwardTxHash: (targetMsg.forwardTxHash && targetMsg.forwardTxHash.startsWith("0x")
+              ? targetMsg.forwardTxHash
+              : undefined) as `0x${string}` | undefined,
           };
         }
       } else if (res.status === 404) {
         // Message not yet indexed by Iris, continue polling
         onAttempt?.(attempt, maxAttempts, "indexing");
-      } else {
+      }
+ else {
         const errorText = await res.text().catch(() => "");
         console.warn(
           `[CCTP Mainnet] Iris API non-200 status (${res.status}): ${errorText}`
@@ -834,6 +1137,161 @@ export async function pollCircleIrisAttestation(params: {
       `Your funds were burned on the source chain (${transactionHash}). ` +
       `You can re-query or complete the destination mint once Iris marks the transaction complete.`
   );
+}
+
+export interface PollCircleForwardingParams {
+  sourceDomain: number;
+  transactionHash: `0x${string}`;
+  expectedMessageHex?: `0x${string}`;
+  apiBaseUrl?: string;
+  maxAttempts?: number;
+  intervalMs?: number;
+  signal?: AbortSignal;
+  onAttempt?: (attempt: number, max: number, status?: string, forwardState?: string) => void;
+  fetcher?: (url: string, init?: RequestInit) => Promise<Response>;
+}
+
+export type CircleForwardingState =
+  | "PENDING"
+  | "CONFIRMED"
+  | "COMPLETE"
+  | "FAILED"
+  | "UNKNOWN"
+  | (string & {});
+
+export interface PollCircleForwardingResult {
+  message: `0x${string}`;
+  attestation: `0x${string}`;
+  forwardState: CircleForwardingState;
+  forwardTxHash?: `0x${string}`;
+  completed: boolean;
+  failed: boolean;
+}
+
+/**
+ * Polls Circle Iris API specifically for CCTP V2 auto-forwarding lifecycle.
+ * Waits for attestation AND either:
+ * - forwardState === "CONFIRMED" | "COMPLETE" with valid forwardTxHash (relayer minted)
+ * - forwardState === "FAILED" (relayer reported failure)
+ */
+export async function pollCircleForwardingStatus(
+  params: PollCircleForwardingParams
+): Promise<PollCircleForwardingResult> {
+  const {
+    sourceDomain,
+    transactionHash,
+    expectedMessageHex,
+    apiBaseUrl = CIRCLE_IRIS_PRODUCTION_API,
+    maxAttempts = 120, // 120 * 3000ms = 6 minutes max polling for forwarding
+    intervalMs = 3000,
+    signal,
+    onAttempt,
+    fetcher = fetch,
+  } = params;
+
+  const url = `${apiBaseUrl}/v2/messages/${sourceDomain}?transactionHash=${transactionHash}`;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (signal?.aborted) {
+      throw new Error("Circle forwarding polling aborted.");
+    }
+
+    try {
+      const res = await fetcher(url, { signal });
+      if (res.ok) {
+        const data = (await res.json()) as IrisAttestationResponse;
+        let targetMsg: IrisAttestationMessage | undefined;
+
+        if (expectedMessageHex) {
+          targetMsg = data.messages?.find((m) => {
+            if (!m.message || m.message === "0x") return false;
+            const correlation = correlateSourceAndIrisMessages({
+              sourceMessageHex: expectedMessageHex,
+              irisMessageHex: m.message as `0x${string}`,
+            });
+            return correlation.valid;
+          });
+        } else {
+          targetMsg =
+            data.messages?.find((m) => m.message && m.message !== "0x") ||
+            data.messages?.[0];
+        }
+
+        const fState = targetMsg?.forwardState || "PENDING";
+        const fTx = targetMsg?.forwardTxHash;
+
+        onAttempt?.(attempt, maxAttempts, targetMsg?.status || "indexing", fState);
+
+        if (
+          targetMsg &&
+          targetMsg.status === "complete" &&
+          targetMsg.attestation &&
+          targetMsg.attestation.startsWith("0x") &&
+          targetMsg.attestation !== "0x"
+        ) {
+          const retMessage = (targetMsg.message || "0x") as `0x${string}`;
+          if (expectedMessageHex && retMessage !== "0x") {
+            assertCorrelatedSourceAndIrisMessages({
+              sourceMessageHex: expectedMessageHex,
+              irisMessageHex: retMessage,
+            });
+          }
+
+          // Check if relayer confirmed or completed
+          if (
+            (fState === "CONFIRMED" || fState === "COMPLETE") &&
+            fTx &&
+            fTx.startsWith("0x")
+          ) {
+            return {
+              message: retMessage,
+              attestation: targetMsg.attestation as `0x${string}`,
+              forwardState: fState,
+              forwardTxHash: fTx as `0x${string}`,
+              completed: true,
+              failed: false,
+            };
+          }
+
+          // Check if relayer failed
+          if (fState === "FAILED") {
+            return {
+              message: retMessage,
+              attestation: targetMsg.attestation as `0x${string}`,
+              forwardState: "FAILED",
+              forwardTxHash: undefined,
+              completed: false,
+              failed: true,
+            };
+          }
+
+          // Attestation ready, but forwarding still PENDING:
+          // If we reached the final attempts, return current progress
+          if (attempt === maxAttempts) {
+            return {
+              message: retMessage,
+              attestation: targetMsg.attestation as `0x${string}`,
+              forwardState: fState,
+              forwardTxHash: (fTx && fTx.startsWith("0x") ? fTx : undefined) as `0x${string}` | undefined,
+              completed: false,
+              failed: false,
+            };
+          }
+        }
+      }
+    } catch (err: unknown) {
+      if (signal?.aborted) {
+        throw new Error("Circle forwarding polling aborted.");
+      }
+      console.warn(`[CCTP Mainnet] Forwarding poll retry error:`, err);
+    }
+
+    if (attempt < maxAttempts) {
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+  }
+
+  throw new Error("Circle forwarding polling timed out before confirmation.");
 }
 
 // -----------------------------------------------------------------------------
@@ -1192,6 +1650,7 @@ export type MainnetBridgeStage =
   | "approving"
   | "burning"
   | "attesting"
+  | "forwarding"
   | "ReadyToClaim"
   | "minting"
   | "verifying"
@@ -1202,6 +1661,7 @@ export type MainnetBridgeStage =
 export type MainnetBridgeTransferStatus =
   | "Pending"
   | "Attesting"
+  | "Forwarding"
   | "ReadyToClaim"
   | "Minting"
   | "Completed"
@@ -1600,7 +2060,7 @@ export async function checkDestinationNonceConsumed(params: {
 // -----------------------------------------------------------------------------
 export interface DestinationCompletionEvidenceParams {
   destinationPublicClient: {
-    readContract: (args: {
+    readContract?: (args: {
       address: `0x${string}`;
       abi: readonly unknown[];
       functionName: string;
@@ -1608,19 +2068,38 @@ export interface DestinationCompletionEvidenceParams {
     }) => Promise<unknown>;
     getTransactionReceipt?: (args: {
       hash: `0x${string}`;
-    }) => Promise<{ status: "success" | "reverted" | string } | null>;
+    }) => Promise<{
+      status: "success" | "reverted" | string;
+      to?: string | null;
+      logs?: readonly { address: string; topics: readonly string[]; data: string }[];
+    } | null>;
+    getTransaction?: (args: {
+      hash: `0x${string}`;
+    }) => Promise<{
+      input?: string;
+      to?: string | null;
+    } | null>;
   };
   destinationUsdc: `0x${string}`;
   recipientAddress: `0x${string}`;
   expectedAmount: bigint;
   mintTxHash?: `0x${string}`;
   destBalanceBefore?: bigint;
-  knownReceipt?: { status: "success" | "reverted" | string } | null;
+  knownReceipt?: {
+    status: "success" | "reverted" | string;
+    to?: string | null;
+    logs?: readonly { address: string; topics: readonly string[]; data: string }[];
+  } | null;
+  expectedNonce?: bigint;
+  expectedNonceBytes32?: `0x${string}`;
+  expectedSourceDomain?: number;
+  expectedDestinationMessageTransmitter?: `0x${string}`;
 }
 
 export interface DestinationCompletionEvidenceResult {
   verified: boolean;
   evidenceType?: "receipt" | "balance_delta";
+  source?: "transaction_receipt" | "balance_delta";
   receiptStatus?: string;
   destBalanceAfter?: bigint;
   balanceDelta?: bigint;
@@ -1638,34 +2117,179 @@ export async function verifyDestinationCompletionEvidence(
     mintTxHash,
     destBalanceBefore,
     knownReceipt,
+    expectedNonce,
+    expectedNonceBytes32,
+    expectedSourceDomain,
+    expectedDestinationMessageTransmitter,
   } = params;
 
-  // 1. Conclusive proof via known or queried successful receiveMessage receipt
-  if (knownReceipt && knownReceipt.status === "success") {
-    return {
-      verified: true,
-      evidenceType: "receipt",
-      receiptStatus: knownReceipt.status,
-    };
+  const targetRecipientBytes32 =
+    recipientAddress.length === 66
+      ? recipientAddress.toLowerCase()
+      : padAddressToBytes32(recipientAddress).toLowerCase();
+
+  // Helper to validate receipt & transaction details against this exact transfer
+  const validateReceiptAndTransaction = async (
+    receipt: {
+      status: "success" | "reverted" | string;
+      to?: string | null;
+      logs?: readonly { address: string; topics: readonly string[]; data: string }[];
+    },
+    txHash?: `0x${string}`
+  ): Promise<{ valid: boolean; reason?: string }> => {
+    if (receipt.status !== "success") {
+      return { valid: false, reason: "Destination transaction receipt indicates failure/reverted." };
+    }
+
+    // 1. Verify destination MessageTransmitter target if specified
+    if (expectedDestinationMessageTransmitter && receipt.to) {
+      const isDirectTo = receipt.to.toLowerCase() === expectedDestinationMessageTransmitter.toLowerCase();
+      const hasTransmitterLog = receipt.logs?.some(
+        (l) => l.address.toLowerCase() === expectedDestinationMessageTransmitter.toLowerCase()
+      );
+      if (!isDirectTo && !hasTransmitterLog) {
+        return {
+          valid: false,
+          reason: `Destination transaction target ${receipt.to} does not match configured MessageTransmitter ${expectedDestinationMessageTransmitter}.`,
+        };
+      }
+    }
+
+    // 2. Inspect transaction input if getTransaction is available
+    if (txHash && destinationPublicClient.getTransaction) {
+      try {
+        const tx = await destinationPublicClient.getTransaction({ hash: txHash });
+        if (tx?.input && tx.input.startsWith(RECEIVE_MESSAGE_SELECTOR)) {
+          const decodedCall = decodeFunctionData({
+            abi: messageTransmitterV2Abi,
+            data: tx.input as `0x${string}`,
+          });
+          const messageArg = (decodedCall.args as readonly unknown[])?.[0] as string | undefined;
+          if (messageArg && messageArg.startsWith("0x")) {
+            const decodedMsg = decodeCctpMessage(messageArg as `0x${string}`);
+            if (expectedSourceDomain !== undefined && decodedMsg.sourceDomain !== expectedSourceDomain) {
+              return {
+                valid: false,
+                reason: `Destination transaction sourceDomain mismatch: expected ${expectedSourceDomain}, got ${decodedMsg.sourceDomain}.`,
+              };
+            }
+            if (expectedNonce !== undefined && decodedMsg.nonce !== expectedNonce) {
+              return {
+                valid: false,
+                reason: `Destination transaction nonce mismatch: expected ${expectedNonce}, got ${decodedMsg.nonce}.`,
+              };
+            }
+            if (decodedMsg.mintRecipient.toLowerCase() !== targetRecipientBytes32) {
+              return {
+                valid: false,
+                reason: `Destination transaction recipient mismatch: expected ${recipientAddress}, got ${decodedMsg.mintRecipient}.`,
+              };
+            }
+            if (expectedAmount !== undefined && decodedMsg.amount !== expectedAmount) {
+              return {
+                valid: false,
+                reason: `Destination transaction amount mismatch: expected ${expectedAmount}, got ${decodedMsg.amount}.`,
+              };
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[CCTP Mainnet] Could not decode destination transaction input:", e);
+      }
+    }
+
+    // 3. Inspect logs: check for ERC-20 Transfer on destinationUsdc
+    if (receipt.logs && receipt.logs.length > 0) {
+      const transferTopic0 = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+      const usdcTransferLogs = receipt.logs.filter(
+        (l) =>
+          l.address.toLowerCase() === destinationUsdc.toLowerCase() &&
+          l.topics[0]?.toLowerCase() === transferTopic0
+      );
+
+      if (usdcTransferLogs.length > 0) {
+        const matchingLog = usdcTransferLogs.find(
+          (l) => l.topics[2]?.toLowerCase() === targetRecipientBytes32
+        );
+        if (!matchingLog) {
+          return {
+            valid: false,
+            reason: `Destination receipt logs transfer USDC to a different recipient than ${recipientAddress}.`,
+          };
+        }
+        if (expectedAmount !== undefined) {
+          try {
+            const logAmount = BigInt(matchingLog.data);
+            if (logAmount > expectedAmount) {
+              return {
+                valid: false,
+                reason: `Destination receipt log transfer amount (${logAmount}) does not match expected amount (${expectedAmount}).`,
+              };
+            }
+          } catch {}
+        }
+      }
+    }
+
+    // 4. Verify nonce consumed on-chain if nonce and transmitter are known
+    if (expectedNonceBytes32 && expectedDestinationMessageTransmitter && destinationPublicClient.readContract) {
+      try {
+        const consumed = await checkDestinationNonceConsumed({
+          destinationPublicClient: { readContract: destinationPublicClient.readContract },
+          destinationMessageTransmitter: expectedDestinationMessageTransmitter,
+          nonceBytes32: expectedNonceBytes32,
+        });
+        if (!consumed) {
+          return {
+            valid: false,
+            reason: "Destination nonce is not marked consumed on MessageTransmitter.",
+          };
+        }
+      } catch {}
+    }
+
+    return { valid: true };
+  };
+
+  // 1. Conclusive proof via known receipt
+  if (knownReceipt) {
+    const val = await validateReceiptAndTransaction(knownReceipt, mintTxHash);
+    if (val.valid) {
+      return {
+        verified: true,
+        evidenceType: "receipt",
+        source: "transaction_receipt",
+        receiptStatus: knownReceipt.status,
+      };
+    } else {
+      return { verified: false, reason: val.reason };
+    }
   }
 
+  // 2. Query receipt from RPC
   if (mintTxHash && destinationPublicClient.getTransactionReceipt) {
     try {
       const receipt = await destinationPublicClient.getTransactionReceipt({ hash: mintTxHash });
-      if (receipt && receipt.status === "success") {
-        return {
-          verified: true,
-          evidenceType: "receipt",
-          receiptStatus: receipt.status,
-        };
+      if (receipt) {
+        const val = await validateReceiptAndTransaction(receipt, mintTxHash);
+        if (val.valid) {
+          return {
+            verified: true,
+            evidenceType: "receipt",
+            source: "transaction_receipt",
+            receiptStatus: receipt.status,
+          };
+        } else {
+          return { verified: false, reason: val.reason };
+        }
       }
     } catch {
       // Proceed to balance delta check
     }
   }
 
-  // 2. Conclusive proof via destination balance delta increment
-  if (destBalanceBefore !== undefined) {
+  // 3. Conclusive proof via destination balance delta increment
+  if (destBalanceBefore !== undefined && destinationPublicClient.readContract) {
     try {
       const destBalanceAfter = (await destinationPublicClient.readContract({
         address: destinationUsdc,
@@ -1678,6 +2302,7 @@ export async function verifyDestinationCompletionEvidence(
         return {
           verified: true,
           evidenceType: "balance_delta",
+          source: "balance_delta",
           destBalanceAfter,
           balanceDelta: destBalanceAfter - destBalanceBefore,
         };

@@ -82,6 +82,7 @@ export function MainnetBridgeForm() {
     isLoadingBalance,
     error,
     pendingTransfers,
+    forwardTxHash,
     refreshBalances,
     resetBridgeState,
     startSourceBridgeFlow,
@@ -309,7 +310,10 @@ export function MainnetBridgeForm() {
     if (status === "ReadyToClaim") {
       return (
         <span className="flex items-center justify-center gap-2">
-          <CheckCircle2 className="h-4 w-4" /> Claim Transfer
+          <CheckCircle2 className="h-4 w-4" />{" "}
+          {sourceChain === "Base Mainnet" && destinationChain === "Arc Mainnet"
+            ? "Claim Transfer (Manual Fallback)"
+            : "Claim Transfer"}
         </span>
       );
     }
@@ -345,6 +349,13 @@ export function MainnetBridgeForm() {
       return (
         <span className="flex items-center justify-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin" /> Awaiting Circle Iris Attestation...
+        </span>
+      );
+    }
+    if (status === "forwarding") {
+      return (
+        <span className="flex items-center justify-center gap-2">
+          <Loader2 className="h-4 w-4 animate-spin" /> Forwarding to Arc... (Waiting for Circle)
         </span>
       );
     }
@@ -638,7 +649,11 @@ export function MainnetBridgeForm() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400 font-sans">Protocol:</span>
-                  <span className="text-slate-300 font-sans">Circle CCTP V2 (1:1 Burn/Mint)</span>
+                  <span className="text-slate-300 font-sans">
+                    {sourceChain === "Base Mainnet" && destinationChain === "Arc Mainnet"
+                      ? "Circle CCTP V2 Fast Forwarding"
+                      : "Circle CCTP V2 (1:1 Burn/Mint)"}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-400 font-sans">TokenMessengerV2:</span>
@@ -660,7 +675,9 @@ export function MainnetBridgeForm() {
                 <div className="flex justify-between border-t border-white/5 pt-2 mt-1 font-sans">
                   <span className="text-slate-400">Est. Time:</span>
                   <span className="text-emerald-400 font-sans font-medium">
-                    ~2–8 minutes (Finality + Attestation)
+                    {sourceChain === "Base Mainnet" && destinationChain === "Arc Mainnet"
+                      ? "Fast finality (Automatic Arc mint)"
+                      : "~2–8 minutes (Finality + Attestation)"}
                   </span>
                 </div>
               </div>
@@ -778,11 +795,15 @@ export function MainnetBridgeForm() {
                       Reconciliation Required
                     </Badge>
                   )}
-                  {["approving", "burning", "attesting", "ReadyToClaim", "minting", "verifying"].includes(
+                  {["approving", "burning", "attesting", "forwarding", "ReadyToClaim", "minting", "verifying"].includes(
                     status
                   ) && (
                     <Badge className="text-[10px] py-0 px-2 bg-blue-500/20 text-blue-400 border border-blue-500/30 animate-pulse font-mono">
-                      {status === "ReadyToClaim" ? "READY TO CLAIM" : status.toUpperCase()}
+                      {status === "ReadyToClaim"
+                        ? "READY TO CLAIM"
+                        : status === "forwarding"
+                        ? "FORWARDING"
+                        : status.toUpperCase()}
                     </Badge>
                   )}
                 </div>
@@ -796,6 +817,7 @@ export function MainnetBridgeForm() {
                         "approving",
                         "burning",
                         "attesting",
+                        "forwarding",
                         "ReadyToClaim",
                         "minting",
                         "verifying",
@@ -813,6 +835,7 @@ export function MainnetBridgeForm() {
                           : [
                               "burning",
                               "attesting",
+                              "forwarding",
                               "ReadyToClaim",
                               "minting",
                               "verifying",
@@ -832,6 +855,7 @@ export function MainnetBridgeForm() {
                       [
                         "burning",
                         "attesting",
+                        "forwarding",
                         "ReadyToClaim",
                         "minting",
                         "verifying",
@@ -848,6 +872,7 @@ export function MainnetBridgeForm() {
                           ? "bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]"
                           : [
                               "attesting",
+                              "forwarding",
                               "ReadyToClaim",
                               "minting",
                               "verifying",
@@ -857,14 +882,16 @@ export function MainnetBridgeForm() {
                           : "bg-slate-600"
                       )}
                     />
-                    <span>2. Deposit for burn on {sourceChain}</span>
+                    <span>
+                      2. Deposit for burn {sourceChain === "Base Mainnet" && destinationChain === "Arc Mainnet" ? "with fast finality " : ""}on {sourceChain}
+                    </span>
                   </div>
 
                   {/* Step 3: Iris Attestation */}
                   <div
                     className={cn(
                       "flex items-center gap-2 text-xs",
-                      ["attesting", "ReadyToClaim", "minting", "verifying", "complete"].includes(status)
+                      ["attesting", "forwarding", "ReadyToClaim", "minting", "verifying", "complete"].includes(status)
                         ? "text-slate-300"
                         : "text-slate-500 opacity-50"
                     )}
@@ -872,14 +899,18 @@ export function MainnetBridgeForm() {
                     <div
                       className={cn(
                         "h-2 w-2 rounded-full",
-                        status === "attesting"
+                        status === "attesting" || status === "forwarding"
                           ? "bg-blue-500 animate-pulse shadow-[0_0_8px_rgba(59,130,246,0.6)]"
                           : ["ReadyToClaim", "minting", "verifying", "complete"].includes(status)
                           ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]"
                           : "bg-slate-600"
                       )}
                     />
-                    <span>3. Query Circle Production Iris Attestation</span>
+                    <span>
+                      {sourceChain === "Base Mainnet" && destinationChain === "Arc Mainnet"
+                        ? "3. Circle Fast Attestation & Forwarding"
+                        : "3. Query Circle Production Iris Attestation"}
+                    </span>
                   </div>
 
                   {/* Step 4: Mint */}
@@ -901,7 +932,11 @@ export function MainnetBridgeForm() {
                           : "bg-slate-600"
                       )}
                     />
-                    <span>4. Receive &amp; Mint USDC on {destinationChain}</span>
+                    <span>
+                      {sourceChain === "Base Mainnet" && destinationChain === "Arc Mainnet"
+                        ? "4. Automatic receive & mint USDC on Arc Mainnet"
+                        : `4. Receive & Mint USDC on ${destinationChain}`}
+                    </span>
                   </div>
 
                   {/* Step 5: Verification */}
@@ -936,9 +971,11 @@ export function MainnetBridgeForm() {
             {/* Explicit Two-Row Transaction Display */}
             {(burnTxHash ||
               mintTxHash ||
+              forwardTxHash ||
               [
                 "burning",
                 "attesting",
+                "forwarding",
                 "ReadyToClaim",
                 "minting",
                 "verifying",
@@ -984,13 +1021,13 @@ export function MainnetBridgeForm() {
                     <span className="text-[11px] font-medium text-slate-400">Destination Transaction</span>
                     <span className="text-xs text-slate-200 font-semibold">{destinationChain}</span>
                   </div>
-                  {mintTxHash ? (
+                  {mintTxHash || forwardTxHash ? (
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-xs text-slate-300">
-                        {mintTxHash.slice(0, 8)}...{mintTxHash.slice(-6)}
+                        {(mintTxHash || forwardTxHash)!.slice(0, 8)}...{(mintTxHash || forwardTxHash)!.slice(-6)}
                       </span>
                       <a
-                        href={getMainnetExplorerTxUrl(destinationChain, mintTxHash)}
+                        href={getMainnetExplorerTxUrl(destinationChain, (mintTxHash || forwardTxHash)!)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-primary hover:text-white flex items-center gap-1 transition-all font-medium text-xs bg-primary/10 hover:bg-primary/20 px-2 py-1 rounded-md"
@@ -1020,6 +1057,11 @@ export function MainnetBridgeForm() {
                     <div className="flex items-center gap-1.5 text-blue-400 text-xs">
                       <Loader2 className="h-3 w-3 animate-spin shrink-0 text-blue-400" />
                       <span>Awaiting Circle Iris attestation</span>
+                    </div>
+                  ) : status === "forwarding" ? (
+                    <div className="flex items-center gap-1.5 text-blue-400 text-xs">
+                      <Loader2 className="h-3 w-3 animate-spin shrink-0 text-blue-400" />
+                      <span>Circle forwarding to Arc (automatic mint)</span>
                     </div>
                   ) : status === "ReadyToClaim" ? (
                     <span className="text-xs text-indigo-400 font-medium">
@@ -1095,8 +1137,8 @@ export function MainnetBridgeForm() {
                         "text-[10px] py-0 px-2 font-mono",
                         tx.status === "ReadyToClaim"
                           ? "bg-purple-500/20 text-purple-300 border border-purple-500/30 animate-pulse"
-                          : tx.status === "Attesting"
-                          ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
+                          : tx.status === "Attesting" || tx.status === "Forwarding"
+                          ? "bg-blue-500/20 text-blue-400 border border-blue-500/30 animate-pulse"
                           : tx.status === "ReconciliationRequired"
                           ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
                           : "bg-slate-500/20 text-slate-400 border border-slate-500/30"
@@ -1117,6 +1159,11 @@ export function MainnetBridgeForm() {
                       >
                         <ExternalLink className="h-3 w-3 inline" />
                       </a>
+                      {tx.forwardTxHash && (
+                        <span className="ml-1 text-[10px] text-emerald-400">
+                          (Minted)
+                        </span>
+                      )}
                     </div>
 
                     <div>
