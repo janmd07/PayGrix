@@ -19,6 +19,7 @@ import {
   isForwardingSupportedRoute,
   CCTP_FORWARD_HOOK_DATA,
   CCTP_V2_FAST_FINALITY_THRESHOLD,
+  CIRCLE_IRIS_PRODUCTION_API,
 } from "@/config/cctp-mainnet";
 import {
   assertCorrelatedSourceAndIrisMessages,
@@ -120,6 +121,20 @@ export function useMainnetBridge() {
   const chainIdRef = useRef(chainId);
   chainIdRef.current = chainId;
 
+  // Authoritative active transfer check (excludes Completed/Failed and already minted/forwarded records)
+  const isRecordActive = useCallback((r: MainnetBridgeTransferRecord): boolean => {
+    if (r.status === "Completed" || r.status === "Failed") return false;
+    if (r.forwardState === "COMPLETE" || Boolean(r.mintTxHash)) return false;
+    return (
+      r.status === "Pending" ||
+      r.status === "Attesting" ||
+      r.status === "Forwarding" ||
+      r.status === "ReadyToClaim" ||
+      r.status === "Minting" ||
+      r.status === "ReconciliationRequired"
+    );
+  }, []);
+
   // Load wallet-scoped transfers
   const loadWalletTransfers = useCallback(() => {
     if (!address) {
@@ -131,28 +146,204 @@ export function useMainnetBridge() {
       const existing = localStorage.getItem(key);
       if (existing) {
         const list: MainnetBridgeTransferRecord[] = JSON.parse(existing);
-        setPendingTransfers(
-          list.filter(
-            (r) =>
-              r.status === "Pending" ||
-              r.status === "Attesting" ||
-              r.status === "Forwarding" ||
-              r.status === "ReadyToClaim" ||
-              r.status === "Minting" ||
-              r.status === "ReconciliationRequired"
-          )
-        );
+        setPendingTransfers(list.filter(isRecordActive));
       } else {
         setPendingTransfers([]);
       }
     } catch {
       setPendingTransfers([]);
     }
-  }, [address]);
+  }, [address, isRecordActive]);
+
+  // Authoritative on-chain reconciliation of pending transfers
+  const reconcileWalletTransfers = useCallback(
+    async (targetAddress?: string) => {
+      const activeAddr = (targetAddress || addressRef.current)?.toLowerCase();
+      if (!activeAddr) return;
+
+      try {
+        const key = `paygrix_mainnet_bridge_transfers_${activeAddr}`;
+        const existing = localStorage.getItem(key);
+        if (!existing) return;
+
+        const list: MainnetBridgeTransferRecord[] = JSON.parse(existing);
+        const candidates = list.filter(isRecordActive);
+        if (candidates.length === 0) return;
+
+        let hasUpdates = false;
+        const updatedList = [...list];
+
+        for (const record of candidates) {
+          // Do not reconcile a transfer actively running in memory in current session
+          if (
+            bridgeInFlightRef.current &&
+            record.burnTxHash &&
+            burnTxHash &&
+            record.burnTxHash.toLowerCase() === burnTxHash.toLowerCase()
+          ) {
+            continue;
+          }
+
+          try {
+            const srcChain = record.sourceChain;
+            const dstChain = record.destinationChain;
+            const dstCfg = MAINNET_CHAINS[dstChain];
+            const dstClient = getPublicClientForChain(dstChain);
+
+            let nonceBytes32 = record.finalizedNonce as `0x${string}` | undefined;
+            let messageHex = record.messageHex as `0x${string}` | undefined;
+            const attestationHex = record.attestationHex;
+
+            // 1. If messageHex exists, decode nonce
+            if (messageHex && !nonceBytes32) {
+              try {
+                const dec = decodeCctpMessage(messageHex);
+                if (dec.nonceBytes32 && dec.nonceBytes32 !== CCTP_V2_EMPTY_BYTES32) {
+                  nonceBytes32 = dec.nonceBytes32;
+                }
+              } catch {}
+            }
+
+            // 2. If no non-zero nonce, check source receipt
+            const isNonZeroNonce =
+              nonceBytes32 &&
+              nonceBytes32 !== CCTP_V2_EMPTY_BYTES32 &&
+              nonceBytes32 !== "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+            if (!isNonZeroNonce && record.burnTxHash) {
+              try {
+                const srcClient = getPublicClientForChain(srcChain);
+                const receipt = await srcClient.getTransactionReceipt({
+                  hash: record.burnTxHash as `0x${string}`,
+                });
+                if (receipt.status === "reverted") {
+                  const idx = updatedList.findIndex((r) => r.id === record.id);
+                  if (idx !== -1) {
+                    updatedList[idx] = {
+                      ...updatedList[idx],
+                      status: "Failed",
+                      updatedAt: new Date().toISOString(),
+                      error: "Source burn transaction reverted",
+                    };
+                    hasUpdates = true;
+                  }
+                  continue;
+                }
+                const srcCfg = MAINNET_CHAINS[srcChain];
+                const msg = extractMessageFromReceiptLogs(receipt, srcCfg?.messageTransmitterV2);
+                if (msg) {
+                  messageHex = msg;
+                  const dec = decodeCctpMessage(msg);
+                  if (dec.nonceBytes32 && dec.nonceBytes32 !== CCTP_V2_EMPTY_BYTES32) {
+                    nonceBytes32 = dec.nonceBytes32;
+                  }
+                }
+              } catch {}
+            }
+
+            // 3. If non-zero nonce, check destination consumption
+            if (
+              nonceBytes32 &&
+              nonceBytes32 !== CCTP_V2_EMPTY_BYTES32 &&
+              nonceBytes32 !== "0x0000000000000000000000000000000000000000000000000000000000000000" &&
+              dstCfg?.messageTransmitterV2
+            ) {
+              const isConsumed = await checkDestinationNonceConsumed({
+                destinationPublicClient: dstClient,
+                destinationMessageTransmitter: dstCfg.messageTransmitterV2,
+                nonceBytes32,
+              });
+
+              if (isConsumed) {
+                const idx = updatedList.findIndex((r) => r.id === record.id);
+                if (idx !== -1) {
+                  updatedList[idx] = {
+                    ...updatedList[idx],
+                    status: "Completed",
+                    finalizedNonce: nonceBytes32,
+                    messageHex: messageHex || updatedList[idx].messageHex,
+                    attestationHex: attestationHex || updatedList[idx].attestationHex,
+                    updatedAt: new Date().toISOString(),
+                  };
+                  hasUpdates = true;
+                }
+                continue;
+              }
+            }
+
+            // 4. Query Circle Iris for finalized eventNonce and attestation
+            if (record.burnTxHash) {
+              try {
+                const srcCfg = MAINNET_CHAINS[srcChain];
+                const srcDom = srcCfg?.domain ?? (srcChain === "Arc Mainnet" ? 26 : 6);
+                const irisUrl = `${CIRCLE_IRIS_PRODUCTION_API}/v2/messages/${srcDom}?transactionHash=${record.burnTxHash}`;
+                const res = await fetch(irisUrl);
+                if (res.ok) {
+                  const irisData = await res.json();
+                  const irisMsg = irisData.messages?.[0];
+                  if (irisMsg?.status === "complete" && irisMsg?.attestation) {
+                    const dec = decodeCctpMessage(irisMsg.message);
+                    const nBytes = (irisMsg.eventNonce as `0x${string}`) || dec.nonceBytes32;
+
+                    let consumedWithRecovered = false;
+                    if (
+                      nBytes &&
+                      nBytes !== CCTP_V2_EMPTY_BYTES32 &&
+                      nBytes !== "0x0000000000000000000000000000000000000000000000000000000000000000" &&
+                      dstCfg?.messageTransmitterV2
+                    ) {
+                      consumedWithRecovered = await checkDestinationNonceConsumed({
+                        destinationPublicClient: dstClient,
+                        destinationMessageTransmitter: dstCfg.messageTransmitterV2,
+                        nonceBytes32: nBytes,
+                      });
+                    }
+
+                    const idx = updatedList.findIndex((r) => r.id === record.id);
+                    if (idx !== -1) {
+                      const newStatus: MainnetBridgeTransferStatus = consumedWithRecovered
+                        ? "Completed"
+                        : "ReadyToClaim";
+                      if (
+                        updatedList[idx].status !== newStatus ||
+                        updatedList[idx].finalizedNonce !== nBytes ||
+                        updatedList[idx].attestationHex !== irisMsg.attestation
+                      ) {
+                        updatedList[idx] = {
+                          ...updatedList[idx],
+                          status: newStatus,
+                          messageHex: irisMsg.message,
+                          attestationHex: irisMsg.attestation,
+                          finalizedNonce: nBytes,
+                          updatedAt: new Date().toISOString(),
+                        };
+                        hasUpdates = true;
+                      }
+                    }
+                  }
+                }
+              } catch {}
+            }
+          } catch {}
+        }
+
+        if (hasUpdates) {
+          if (addressRef.current?.toLowerCase() === activeAddr) {
+            localStorage.setItem(key, JSON.stringify(updatedList));
+            setPendingTransfers(updatedList.filter(isRecordActive));
+          }
+        }
+      } catch {}
+    },
+    [burnTxHash, isRecordActive]
+  );
 
   useEffect(() => {
     loadWalletTransfers();
-  }, [loadWalletTransfers]);
+    if (address) {
+      reconcileWalletTransfers(address);
+    }
+  }, [address, loadWalletTransfers, reconcileWalletTransfers]);
 
   // Track previous account to isolate multi-user state on accountsChanged
   const prevAddressRef = useRef<string | undefined>(address);
@@ -185,9 +376,12 @@ export function useMainnetBridge() {
       }
 
       loadWalletTransfers();
+      if (address) {
+        reconcileWalletTransfers(address);
+      }
       prevAddressRef.current = address;
     }
-  }, [address, loadWalletTransfers]);
+  }, [address, loadWalletTransfers, reconcileWalletTransfers]);
 
   // Track unexpected chainId change during execution
   const prevChainIdRef = useRef<number | undefined>(chainId);
@@ -1413,5 +1607,6 @@ export function useMainnetBridge() {
     startSourceBridgeFlow,
     resumeExistingTransfer,
     completeDestinationMint,
+    reconcileWalletTransfers,
   };
 }

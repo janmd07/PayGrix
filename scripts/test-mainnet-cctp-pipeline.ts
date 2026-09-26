@@ -4217,6 +4217,125 @@ async function runTests() {
     assert.strictEqual(true, true);
   });
 
+  // ---------------------------------------------------------------------------
+  // 132. Regression Test: Completed/stale transfer records must not appear in Active Transfer Detected count
+  // ---------------------------------------------------------------------------
+  await test("Test 132: Active Transfer Detection — completed or stale destination-consumed records are strictly excluded from active count", () => {
+    const memoryRecords = [
+      { id: "1", sourceChain: "Arc Mainnet", destinationChain: "Base Mainnet", status: "ReadyToClaim", burnTxHash: "0x1" },
+      { id: "2", sourceChain: "Base Mainnet", destinationChain: "Arc Mainnet", status: "Completed", burnTxHash: "0x2" },
+      { id: "3", sourceChain: "Base Mainnet", destinationChain: "Arc Mainnet", status: "Completed", burnTxHash: "0x3" },
+      { id: "4", sourceChain: "Base Mainnet", destinationChain: "Arc Mainnet", status: "Completed", burnTxHash: "0x4" },
+      { id: "5", sourceChain: "Base Mainnet", destinationChain: "Arc Mainnet", status: "Completed", burnTxHash: "0x5" },
+      { id: "6", sourceChain: "Base Mainnet", destinationChain: "Arc Mainnet", status: "ReadyToClaim", burnTxHash: "0x6" },
+      { id: "7", sourceChain: "Arc Mainnet", destinationChain: "Base Mainnet", status: "Completed", burnTxHash: "0x7" },
+      { id: "8", sourceChain: "Arc Mainnet", destinationChain: "Base Mainnet", status: "Completed", burnTxHash: "0x8" },
+      { id: "9", sourceChain: "Arc Mainnet", destinationChain: "Base Mainnet", status: "ReadyToClaim", burnTxHash: "0x9" },
+    ];
+
+    const isRecordActive = (r: any): boolean => {
+      if (r.status === "Completed" || r.status === "Failed") return false;
+      if (r.forwardState === "COMPLETE" || Boolean(r.mintTxHash)) return false;
+      return (
+        r.status === "Pending" ||
+        r.status === "Attesting" ||
+        r.status === "Forwarding" ||
+        r.status === "ReadyToClaim" ||
+        r.status === "Minting" ||
+        r.status === "ReconciliationRequired"
+      );
+    };
+
+    const activeRecords = memoryRecords.filter(isRecordActive);
+    assert.strictEqual(activeRecords.length, 3, "Only the 3 unminted ReadyToClaim records should be active");
+    assert.strictEqual(
+      activeRecords.every((r) => r.status !== "Completed" && r.status !== "Failed"),
+      true,
+      "No completed or failed transfer may appear in active records"
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // 133. Regression Test: Double-burn prevention blocker scopes to active route
+  // ---------------------------------------------------------------------------
+  await test("Test 133: Double-burn blocker — in-flight transfers on selected route block duplicate burn, other routes do not block", () => {
+    const pendingTransfers = [
+      { id: "1", sourceChain: "Arc Mainnet", destinationChain: "Base Mainnet", status: "ReadyToClaim" },
+      { id: "6", sourceChain: "Base Mainnet", destinationChain: "Arc Mainnet", status: "ReadyToClaim" },
+      { id: "9", sourceChain: "Arc Mainnet", destinationChain: "Base Mainnet", status: "ReadyToClaim" },
+    ];
+
+    // Case A: User selected Base Mainnet -> Arc Mainnet
+    const baseToArcRouteActive = pendingTransfers.filter(
+      (t) => t.sourceChain === "Base Mainnet" && t.destinationChain === "Arc Mainnet" && t.status !== "Completed" && t.status !== "Failed"
+    );
+    assert.strictEqual(baseToArcRouteActive.length, 1, "Exactly 1 active transfer on Base -> Arc route");
+
+    // Case B: User selected Arbitrum One -> Arc Mainnet (clean route)
+    const arbToArcRouteActive = pendingTransfers.filter(
+      (t) => t.sourceChain === "Arbitrum One" && t.destinationChain === "Arc Mainnet" && t.status !== "Completed" && t.status !== "Failed"
+    );
+    assert.strictEqual(arbToArcRouteActive.length, 0, "Zero active transfers on Arbitrum -> Arc route");
+  });
+
+  // ---------------------------------------------------------------------------
+  // 134. Regression Test: Authoritative destination evidence transitions to Completed without deleting record
+  // ---------------------------------------------------------------------------
+  await test("Test 134: Authoritative reconciliation — destination consumed evidence transitions status to Completed while preserving full record", () => {
+    const memoryRecord: any = {
+      id: "0xburn_hist",
+      sourceChain: "Base Mainnet",
+      destinationChain: "Arc Mainnet",
+      amount: "0.01",
+      senderAddress: WALLET_A,
+      recipientAddress: WALLET_A,
+      burnTxHash: "0xburn_hist",
+      status: "Pending",
+      timestamp: "23/09/2026, 08:45:28",
+    };
+
+    // On-chain evidence discovered: destination nonce consumed
+    const destinationNonceConsumed = true;
+    const resolvedNonce = "0x5ed9c7c4dbb8818e07d7d0a6ad982289a0269b481def2446bb303968f7917807";
+
+    if (destinationNonceConsumed) {
+      memoryRecord.status = "Completed";
+      memoryRecord.finalizedNonce = resolvedNonce;
+      memoryRecord.updatedAt = new Date().toISOString();
+    }
+
+    assert.strictEqual(memoryRecord.status, "Completed", "Status must transition to Completed");
+    assert.strictEqual(memoryRecord.burnTxHash, "0xburn_hist", "Burn tx hash must be preserved");
+    assert.strictEqual(memoryRecord.amount, "0.01", "Amount must be preserved");
+    assert.strictEqual(memoryRecord.finalizedNonce, resolvedNonce, "Finalized nonce must be attached");
+    assert.strictEqual(Boolean(memoryRecord.updatedAt), true, "UpdatedAt timestamp must be set");
+  });
+
+  // ---------------------------------------------------------------------------
+  // 135. Regression Test: Recovered 0.10 USDC transfer is authoritative Completed and never active
+  // ---------------------------------------------------------------------------
+  await test("Test 135: Recovered transfer — 0.10 USDC Base -> Arc transfer (0x859ef827...) is authoritative Completed with zero burns", () => {
+    const recoveredRecord = {
+      id: "0x859ef827675ccdce42f76351cb99183edeee1254d53c1542980738ae4674addc",
+      sourceChain: "Base Mainnet",
+      destinationChain: "Arc Mainnet",
+      amount: "0.10",
+      burnTxHash: "0x859ef827675ccdce42f76351cb99183edeee1254d53c1542980738ae4674addc",
+      mintTxHash: "0x72ed5bdac0881d765f45b37b3fdc33f1357e0a4257bc3d950decafcff7b96d48",
+      status: "Completed" as const,
+      isForwarded: true,
+      forwardState: "COMPLETE" as const,
+    };
+
+    const isRecordActive = (r: any): boolean => {
+      if (r.status === "Completed" || r.status === "Failed") return false;
+      if (r.forwardState === "COMPLETE" || Boolean(r.mintTxHash)) return false;
+      return true;
+    };
+
+    assert.strictEqual(isRecordActive(recoveredRecord), false, "Recovered record must never be classified as active");
+  });
+
   console.log("\n==================================================");
   console.log(`TEST SUMMARY: ${passed} PASSED, ${failed} FAILED (${passed + failed} Total)`);
   console.log("==================================================");

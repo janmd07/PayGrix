@@ -88,6 +88,7 @@ export function MainnetBridgeForm() {
     startSourceBridgeFlow,
     resumeExistingTransfer,
     completeDestinationMint,
+    reconcileWalletTransfers,
   } = useMainnetBridge();
 
   const [manualRecoveryTx, setManualRecoveryTx] = useState<string>("");
@@ -127,6 +128,16 @@ export function MainnetBridgeForm() {
   const effectiveRecipient = (isCustomRecipientOpen ? recipientAddress : (address || recipientAddress || "")).trim();
   const isRecipientValid = effectiveRecipient !== "" && isAddress(effectiveRecipient);
   const isRouteAllowed = isMainnetRouteEnabled(sourceChain, destinationChain);
+
+  // Active in-flight / unclaimed transfers for the currently selected route (double-burn prevention)
+  const activeRouteTransfers = pendingTransfers.filter(
+    (t) =>
+      t.sourceChain === sourceChain &&
+      t.destinationChain === destinationChain &&
+      t.status !== "Completed" &&
+      t.status !== "Failed"
+  );
+  const hasActiveRouteTransfer = activeRouteTransfers.length > 0;
 
   const isFormInvalid =
     !isValidAmount ||
@@ -370,6 +381,13 @@ export function MainnetBridgeForm() {
       return (
         <span className="flex items-center justify-center gap-2">
           <Loader2 className="h-4 w-4 animate-spin" /> Verifying Destination Balance...
+        </span>
+      );
+    }
+    if (status === "idle" && hasActiveRouteTransfer) {
+      return (
+        <span className="flex items-center justify-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-amber-400" /> Active Transfer In-Flight — Claim Below
         </span>
       );
     }
@@ -684,15 +702,15 @@ export function MainnetBridgeForm() {
             </div>
 
             {/* Double-burn Prevention Warning Banner */}
-            {pendingTransfers.length > 0 && status === "idle" && (
+            {hasActiveRouteTransfer && status === "idle" && (
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3.5 flex items-start gap-3">
                 <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
                 <div className="text-xs space-y-1">
                   <span className="font-semibold text-amber-300 block">
-                    Active Transfer Detected ({pendingTransfers.length})
+                    Active Transfer Detected ({activeRouteTransfers.length})
                   </span>
                   <span className="text-slate-400 block leading-relaxed">
-                    You have an existing in-flight transfer. To prevent double-burning USDC, claim or resume your transfer below before bridging again.
+                    You have an existing in-flight transfer on {sourceChain} → {destinationChain}. To prevent double-burning USDC, claim or resume your transfer below before bridging again.
                   </span>
                 </div>
               </div>
@@ -710,7 +728,7 @@ export function MainnetBridgeForm() {
                   ? false
                   : status === "ReconciliationRequired"
                   ? false
-                  : isFormInvalid || status !== "idle"
+                  : isFormInvalid || status !== "idle" || hasActiveRouteTransfer
               }
               onClick={() => {
                 if (!isConnected) {
@@ -1099,7 +1117,14 @@ export function MainnetBridgeForm() {
         <CardHeader className="p-5 pb-3 border-b border-white/5">
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-bold text-white flex items-center gap-2">
-              <RefreshCw className="h-4 w-4 text-primary" />
+              <button
+                type="button"
+                onClick={() => address && reconcileWalletTransfers(address)}
+                title="Refresh and reconcile transfers"
+                className="hover:rotate-180 transition-transform duration-500 cursor-pointer focus:outline-none"
+              >
+                <RefreshCw className="h-4 w-4 text-primary" />
+              </button>
               <span>Pending &amp; Recoverable Transfers</span>
             </CardTitle>
             <Badge variant="outline" className="text-[10px] text-slate-400 border-white/10">
