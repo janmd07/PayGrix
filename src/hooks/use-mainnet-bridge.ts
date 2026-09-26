@@ -23,6 +23,7 @@ import {
 } from "@/config/cctp-mainnet";
 import {
   assertCorrelatedSourceAndIrisMessages,
+  toEvmAddress,
   calculateExpectedMintIncrement,
   CCTP_V2_DEFAULT_MAX_FEE,
   CCTP_V2_EMPTY_BYTES32,
@@ -1385,7 +1386,13 @@ export function useMainnetBridge() {
 
         const route = resolveMainnetCctpRoute(sourceChain, destinationChain);
         const destPublic = getPublicClientForChain(destinationChain);
-        const targetRecipient = (decoded.mintRecipient || targetRecord?.recipientAddress || address) as `0x${string}`;
+        const rawRecipient =
+          targetRecord?.recipientAddress ||
+          decoded.mintRecipientAddress ||
+          decoded.mintRecipient ||
+          address ||
+          "";
+        const targetRecipient = toEvmAddress(rawRecipient);
 
         // 1. Nonce safety check: Ensure destination nonce is not consumed
         const finalizedNonce =

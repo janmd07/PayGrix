@@ -25,6 +25,7 @@ import {
   RECEIVE_MESSAGE_SELECTOR,
   assertCorrelatedSourceAndIrisMessages,
   bytes32ToAddress,
+  toEvmAddress,
   calculateExpectedMintIncrement,
   checkDestinationNonceConsumed,
   correlateSourceAndIrisMessages,
@@ -56,7 +57,9 @@ import {
   createPublicClient,
   decodeFunctionData,
   encodeAbiParameters,
+  getAddress,
   http,
+  isAddress,
   pad,
   parseAbi,
   parseUnits,
@@ -2644,7 +2647,8 @@ async function runTests() {
     assert.strictEqual(details.sourceDomain, 6);
     assert.strictEqual(details.destinationDomain, 26);
     assert.strictEqual(details.amount, testAmount);
-    assert.strictEqual(details.recipientAddress.toLowerCase(), padAddressToBytes32(WALLET_A).toLowerCase());
+    assert.strictEqual(details.recipientAddress.toLowerCase(), WALLET_A.toLowerCase());
+    assert.strictEqual(details.decodedMessage.mintRecipient.toLowerCase(), padAddressToBytes32(WALLET_A).toLowerCase());
 
     // 2. Run recovery pipeline
     const recoveryResult = await recoverMainnetCctpTransfer({
@@ -4334,6 +4338,188 @@ async function runTests() {
     };
 
     assert.strictEqual(isRecordActive(recoveredRecord), false, "Recovered record must never be classified as active");
+  });
+
+  // ---------------------------------------------------------------------------
+  // 136. bytes32ToAddress & toEvmAddress — standard, normal, zero/invalid & malformed length handling
+  // ---------------------------------------------------------------------------
+  await test("Test 136: bytes32ToAddress & toEvmAddress — standard CCTP V2, normal EVM addresses, zero/invalid, and malformed lengths", () => {
+    // A. Standard CCTP V2 mintRecipient (live incident address)
+    const liveBytes32 = "0x000000000000000000000000e2ef8f89df0b50975328eb8859116bbe90c1036d" as const;
+    const expectedChecksummed = "0xE2eF8F89Df0B50975328EB8859116bBe90C1036d";
+    const convertedFromBytes32 = bytes32ToAddress(liveBytes32);
+    const convertedFromHelper = toEvmAddress(liveBytes32);
+    assert.strictEqual(convertedFromBytes32, expectedChecksummed);
+    assert.strictEqual(convertedFromHelper, expectedChecksummed);
+    assert.strictEqual(isAddress(convertedFromBytes32), true);
+    assert.strictEqual(convertedFromBytes32.length, 42); // 0x + 40 hex chars = 20 bytes
+
+    // B. Another normal EVM address encoded as bytes32
+    const normalAddress = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
+    const paddedNormal = padAddressToBytes32(normalAddress);
+    assert.strictEqual(paddedNormal.length, 66);
+    assert.strictEqual(bytes32ToAddress(paddedNormal), normalAddress);
+    assert.strictEqual(toEvmAddress(paddedNormal), normalAddress);
+    // toEvmAddress should also accept an already 20-byte address
+    assert.strictEqual(toEvmAddress(normalAddress), normalAddress);
+
+    // C. Zero / invalid bytes32 handling
+    // Zero address bytes32
+    const zeroBytes32 = "0x0000000000000000000000000000000000000000000000000000000000000000";
+    assert.throws(() => bytes32ToAddress(zeroBytes32), /zero address is not allowed/);
+    assert.throws(() => toEvmAddress(zeroBytes32), /zero address is not allowed/);
+    assert.throws(() => toEvmAddress("0x0000000000000000000000000000000000000000"), /zero address is not allowed/);
+
+    // Non-zero prefix (not an EVM left-padded bytes32)
+    const nonZeroPrefixBytes32 = "0x000000000000000000000001e2ef8f89df0b50975328eb8859116bbe90c1036d";
+    assert.throws(() => bytes32ToAddress(nonZeroPrefixBytes32), /non-zero prefix/);
+    assert.throws(() => toEvmAddress(nonZeroPrefixBytes32), /non-zero prefix/);
+
+    // Invalid hex characters in bytes32
+    const nonHexBytes32 = "0x000000000000000000000000zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
+    assert.throws(() => bytes32ToAddress(nonHexBytes32), /Invalid bytes32 hex characters/);
+
+    // D. Malformed length handling
+    assert.throws(() => bytes32ToAddress("0x123"), /Invalid bytes32 length/);
+    assert.throws(() => bytes32ToAddress("0x" + "0".repeat(62)), /Invalid bytes32 length/);
+    assert.throws(() => bytes32ToAddress("0x" + "0".repeat(66)), /Invalid bytes32 length/);
+    assert.throws(() => bytes32ToAddress(""), /expected non-empty string/);
+    assert.throws(() => toEvmAddress("0x12345"), /Invalid EVM address or bytes32/);
+    assert.throws(() => toEvmAddress("not-an-address"), /Invalid EVM address or bytes32/);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 137. Full MessageV2 decoding produces valid 20-byte mintRecipientAddress
+  // ---------------------------------------------------------------------------
+  await test("Test 137: Full MessageV2 decoding produces valid 20-byte mintRecipientAddress matching live incident", () => {
+    // Exact 376-byte message emitted by Arc Mainnet tx 0x10ced1126491e409be7273c96c914f0c4ef5ac1ac1373819442351985dde78df
+    const liveMessageHex = "0x000000010000001a00000006000000000000000000000000000000000000000000000000000000000000000000000000000000000000000028b5a0e9c621a5badaa536219b3a228c8168cf5d00000000000000000000000028b5a0e9c621a5badaa536219b3a228c8168cf5d0000000000000000000000000000000000000000000000000000000000000000000007d000000000000000010000000000000000000000003600000000000000000000000000000000000000000000000000000000000000e2ef8f89df0b50975328eb8859116bbe90c1036d00000000000000000000000000000000000000000000000000000000000186a0000000000000000000000000e2ef8f89df0b50975328eb8859116bbe90c1036d000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" as const;
+
+    const decoded = decodeCctpMessage(liveMessageHex);
+
+    // Protocol bytes32 layout is 100% preserved
+    assert.strictEqual(decoded.mintRecipient, "0x000000000000000000000000e2ef8f89df0b50975328eb8859116bbe90c1036d");
+    assert.strictEqual(decoded.mintRecipient.length, 66);
+
+    // Safe 20-byte EVM address is extracted and checksummed
+    assert.strictEqual(decoded.mintRecipientAddress, "0xE2eF8F89Df0B50975328EB8859116bBe90C1036d");
+    assert.strictEqual(decoded.mintRecipientAddress?.length, 42);
+    assert.strictEqual(isAddress(decoded.mintRecipientAddress!), true);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 138. verifyDestinationCompletionEvidence must receive a valid 20-byte address
+  // ---------------------------------------------------------------------------
+  await test("Test 138: verifyDestinationCompletionEvidence strictly requires a valid 20-byte address", async () => {
+    let checkedAddress: string | null = null;
+    const mockPublicClient = {
+      readContract: async (args: any) => {
+        if (args.functionName === "balanceOf") {
+          checkedAddress = args.args[0];
+          return BigInt(100000);
+        }
+        return BigInt(0);
+      },
+    };
+
+    const validEvmAddress = "0xE2eF8F89Df0B50975328EB8859116bBe90C1036d" as `0x${string}`;
+    const evidence = await verifyDestinationCompletionEvidence({
+      destinationPublicClient: mockPublicClient as any,
+      destinationUsdc: MAINNET_CHAINS["Base Mainnet"].nativeUsdc,
+      recipientAddress: validEvmAddress,
+      expectedAmount: BigInt(100000),
+      destBalanceBefore: BigInt(0),
+    });
+
+    assert.strictEqual(evidence.verified, true);
+    assert.strictEqual(checkedAddress, validEvmAddress);
+    assert.strictEqual(isAddress(checkedAddress!), true);
+    assert.strictEqual((checkedAddress as string).length, 42);
+  });
+
+  // ---------------------------------------------------------------------------
+  // 139. Regression test reproducing live error: 32-byte mintRecipient fails viem, converted address succeeds
+  // ---------------------------------------------------------------------------
+  await test("Test 139: Regression test reproducing live error — 32-byte mintRecipient causes InvalidAddressError, while converted 20-byte address succeeds", async () => {
+    const raw32ByteRecipient = "0x000000000000000000000000e2ef8f89df0b50975328eb8859116bbe90c1036d";
+
+    // 1. Prove why the live bug occurred: isAddress fails on 32-byte string
+    assert.strictEqual(isAddress(raw32ByteRecipient), false);
+
+    // Mock client simulating viem's strict address assertion
+    const strictViemClient = {
+      readContract: async (args: { address: string; functionName: string; args: readonly any[] }) => {
+        const addr = args.args[0];
+        if (!isAddress(addr) || addr.length !== 42) {
+          throw new Error(`InvalidAddressError: Address "${addr}" is invalid. Address must be a hex value of 20 bytes (40 hex characters).`);
+        }
+        return BigInt(100000);
+      },
+    };
+
+    // 2. Passing the un-converted 32-byte string throws InvalidAddressError
+    await assert.rejects(
+      async () => {
+        await strictViemClient.readContract({
+          address: MAINNET_CHAINS["Base Mainnet"].nativeUsdc,
+          functionName: "balanceOf",
+          args: [raw32ByteRecipient],
+        });
+      },
+      /InvalidAddressError: Address "0x000000000000000000000000e2ef8f89df0b50975328eb8859116bbe90c1036d" is invalid/
+    );
+
+    // 3. Passing through toEvmAddress converts cleanly and succeeds
+    const safeAddress = toEvmAddress(raw32ByteRecipient);
+    assert.strictEqual(safeAddress, "0xE2eF8F89Df0B50975328EB8859116bBe90C1036d");
+
+    const balance = await strictViemClient.readContract({
+      address: MAINNET_CHAINS["Base Mainnet"].nativeUsdc,
+      functionName: "balanceOf",
+      args: [safeAddress],
+    });
+    assert.strictEqual(balance, BigInt(100000));
+  });
+
+  // ---------------------------------------------------------------------------
+  // 140. fetchSourceBurnDetails returns 20-byte EVM address for recipientAddress and senderAddress
+  // ---------------------------------------------------------------------------
+  await test("Test 140: fetchSourceBurnDetails returns 20-byte EVM address for recipientAddress and senderAddress", async () => {
+    const liveMessageHex = "0x000000010000001a00000006000000000000000000000000000000000000000000000000000000000000000000000000000000000000000028b5a0e9c621a5badaa536219b3a228c8168cf5d00000000000000000000000028b5a0e9c621a5badaa536219b3a228c8168cf5d0000000000000000000000000000000000000000000000000000000000000000000007d000000000000000010000000000000000000000003600000000000000000000000000000000000000000000000000000000000000e2ef8f89df0b50975328eb8859116bbe90c1036d00000000000000000000000000000000000000000000000000000000000186a0000000000000000000000000e2ef8f89df0b50975328eb8859116bbe90c1036d000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000" as const;
+
+    const mockArcReceipt = {
+      status: "success",
+      from: "0xE2eF8F89Df0B50975328EB8859116bBe90C1036d",
+      blockNumber: BigInt(22819713),
+      logs: [
+        {
+          address: MAINNET_CHAINS["Arc Mainnet"].messageTransmitterV2,
+          topics: [MESSAGE_SENT_EVENT_TOPIC0],
+          data: encodeAbiParameters([{ type: "bytes" }], [liveMessageHex]),
+        },
+      ],
+    };
+
+    const details = await fetchSourceBurnDetails({
+      burnTxHash: "0x10ced1126491e409be7273c96c914f0c4ef5ac1ac1373819442351985dde78df",
+      candidatePublicClients: {
+        "Arc Mainnet": {
+          getTransactionReceipt: async () => mockArcReceipt,
+        } as any,
+      },
+    });
+
+    // recipientAddress and senderAddress must both be valid 20-byte EVM addresses
+    assert.strictEqual(details.recipientAddress, "0xE2eF8F89Df0B50975328EB8859116bBe90C1036d");
+    assert.strictEqual(details.recipientAddress.length, 42);
+    assert.strictEqual(isAddress(details.recipientAddress), true);
+
+    assert.strictEqual(details.senderAddress, "0xE2eF8F89Df0B50975328EB8859116bBe90C1036d");
+    assert.strictEqual(details.senderAddress.length, 42);
+    assert.strictEqual(isAddress(details.senderAddress), true);
+
+    // Protocol 32-byte message fields remain intact on decodedMessage
+    assert.strictEqual(details.decodedMessage.mintRecipient, "0x000000000000000000000000e2ef8f89df0b50975328eb8859116bbe90c1036d");
   });
 
   console.log("\n==================================================");

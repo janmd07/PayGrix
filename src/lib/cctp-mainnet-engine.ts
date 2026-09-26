@@ -118,12 +118,46 @@ export function padAddressToBytes32(address: string): `0x${string}` {
   return pad(checksummed as `0x${string}`, { size: 32, dir: "left" });
 }
 
-export function bytes32ToAddress(bytes32: `0x${string}`): `0x${string}` {
-  if (!bytes32.startsWith("0x") || bytes32.length !== 66) {
-    throw new Error(`Invalid bytes32 hex: ${bytes32}`);
+export function bytes32ToAddress(bytes32: string): `0x${string}` {
+  if (!bytes32 || typeof bytes32 !== "string") {
+    throw new Error(`Invalid bytes32: expected non-empty string, got ${bytes32}`);
   }
-  const rawAddr = `0x${bytes32.slice(26)}`;
+  const clean = bytes32.trim();
+  if (!clean.startsWith("0x")) {
+    throw new Error(`Invalid bytes32 hex: must start with 0x, got "${clean}"`);
+  }
+  if (clean.length !== 66) {
+    throw new Error(`Invalid bytes32 length: expected 66 characters (32 bytes), got ${clean.length}`);
+  }
+  if (!/^0x[0-9a-fA-F]{64}$/.test(clean)) {
+    throw new Error(`Invalid bytes32 hex characters: "${clean}"`);
+  }
+  const prefix = clean.slice(2, 26);
+  if (prefix !== "000000000000000000000000") {
+    throw new Error(`Invalid CCTP EVM bytes32: non-zero prefix "${prefix}"`);
+  }
+  const rawAddr = `0x${clean.slice(26)}`;
+  if (rawAddr.toLowerCase() === "0x0000000000000000000000000000000000000000") {
+    throw new Error("Invalid CCTP recipient: zero address is not allowed.");
+  }
   return getAddress(rawAddr);
+}
+
+export function toEvmAddress(value: string): `0x${string}` {
+  if (!value || typeof value !== "string") {
+    throw new Error(`Invalid address input: ${value}`);
+  }
+  const clean = value.trim();
+  if (clean.length === 66) {
+    return bytes32ToAddress(clean);
+  }
+  if (isAddress(clean)) {
+    if (clean.toLowerCase() === "0x0000000000000000000000000000000000000000") {
+      throw new Error("Invalid CCTP recipient: zero address is not allowed.");
+    }
+    return getAddress(clean);
+  }
+  throw new Error(`Invalid EVM address or bytes32: "${value}"`);
 }
 
 // -----------------------------------------------------------------------------
@@ -298,6 +332,7 @@ export interface DecodedCctpMessage {
   messageBodyVersion: number;
   burnToken: `0x${string}`;
   mintRecipient: `0x${string}`;
+  mintRecipientAddress?: `0x${string}`;
   amount: bigint;
   messageSender: `0x${string}`;
   maxFee?: bigint;
@@ -395,6 +430,12 @@ export function decodeCctpMessage(messageHex: `0x${string}`): DecodedCctpMessage
     const messageBodyVersion = parseInt(getSub(148, 152), 16);
     const burnToken = `0x${getSub(152, 184)}` as `0x${string}`;
     const mintRecipient = `0x${getSub(184, 216)}` as `0x${string}`;
+    let mintRecipientAddress: `0x${string}` | undefined;
+    try {
+      mintRecipientAddress = bytes32ToAddress(mintRecipient);
+    } catch {
+      // If mintRecipient cannot be decoded as EVM address, leave undefined
+    }
     const amount = BigInt(`0x${getSub(216, 248)}`);
     const messageSender = `0x${getSub(248, 280)}` as `0x${string}`;
     const maxFee = BigInt(`0x${getSub(280, 312)}`);
@@ -419,6 +460,7 @@ export function decodeCctpMessage(messageHex: `0x${string}`): DecodedCctpMessage
       messageBodyVersion,
       burnToken,
       mintRecipient,
+      mintRecipientAddress,
       amount,
       messageSender,
       maxFee,
@@ -450,6 +492,12 @@ export function decodeCctpMessage(messageHex: `0x${string}`): DecodedCctpMessage
     const messageBodyVersion = parseInt(getSub(116, 120), 16);
     const burnToken = `0x${getSub(120, 152)}` as `0x${string}`;
     const mintRecipient = `0x${getSub(152, 184)}` as `0x${string}`;
+    let mintRecipientAddress: `0x${string}` | undefined;
+    try {
+      mintRecipientAddress = bytes32ToAddress(mintRecipient);
+    } catch {
+      // ignore
+    }
     const amount = BigInt(`0x${getSub(184, 216)}`);
     const messageSender = `0x${getSub(216, 248)}` as `0x${string}`;
 
@@ -465,6 +513,7 @@ export function decodeCctpMessage(messageHex: `0x${string}`): DecodedCctpMessage
       messageBodyVersion,
       burnToken,
       mintRecipient,
+      mintRecipientAddress,
       amount,
       messageSender,
       rawMessage: messageHex,
@@ -2445,8 +2494,10 @@ export async function fetchSourceBurnDetails(params: {
     decodedMessage,
     amount: decodedMessage.amount,
     amountFormatted: formatUnits(decodedMessage.amount, 6),
-    senderAddress: (decodedMessage.messageSender || foundReceipt.from) as `0x${string}`,
-    recipientAddress: decodedMessage.mintRecipient,
+    senderAddress: (decodedMessage.messageSender && decodedMessage.messageSender.length === 66
+      ? bytes32ToAddress(decodedMessage.messageSender)
+      : getAddress(foundReceipt.from)) as `0x${string}`,
+    recipientAddress: bytes32ToAddress(decodedMessage.mintRecipient),
     burnToken: decodedMessage.burnToken,
     sourceMessageTransmitter: expectedTransmitter,
     destinationMessageTransmitter: destinationConfig.messageTransmitterV2,
