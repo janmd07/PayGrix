@@ -26,7 +26,14 @@ import {
   MainnetChainKey,
   MAINNET_CHAINS,
   resolveMainnetCctpRoute,
+  type DestinationDomainConfig,
 } from "@/config/cctp-mainnet";
+import {
+  parseChainId,
+  isUserRejectionError,
+  isUnrecognizedChainError,
+  MinimalEIP1193Provider,
+} from "./arc-mainnet-network";
 
 // -----------------------------------------------------------------------------
 // ABIs & Selectors
@@ -2696,5 +2703,194 @@ export async function recoverMainnetCctpTransfer(
     attestationHex: attestationRes.attestation,
     finalizedNonce,
     destinationNonceConsumed: false,
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Destination Network Auto-Switch & Verification Helper
+// -----------------------------------------------------------------------------
+export { parseChainId, isUserRejectionError, isUnrecognizedChainError };
+export type { MinimalEIP1193Provider };
+
+export interface EnsureDestinationNetworkParams {
+  provider: MinimalEIP1193Provider;
+  destConfig: DestinationDomainConfig;
+  switchChainAsync?: (args: { chainId: number }) => Promise<unknown>;
+}
+
+export interface EnsureDestinationNetworkResult {
+  success: boolean;
+  chainId: number | null;
+  switched: boolean;
+  added?: boolean;
+  error?: string;
+  rejected?: boolean;
+}
+
+/**
+ * Ensures the connected wallet is switched to the authoritative destination chain.
+ *
+ * 1. Checks current wallet chain via eth_chainId. If already on destination chain, returns immediately.
+ * 2. Requests network switch via wallet_switchEthereumChain (or switchChainAsync).
+ * 3. If unrecognized (4902) and addChainParameter is configured, prompts wallet_addEthereumChain first.
+ * 4. Rigorously verifies post-switch eth_chainId from provider matches destConfig.chainId.
+ * 5. Returns success: false if user rejected, switch failed, or verified chain does not match destination.
+ *
+ * NEVER submits any blockchain transaction or receiveMessage.
+ */
+export async function ensureDestinationNetwork({
+  provider,
+  destConfig,
+  switchChainAsync,
+}: EnsureDestinationNetworkParams): Promise<EnsureDestinationNetworkResult> {
+  // 1. Check current wallet chain ID
+  let currentHex: unknown;
+  try {
+    currentHex = await provider.request({ method: "eth_chainId" });
+  } catch {
+    // If querying chain ID fails, proceed to attempt switch
+  }
+
+  const currentChainId = parseChainId(currentHex);
+
+  // If already on the authoritative destination chain, no switch needed
+  if (currentChainId === destConfig.chainId) {
+    return {
+      success: true,
+      chainId: currentChainId,
+      switched: false,
+      added: false,
+    };
+  }
+
+  // 2. Request network switch
+  let switched = false;
+  let added = false;
+
+  try {
+    if (switchChainAsync) {
+      try {
+        await switchChainAsync({ chainId: destConfig.chainId });
+        switched = true;
+      } catch (switchAsyncErr: unknown) {
+        if (isUserRejectionError(switchAsyncErr)) {
+          throw switchAsyncErr;
+        }
+        // Fall back to direct provider request if wagmi switchChainAsync fails for non-rejection reason
+        await provider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: destConfig.chainIdHex }],
+        });
+        switched = true;
+      }
+    } else {
+      await provider.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: destConfig.chainIdHex }],
+      });
+      switched = true;
+    }
+  } catch (switchErr: unknown) {
+    if (isUserRejectionError(switchErr)) {
+      return {
+        success: false,
+        chainId: currentChainId,
+        switched: false,
+        added: false,
+        rejected: true,
+        error: `Please switch your wallet to ${destConfig.name} (Chain ID: ${destConfig.chainId}) to claim this transfer.`,
+      };
+    }
+
+    if (!isUnrecognizedChainError(switchErr) || !destConfig.addChainParameter) {
+      const msg = switchErr instanceof Error ? switchErr.message : `Failed to switch network to ${destConfig.name}.`;
+      return {
+        success: false,
+        chainId: currentChainId,
+        switched: false,
+        added: false,
+        error: msg,
+      };
+    }
+
+    // 3. Chain not recognized (code 4902) -> prompt wallet_addEthereumChain
+    try {
+      await provider.request({
+        method: "wallet_addEthereumChain",
+        params: [destConfig.addChainParameter],
+      });
+      added = true;
+    } catch (addErr: unknown) {
+      if (isUserRejectionError(addErr)) {
+        return {
+          success: false,
+          chainId: currentChainId,
+          switched: false,
+          added: false,
+          rejected: true,
+          error: `Adding ${destConfig.name} network was rejected in wallet. Transfer was not claimed.`,
+        };
+      }
+      const msg = addErr instanceof Error ? addErr.message : `Failed to add ${destConfig.name} to wallet.`;
+      return {
+        success: false,
+        chainId: currentChainId,
+        switched: false,
+        added: false,
+        error: msg,
+      };
+    }
+  }
+
+  // 4. Verify post-switch/post-add chain ID
+  let postHex: unknown;
+  try {
+    postHex = await provider.request({ method: "eth_chainId" });
+  } catch {
+    // Leave undefined
+  }
+
+  let verifiedChainId = parseChainId(postHex);
+
+  // If wallet added the network but did not switch automatically, request switch now
+  if (verifiedChainId !== destConfig.chainId && added) {
+    try {
+      await provider.request({
+        method: "wallet_switchEthereumChain",
+        params: [{ chainId: destConfig.chainIdHex }],
+      });
+      switched = true;
+      postHex = await provider.request({ method: "eth_chainId" });
+      verifiedChainId = parseChainId(postHex);
+    } catch (postSwitchErr: unknown) {
+      if (isUserRejectionError(postSwitchErr)) {
+        return {
+          success: false,
+          chainId: verifiedChainId,
+          switched: false,
+          added: true,
+          rejected: true,
+          error: `Please switch your wallet to ${destConfig.name} (Chain ID: ${destConfig.chainId}) to claim this transfer.`,
+        };
+      }
+    }
+  }
+
+  // 5. Strict safety assertion: verify the chain ID matches the destination chain ID
+  if (verifiedChainId !== destConfig.chainId) {
+    return {
+      success: false,
+      chainId: verifiedChainId,
+      switched,
+      added,
+      error: `Wallet remains on chain ID ${verifiedChainId ?? "unknown"}. Expected ${destConfig.name} (${destConfig.chainId}). Transaction not submitted.`,
+    };
+  }
+
+  return {
+    success: true,
+    chainId: verifiedChainId,
+    switched: true,
+    added,
   };
 }

@@ -208,3 +208,93 @@ export function isForwardingSupportedRoute(
   return sourceDomain === 6 && destinationDomain === 26;
 }
 
+// -----------------------------------------------------------------------------
+// Centralized CCTP Destination Domain Configuration & Network Parameters
+// -----------------------------------------------------------------------------
+export interface AddEthereumChainParameter {
+  chainId: string;
+  chainName: string;
+  nativeCurrency: {
+    name: string;
+    symbol: string;
+    decimals: number;
+  };
+  rpcUrls: string[];
+  blockExplorerUrls?: string[];
+}
+
+export interface DestinationDomainConfig {
+  domain: number;
+  chainKey: MainnetChainKey;
+  chainId: number;
+  chainIdHex: `0x${string}`;
+  name: string;
+  gasToken: string;
+  rpcUrl: string;
+  explorerUrl: string;
+  addChainParameter: AddEthereumChainParameter;
+}
+
+export const CCTP_DESTINATION_DOMAIN_CONFIGS: Record<number, DestinationDomainConfig> = {
+  6: {
+    domain: 6,
+    chainKey: "Base Mainnet",
+    chainId: 8453,
+    chainIdHex: "0x2105",
+    name: "Base Mainnet",
+    gasToken: "ETH",
+    rpcUrl: "https://mainnet.base.org",
+    explorerUrl: "https://basescan.org",
+    addChainParameter: {
+      chainId: "0x2105",
+      chainName: "Base Mainnet",
+      nativeCurrency: {
+        name: "Ether",
+        symbol: "ETH",
+        decimals: 18,
+      },
+      rpcUrls: ["https://mainnet.base.org"],
+      blockExplorerUrls: ["https://basescan.org"],
+    },
+  },
+  26: {
+    domain: 26,
+    chainKey: "Arc Mainnet",
+    chainId: 5042,
+    chainIdHex: "0x13b2",
+    name: "Arc Mainnet",
+    gasToken: "USDC",
+    rpcUrl: "https://rpc.mainnet.arc.io",
+    explorerUrl: "https://explorer.arc.io",
+    addChainParameter: {
+      chainId: "0x13b2",
+      chainName: "Arc Mainnet",
+      nativeCurrency: {
+        name: "USDC",
+        symbol: "USDC",
+        decimals: 18,
+      },
+      rpcUrls: ["https://rpc.mainnet.arc.io"],
+      blockExplorerUrls: ["https://explorer.arc.io"],
+    },
+  },
+};
+
+/**
+ * Authoritative resolver: maps CCTP destinationDomain to destination chain config.
+ * Domain 6 resolves ONLY to Base Mainnet (chainId 8453).
+ * Domain 26 resolves ONLY to Arc Mainnet (chainId 5042).
+ */
+export function getDestinationConfigByDomain(domain: number): DestinationDomainConfig | undefined {
+  return CCTP_DESTINATION_DOMAIN_CONFIGS[domain];
+}
+
+/**
+ * Returns destination config for a given MainnetChainKey.
+ */
+export function getDestinationConfigByChain(chainKey: MainnetChainKey): DestinationDomainConfig | undefined {
+  const chainCfg = MAINNET_CHAINS[chainKey];
+  if (!chainCfg) return undefined;
+  return CCTP_DESTINATION_DOMAIN_CONFIGS[chainCfg.domain];
+}
+

@@ -20,6 +20,7 @@ import {
   CCTP_FORWARD_HOOK_DATA,
   CCTP_V2_FAST_FINALITY_THRESHOLD,
   CIRCLE_IRIS_PRODUCTION_API,
+  getDestinationConfigByDomain,
 } from "@/config/cctp-mainnet";
 import {
   assertCorrelatedSourceAndIrisMessages,
@@ -32,6 +33,9 @@ import {
   decodeCctpMessage,
   encodeDepositForBurnCalldata,
   encodeDepositForBurnWithHookCalldata,
+  ensureDestinationNetwork,
+  parseChainId,
+  MinimalEIP1193Provider,
   extractMessageFromReceiptLogs,
   fetchCctpForwardingFee,
   fetchSourceBurnDetails,
@@ -121,6 +125,8 @@ export function useMainnetBridge() {
   addressRef.current = address;
   const chainIdRef = useRef(chainId);
   chainIdRef.current = chainId;
+  const isClaimSwitchingNetworkRef = useRef(false);
+  const expectedDestinationChainIdRef = useRef<number | null>(null);
 
   // Authoritative active transfer check (excludes Completed/Failed and already minted/forwarded records)
   const isRecordActive = useCallback((r: MainnetBridgeTransferRecord): boolean => {
@@ -388,6 +394,16 @@ export function useMainnetBridge() {
   const prevChainIdRef = useRef<number | undefined>(chainId);
   useEffect(() => {
     if (prevChainIdRef.current !== chainId) {
+      // If this switch is the expected destination network switch for an active claim operation, permit it
+      if (
+        isClaimSwitchingNetworkRef.current &&
+        expectedDestinationChainIdRef.current !== null &&
+        chainId === expectedDestinationChainIdRef.current
+      ) {
+        prevChainIdRef.current = chainId;
+        return;
+      }
+
       if (
         bridgeInFlightRef.current &&
         status !== "ReadyToClaim" &&
@@ -1371,17 +1387,26 @@ export function useMainnetBridge() {
 
       try {
         const decoded = decodeCctpMessage(targetMsgHex);
-        const sourceChain =
-          targetRecord?.sourceChain ||
-          params?.sourceChain ||
-          getChainByDomain(decoded.sourceDomain);
-        const destinationChain =
-          targetRecord?.destinationChain ||
-          params?.destinationChain ||
-          getChainByDomain(decoded.destinationDomain);
 
-        if (!sourceChain || !destinationChain) {
-          throw new Error("Unable to resolve source or destination chain for destination mint.");
+        // Authoritative destination resolution:
+        // CCTP destinationDomain in the message is authoritative
+        const destConfig = getDestinationConfigByDomain(decoded.destinationDomain);
+        if (!destConfig) {
+          throw new Error(`Unsupported CCTP destination domain: ${decoded.destinationDomain}`);
+        }
+        const destinationChain = destConfig.chainKey;
+        const targetChainId = destConfig.chainId;
+
+        // Authoritative source resolution
+        const srcConfig = getDestinationConfigByDomain(decoded.sourceDomain);
+        const sourceChain =
+          srcConfig?.chainKey ||
+          getChainByDomain(decoded.sourceDomain) ||
+          targetRecord?.sourceChain ||
+          params?.sourceChain;
+
+        if (!sourceChain) {
+          throw new Error("Unable to resolve source chain for destination mint.");
         }
 
         const route = resolveMainnetCctpRoute(sourceChain, destinationChain);
@@ -1465,7 +1490,71 @@ export function useMainnetBridge() {
           }
         }
 
-        // 2. Snapshot destination balance before mint
+        // 2. Ensure wallet is on destination chain BEFORE simulating or preparing receiveMessage
+        const provider = (await connector.getProvider()) as MinimalEIP1193Provider;
+
+        isClaimSwitchingNetworkRef.current = true;
+        expectedDestinationChainIdRef.current = targetChainId;
+
+        const networkResult = await ensureDestinationNetwork({
+          provider,
+          destConfig,
+          switchChainAsync,
+        });
+
+        isClaimSwitchingNetworkRef.current = false;
+        expectedDestinationChainIdRef.current = null;
+
+        if (!networkResult.success) {
+          bridgeInFlightRef.current = false;
+          if (networkResult.rejected) {
+            setError(
+              networkResult.error ||
+                `Please switch your wallet to ${destConfig.name} (Chain ID: ${destConfig.chainId}) to claim this transfer.`
+            );
+            // Maintain ReadyToClaim stage so user can retry claim
+            setStatus("ReadyToClaim");
+            return false;
+          }
+          throw new Error(networkResult.error || `Failed to switch network to ${destConfig.name}`);
+        }
+
+        if (isStale()) {
+          bridgeInFlightRef.current = false;
+          return false;
+        }
+
+        // 3. Re-read and rigorously verify current chain ID directly from provider
+        let verifiedChainHex: unknown;
+        try {
+          verifiedChainHex = await provider.request({ method: "eth_chainId" });
+        } catch {
+          throw new Error("Failed to query wallet chain ID after network switch.");
+        }
+        const verifiedChainId = parseChainId(verifiedChainHex);
+
+        if (verifiedChainId !== targetChainId) {
+          bridgeInFlightRef.current = false;
+          throw new Error(
+            `Wallet chain ID verification failed. Current: ${verifiedChainId ?? "unknown"}, expected: ${destConfig.name} (${targetChainId}). Transaction aborted.`
+          );
+        }
+
+        // Re-read accounts to ensure account didn't change
+        try {
+          const accounts = (await provider.request({ method: "eth_accounts" })) as string[];
+          if (accounts && accounts[0] && accounts[0].toLowerCase() !== currentWallet) {
+            bridgeInFlightRef.current = false;
+            return false;
+          }
+        } catch {}
+
+        if (isStale()) {
+          bridgeInFlightRef.current = false;
+          return false;
+        }
+
+        // 4. Snapshot destination balance before mint
         const destBalanceBefore = (await destPublic.readContract({
           address: route.destinationUsdc,
           abi: erc20Abi,
@@ -1473,20 +1562,10 @@ export function useMainnetBridge() {
           args: [targetRecipient],
         })) as bigint;
 
-        if (isStale()) return false;
-
-        // 3. Ensure wallet is on destination chain
-        if (chainIdRef.current !== route.destinationConfig.chainId) {
-          try {
-            await switchChainAsync({ chainId: route.destinationConfig.chainId });
-          } catch {
-            throw new Error(
-              `Please switch your wallet to ${destinationChain} (Chain ID: ${route.destinationConfig.chainId}) to complete the mint.`
-            );
-          }
+        if (isStale()) {
+          bridgeInFlightRef.current = false;
+          return false;
         }
-
-        if (isStale()) return false;
 
         const calldata = (await import("viem")).encodeFunctionData({
           abi: messageTransmitterV2Abi,
@@ -1494,7 +1573,7 @@ export function useMainnetBridge() {
           args: [targetMsgHex, targetAttestHex],
         });
 
-        // 4. Pre-flight read-only simulation
+        // 5. Pre-flight read-only simulation
         try {
           await destPublic.call({
             to: route.destinationMessageTransmitter,
@@ -1506,15 +1585,23 @@ export function useMainnetBridge() {
           throw new Error(`receiveMessage pre-flight simulation failed: ${simMsg}`);
         }
 
-        if (isStale()) return false;
+        if (isStale()) {
+          bridgeInFlightRef.current = false;
+          return false;
+        }
 
-        const provider = (await connector.getProvider()) as {
-          request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-        };
+        // Final chain verification right before eth_sendTransaction
+        const preSendHex = await provider.request({ method: "eth_chainId" });
+        if (parseChainId(preSendHex) !== targetChainId) {
+          bridgeInFlightRef.current = false;
+          throw new Error(
+            `Network switch detected before transaction submission. Expected ${destConfig.name} (${targetChainId}). Aborted for safety.`
+          );
+        }
 
         setStatus("minting");
 
-        // 5. Submit receiveMessage
+        // 6. Submit receiveMessage
         const rawMintTx = (await provider.request({
           method: "eth_sendTransaction",
           params: [
@@ -1539,7 +1626,7 @@ export function useMainnetBridge() {
           throw new Error("receiveMessage transaction reverted on destination chain.");
         }
 
-        // 6. Verify destination balance increment delta
+        // 7. Verify destination balance increment delta
         setStatus("verifying");
 
         const expectedMintIncrement = calculateExpectedMintIncrement(targetMsgHex);
@@ -1579,12 +1666,16 @@ export function useMainnetBridge() {
         refreshBalances(sourceChain, destinationChain);
         return true;
       } catch (err: unknown) {
+        isClaimSwitchingNetworkRef.current = false;
+        expectedDestinationChainIdRef.current = null;
         if (isStale()) return false;
         const msg = err instanceof Error ? err.message : "Destination mint failed.";
         setError(msg);
         setStatus("failed");
         return false;
       } finally {
+        isClaimSwitchingNetworkRef.current = false;
+        expectedDestinationChainIdRef.current = null;
         if (!isStale()) {
           bridgeInFlightRef.current = false;
           abortControllerRef.current = null;
