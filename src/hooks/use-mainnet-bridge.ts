@@ -128,11 +128,61 @@ export function useMainnetBridge() {
   chainIdRef.current = chainId;
   const isClaimSwitchingNetworkRef = useRef(false);
   const expectedDestinationChainIdRef = useRef<number | null>(null);
+  const isSettlementPollingRef = useRef(false);
+  const burnTxHashRef = useRef(burnTxHash);
+  burnTxHashRef.current = burnTxHash;
+  const statusRef = useRef(status);
+  statusRef.current = status;
 
-  // Authoritative active transfer check (excludes Completed/Failed and already minted/forwarded records)
+  // Read balances
+  const refreshBalances = useCallback(
+    async (sourceChain: MainnetChainKey, destChain: MainnetChainKey) => {
+      if (!address) {
+        setSourceBalance("0.00");
+        setDestBalance("0.00");
+        return;
+      }
+      setIsLoadingBalance(true);
+      try {
+        const srcCfg = MAINNET_CHAINS[sourceChain];
+        const dstCfg = MAINNET_CHAINS[destChain];
+
+        const srcClient = getPublicClientForChain(sourceChain);
+        const dstClient = getPublicClientForChain(destChain);
+
+        const [sBal, dBal] = await Promise.all([
+          srcClient
+            .readContract({
+              address: srcCfg.nativeUsdc,
+              abi: erc20Abi,
+              functionName: "balanceOf",
+              args: [address],
+            })
+            .catch(() => BigInt(0)),
+          dstClient
+            .readContract({
+              address: dstCfg.nativeUsdc,
+              abi: erc20Abi,
+              functionName: "balanceOf",
+              args: [address],
+            })
+            .catch(() => BigInt(0)),
+        ]);
+
+        setSourceBalance(formatUnits(sBal as bigint, 6));
+        setDestBalance(formatUnits(dBal as bigint, 6));
+      } catch (err) {
+        console.warn("[Mainnet Bridge] Error fetching balances:", err);
+      } finally {
+        setIsLoadingBalance(false);
+      }
+    },
+    [address]
+  );
+
+  // Authoritative active transfer check (excludes Completed/Failed records)
   const isRecordActive = useCallback((r: MainnetBridgeTransferRecord): boolean => {
     if (r.status === "Completed" || r.status === "Failed") return false;
-    if (r.forwardState === "COMPLETE" || Boolean(r.mintTxHash)) return false;
     return (
       r.status === "Pending" ||
       r.status === "Attesting" ||
@@ -182,12 +232,17 @@ export function useMainnetBridge() {
         const updatedList = [...list];
 
         for (const record of candidates) {
-          // Do not reconcile a transfer actively running in memory in current session
+          // Terminal guard: if record is already Completed, it cannot be reverted
+          if (record.status === "Completed") {
+            continue;
+          }
+
+          // Only skip overlapping work for the active transfer while settlement polling is actively running in memory
           if (
-            bridgeInFlightRef.current &&
+            isSettlementPollingRef.current &&
             record.burnTxHash &&
-            burnTxHash &&
-            record.burnTxHash.toLowerCase() === burnTxHash.toLowerCase()
+            burnTxHashRef.current &&
+            record.burnTxHash.toLowerCase() === burnTxHashRef.current.toLowerCase()
           ) {
             continue;
           }
@@ -275,6 +330,18 @@ export function useMainnetBridge() {
                   };
                   hasUpdates = true;
                 }
+                // Synchronize active form state if this matches active burn
+                if (
+                  burnTxHashRef.current &&
+                  record.burnTxHash &&
+                  burnTxHashRef.current.toLowerCase() === record.burnTxHash.toLowerCase()
+                ) {
+                  setStatus("complete");
+                  setForwardState("COMPLETE");
+                  if (record.forwardTxHash) setForwardTxHash(record.forwardTxHash);
+                  bridgeInFlightRef.current = false;
+                  refreshBalances(record.sourceChain, record.destinationChain);
+                }
                 continue;
               }
             }
@@ -321,6 +388,11 @@ export function useMainnetBridge() {
                         newStatus = "ReadyToClaim";
                       }
 
+                      // Terminal guard: never revert Completed to non-terminal status
+                      if (updatedList[idx].status === "Completed" && newStatus !== "Completed") {
+                        continue;
+                      }
+
                       if (
                         updatedList[idx].status !== newStatus ||
                         updatedList[idx].finalizedNonce !== nBytes ||
@@ -340,6 +412,28 @@ export function useMainnetBridge() {
                         };
                         hasUpdates = true;
                       }
+
+                      // Synchronize active form state if this matches active burn
+                      if (
+                        burnTxHashRef.current &&
+                        record.burnTxHash &&
+                        burnTxHashRef.current.toLowerCase() === record.burnTxHash.toLowerCase()
+                      ) {
+                        if (newStatus === "Completed") {
+                          setStatus("complete");
+                          setForwardState("COMPLETE");
+                          if (irisMsg.forwardTxHash) setForwardTxHash(irisMsg.forwardTxHash);
+                          bridgeInFlightRef.current = false;
+                          refreshBalances(record.sourceChain, record.destinationChain);
+                        } else if (newStatus === "Forwarding" && statusRef.current !== "complete") {
+                          setStatus("forwarding");
+                          if (irisMsg.forwardState) setForwardState(irisMsg.forwardState);
+                          if (irisMsg.forwardTxHash) setForwardTxHash(irisMsg.forwardTxHash);
+                        } else if (newStatus === "ReadyToClaim" && statusRef.current !== "complete") {
+                          setStatus("ReadyToClaim");
+                          bridgeInFlightRef.current = false;
+                        }
+                      }
                     }
                   }
                 }
@@ -356,7 +450,7 @@ export function useMainnetBridge() {
         }
       } catch {}
     },
-    [burnTxHash, isRecordActive]
+    [isRecordActive, refreshBalances]
   );
 
   useEffect(() => {
@@ -364,6 +458,14 @@ export function useMainnetBridge() {
     if (address) {
       reconcileWalletTransfers(address);
     }
+
+    const interval = setInterval(() => {
+      if (addressRef.current) {
+        reconcileWalletTransfers(addressRef.current);
+      }
+    }, 4000);
+
+    return () => clearInterval(interval);
   }, [address, loadWalletTransfers, reconcileWalletTransfers]);
 
   // Track previous account to isolate multi-user state on accountsChanged
@@ -437,51 +539,6 @@ export function useMainnetBridge() {
     }
   }, [chainId, status]);
 
-  // Read balances
-  const refreshBalances = useCallback(
-    async (sourceChain: MainnetChainKey, destChain: MainnetChainKey) => {
-      if (!address) {
-        setSourceBalance("0.00");
-        setDestBalance("0.00");
-        return;
-      }
-      setIsLoadingBalance(true);
-      try {
-        const srcCfg = MAINNET_CHAINS[sourceChain];
-        const dstCfg = MAINNET_CHAINS[destChain];
-
-        const srcClient = getPublicClientForChain(sourceChain);
-        const dstClient = getPublicClientForChain(destChain);
-
-        const [sBal, dBal] = await Promise.all([
-          srcClient
-            .readContract({
-              address: srcCfg.nativeUsdc,
-              abi: erc20Abi,
-              functionName: "balanceOf",
-              args: [address],
-            })
-            .catch(() => BigInt(0)),
-          dstClient
-            .readContract({
-              address: dstCfg.nativeUsdc,
-              abi: erc20Abi,
-              functionName: "balanceOf",
-              args: [address],
-            })
-            .catch(() => BigInt(0)),
-        ]);
-
-        setSourceBalance(formatUnits(sBal as bigint, 6));
-        setDestBalance(formatUnits(dBal as bigint, 6));
-      } catch (err) {
-        console.warn("[Mainnet Bridge] Error fetching balances:", err);
-      } finally {
-        setIsLoadingBalance(false);
-      }
-    },
-    [address]
-  );
 
   // Reset state
   const resetBridgeState = useCallback(() => {
@@ -862,24 +919,35 @@ export function useMainnetBridge() {
           const destinationClient = getPublicClientForChain(destinationChain);
 
           // Poll destination settlement on-chain until relayer consumes nonce & mints
-          const settlementRes = await pollDestinationSettlement({
-            destinationPublicClient: destinationClient,
-            destinationMessageTransmitter: route.destinationMessageTransmitter,
-            destinationUsdc: route.destinationUsdc,
-            recipientAddress,
-            expectedAmount: parsedAmount,
-            nonceBytes32: finalizedNonce,
-            expectedNonce: finalizedDecoded.nonce,
-            expectedSourceDomain: route.sourceDomain,
-            forwardTxHash: forwardRes.forwardTxHash as `0x${string}` | undefined,
-            signal: abortController.signal,
-            maxAttempts: 30, // 30 * 2000ms = 60s
-            intervalMs: 2000,
-          });
+          isSettlementPollingRef.current = true;
+          let settlementRes;
+          try {
+            settlementRes = await pollDestinationSettlement({
+              destinationPublicClient: destinationClient,
+              destinationMessageTransmitter: route.destinationMessageTransmitter,
+              destinationUsdc: route.destinationUsdc,
+              recipientAddress,
+              expectedAmount: parsedAmount,
+              nonceBytes32: finalizedNonce,
+              expectedNonce: finalizedDecoded.nonce,
+              expectedSourceDomain: route.sourceDomain,
+              forwardTxHash: forwardRes.forwardTxHash as `0x${string}` | undefined,
+              signal: abortController.signal,
+              maxAttempts: 30, // 30 * 2000ms = 60s
+              intervalMs: 2000,
+            });
+          } finally {
+            isSettlementPollingRef.current = false;
+          }
 
           if (isStale()) return false;
 
-          if (settlementRes.settled) {
+          // If already reconciled to Completed by background polling, preserve terminal state
+          if (statusRef.current === "complete") {
+            return true;
+          }
+
+          if (settlementRes.settled || settlementRes.consumed) {
             saveTransferRecord({
               id: rawBurnTx,
               sourceChain,
@@ -902,33 +970,7 @@ export function useMainnetBridge() {
               forwardTxHash: forwardRes.forwardTxHash,
             });
             setStatus("complete");
-            refreshBalances(sourceChain, destinationChain);
-            return true;
-          }
-
-          if (settlementRes.consumed) {
-            saveTransferRecord({
-              id: rawBurnTx,
-              sourceChain,
-              destinationChain,
-              amount,
-              senderAddress: address,
-              recipientAddress,
-              burnTxHash: rawBurnTx,
-              mintTxHash: forwardRes.forwardTxHash,
-              status: "ReconciliationRequired",
-              timestamp: new Date().toLocaleString(),
-              updatedAt: new Date().toISOString(),
-              sourceDomain: route.sourceDomain,
-              destinationDomain: route.destinationDomain,
-              messageHex: finalizedMsg,
-              attestationHex: forwardRes.attestation,
-              finalizedNonce,
-              isForwarded: true,
-              forwardState: forwardRes.forwardState,
-              forwardTxHash: forwardRes.forwardTxHash,
-            });
-            setStatus("ReconciliationRequired");
+            bridgeInFlightRef.current = false;
             refreshBalances(sourceChain, destinationChain);
             return true;
           }
@@ -1243,20 +1285,6 @@ export function useMainnetBridge() {
           )?.mintTxHash;
 
         if (isConsumed) {
-          const evidence = await verifyDestinationCompletionEvidence({
-            destinationPublicClient: destClient,
-            destinationUsdc: details.destinationUsdcAddress,
-            recipientAddress: details.recipientAddress,
-            expectedAmount: details.amount,
-            mintTxHash: effectiveMintTx as `0x${string}` | undefined,
-            destBalanceBefore: undefined,
-            expectedNonce: finalizedDecoded.nonce,
-            expectedNonceBytes32: finalizedNonce,
-            expectedSourceDomain: details.sourceDomain,
-            expectedDestinationMessageTransmitter: details.destinationMessageTransmitter,
-          });
-
-          if (evidence.verified) {
             saveTransferRecord({
               id: details.burnTxHash,
               sourceChain: details.sourceChain,
@@ -1279,35 +1307,10 @@ export function useMainnetBridge() {
               forwardTxHash: recForwardTxHash,
             });
             setStatus("complete");
-            refreshBalances(details.sourceChain, details.destinationChain);
-            return true;
-          } else {
-            saveTransferRecord({
-              id: details.burnTxHash,
-              sourceChain: details.sourceChain,
-              destinationChain: details.destinationChain,
-              sourceDomain: details.sourceDomain,
-              destinationDomain: details.destinationDomain,
-              amount: details.amountFormatted,
-              senderAddress: details.senderAddress,
-              recipientAddress: details.recipientAddress,
-              burnTxHash: details.burnTxHash,
-              mintTxHash: effectiveMintTx,
-              status: "ReconciliationRequired",
-              timestamp: new Date().toLocaleString(),
-              updatedAt: new Date().toISOString(),
-              messageHex: irisMsg,
-              attestationHex: irisAttest,
-              finalizedNonce,
-              isForwarded: isForwarding,
-              forwardState: recForwardState,
-              forwardTxHash: recForwardTxHash,
-            });
-            setStatus("ReconciliationRequired");
+            bridgeInFlightRef.current = false;
             refreshBalances(details.sourceChain, details.destinationChain);
             return true;
           }
-        }
 
         // 4. Preflight simulate receiveMessage before transitioning to ReadyToClaim
         let simulationPassed = true;
