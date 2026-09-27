@@ -191,7 +191,7 @@ export function isSupportedRecoveryRoute(sourceDomain: number, destinationDomain
 }
 
 // -----------------------------------------------------------------------------
-// CCTP V2 Forwarding & Fast Finality Constants (Base -> Arc Only)
+// CCTP V2 Forwarding & Fast Finality Constants (Base <-> Arc)
 // -----------------------------------------------------------------------------
 export const CCTP_V2_FAST_FINALITY_THRESHOLD = 1000 as const;
 export const CCTP_FORWARD_MAGIC_PREFIX = "cctp-forward" as const;
@@ -204,8 +204,13 @@ export function isForwardingSupportedRoute(
   sourceDomain: number,
   destinationDomain: number
 ): boolean {
-  // Production forwarding is enabled strictly for Base Mainnet (6) -> Arc Mainnet (26)
-  return sourceDomain === 6 && destinationDomain === 26;
+  // Production forwarding is enabled bidirectionally for:
+  // - Base Mainnet (Domain 6) -> Arc Mainnet (Domain 26)
+  // - Arc Mainnet (Domain 26) -> Base Mainnet (Domain 6)
+  return (
+    (sourceDomain === 6 && destinationDomain === 26) ||
+    (sourceDomain === 26 && destinationDomain === 6)
+  );
 }
 
 // -----------------------------------------------------------------------------

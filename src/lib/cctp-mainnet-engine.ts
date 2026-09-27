@@ -2376,6 +2376,130 @@ export async function verifyDestinationCompletionEvidence(
 }
 
 // -----------------------------------------------------------------------------
+// Destination Settlement Polling
+// -----------------------------------------------------------------------------
+export interface PollDestinationSettlementParams {
+  destinationPublicClient: {
+    readContract?: (args: {
+      address: `0x${string}`;
+      abi: readonly unknown[];
+      functionName: string;
+      args: readonly unknown[];
+    }) => Promise<unknown>;
+    getTransactionReceipt?: (args: {
+      hash: `0x${string}`;
+    }) => Promise<{
+      status: "success" | "reverted" | string;
+      to?: string | null;
+      logs?: readonly { address: string; topics: readonly string[]; data: string }[];
+    } | null>;
+    getTransaction?: (args: {
+      hash: `0x${string}`;
+    }) => Promise<{
+      input?: string;
+      to?: string | null;
+    } | null>;
+  };
+  destinationMessageTransmitter: `0x${string}`;
+  destinationUsdc: `0x${string}`;
+  recipientAddress: `0x${string}`;
+  expectedAmount: bigint;
+  nonceBytes32: `0x${string}`;
+  expectedNonce?: bigint;
+  expectedSourceDomain?: number;
+  forwardTxHash?: `0x${string}`;
+  destBalanceBefore?: bigint;
+  maxAttempts?: number;
+  intervalMs?: number;
+  signal?: AbortSignal;
+  onAttempt?: (attempt: number, maxAttempts: number, isConsumed: boolean) => void;
+}
+
+export interface PollDestinationSettlementResult {
+  settled: boolean;
+  consumed: boolean;
+  evidence?: DestinationCompletionEvidenceResult;
+  error?: string;
+}
+
+export async function pollDestinationSettlement(
+  params: PollDestinationSettlementParams
+): Promise<PollDestinationSettlementResult> {
+  const {
+    destinationPublicClient,
+    destinationMessageTransmitter,
+    destinationUsdc,
+    recipientAddress,
+    expectedAmount,
+    nonceBytes32,
+    expectedNonce,
+    expectedSourceDomain,
+    forwardTxHash,
+    destBalanceBefore,
+    maxAttempts = 30, // 30 * 2000ms = 60s
+    intervalMs = 2000,
+    signal,
+    onAttempt,
+  } = params;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (signal?.aborted) {
+      throw new Error("Destination settlement polling aborted.");
+    }
+
+    try {
+      const isConsumed = await checkDestinationNonceConsumed({
+        destinationPublicClient: {
+          readContract: destinationPublicClient.readContract!,
+        },
+        destinationMessageTransmitter,
+        nonceBytes32,
+      });
+
+      onAttempt?.(attempt, maxAttempts, isConsumed);
+
+      if (isConsumed) {
+        const evidence = await verifyDestinationCompletionEvidence({
+          destinationPublicClient,
+          destinationUsdc,
+          recipientAddress,
+          expectedAmount,
+          mintTxHash: forwardTxHash,
+          destBalanceBefore,
+          expectedNonce,
+          expectedNonceBytes32: nonceBytes32,
+          expectedSourceDomain,
+          expectedDestinationMessageTransmitter: destinationMessageTransmitter,
+        });
+
+        if (evidence.verified) {
+          return {
+            settled: true,
+            consumed: true,
+            evidence,
+          };
+        }
+      }
+    } catch (err: unknown) {
+      if (signal?.aborted) {
+        throw new Error("Destination settlement polling aborted.");
+      }
+      console.warn(`[CCTP Mainnet] Transient destination settlement check error:`, err);
+    }
+
+    if (attempt < maxAttempts) {
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+  }
+
+  return {
+    settled: false,
+    consumed: false,
+    error: "Timed out waiting for destination settlement.",
+  };
+}
+
+// -----------------------------------------------------------------------------
 // Source Burn Discovery
 // -----------------------------------------------------------------------------
 export interface DiscoveredSourceBurnDetails {

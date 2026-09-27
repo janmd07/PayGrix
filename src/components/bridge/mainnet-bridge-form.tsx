@@ -321,10 +321,7 @@ export function MainnetBridgeForm() {
     if (status === "ReadyToClaim") {
       return (
         <span className="flex items-center justify-center gap-2">
-          <CheckCircle2 className="h-4 w-4" />{" "}
-          {sourceChain === "Base Mainnet" && destinationChain === "Arc Mainnet"
-            ? "Claim Transfer (Manual Fallback)"
-            : "Claim Transfer"}
+          <CheckCircle2 className="h-4 w-4" /> Complete Manually (Recovery)
         </span>
       );
     }
@@ -366,7 +363,7 @@ export function MainnetBridgeForm() {
     if (status === "forwarding") {
       return (
         <span className="flex items-center justify-center gap-2">
-          <Loader2 className="h-4 w-4 animate-spin" /> Forwarding to Arc... (Waiting for Circle)
+          <Loader2 className="h-4 w-4 animate-spin" /> Settling on {destinationChain}...
         </span>
       );
     }
@@ -385,9 +382,23 @@ export function MainnetBridgeForm() {
       );
     }
     if (status === "idle" && hasActiveRouteTransfer) {
+      const activeTransfer = pendingTransfers.find(
+        (t) => t.sourceChain === sourceChain && t.destinationChain === destinationChain
+      );
+      const isRecovery =
+        activeTransfer?.status === "ReadyToClaim" ||
+        activeTransfer?.status === "ReconciliationRequired";
       return (
         <span className="flex items-center justify-center gap-2">
-          <AlertTriangle className="h-4 w-4 text-amber-400" /> Active Transfer In-Flight — Claim Below
+          {isRecovery ? (
+            <>
+              <AlertTriangle className="h-4 w-4 text-amber-400" /> Active Transfer Pending Recovery — Complete Below
+            </>
+          ) : (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin text-blue-400" /> Active Transfer In-Flight — Settling...
+            </>
+          )}
         </span>
       );
     }
@@ -818,13 +829,25 @@ export function MainnetBridgeForm() {
                   ) && (
                     <Badge className="text-[10px] py-0 px-2 bg-blue-500/20 text-blue-400 border border-blue-500/30 animate-pulse font-mono">
                       {status === "ReadyToClaim"
-                        ? "READY TO CLAIM"
+                        ? "MANUAL RECOVERY"
                         : status === "forwarding"
-                        ? "FORWARDING"
+                        ? "SETTLING"
                         : status.toUpperCase()}
                     </Badge>
                   )}
                 </div>
+
+                {status === "ReadyToClaim" && (
+                  <div className="text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 flex items-start gap-2.5">
+                    <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-semibold text-amber-200">Manual Recovery Mode</div>
+                      <div className="text-slate-300 mt-0.5">
+                        Automatic settlement could not complete. You can complete this transfer manually.
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-2 bg-[#070e1c]/40 border border-white/5 rounded-xl p-3.5">
                   {/* Step 1: Authorization */}
@@ -900,9 +923,7 @@ export function MainnetBridgeForm() {
                           : "bg-slate-600"
                       )}
                     />
-                    <span>
-                      2. Deposit for burn {sourceChain === "Base Mainnet" && destinationChain === "Arc Mainnet" ? "with fast finality " : ""}on {sourceChain}
-                    </span>
+                    <span>2. Deposit for burn with fast finality on {sourceChain}</span>
                   </div>
 
                   {/* Step 3: Iris Attestation */}
@@ -924,14 +945,10 @@ export function MainnetBridgeForm() {
                           : "bg-slate-600"
                       )}
                     />
-                    <span>
-                      {sourceChain === "Base Mainnet" && destinationChain === "Arc Mainnet"
-                        ? "3. Circle Fast Attestation & Forwarding"
-                        : "3. Query Circle Production Iris Attestation"}
-                    </span>
+                    <span>3. Circle Fast Attestation &amp; Relaying</span>
                   </div>
 
-                  {/* Step 4: Mint */}
+                  {/* Step 4: Settlement */}
                   <div
                     className={cn(
                       "flex items-center gap-2 text-xs",
@@ -950,11 +967,7 @@ export function MainnetBridgeForm() {
                           : "bg-slate-600"
                       )}
                     />
-                    <span>
-                      {sourceChain === "Base Mainnet" && destinationChain === "Arc Mainnet"
-                        ? "4. Automatic receive & mint USDC on Arc Mainnet"
-                        : `4. Receive & Mint USDC on ${destinationChain}`}
-                    </span>
+                    <span>4. Automatic destination settlement on {destinationChain}</span>
                   </div>
 
                   {/* Step 5: Verification */}
@@ -1079,11 +1092,11 @@ export function MainnetBridgeForm() {
                   ) : status === "forwarding" ? (
                     <div className="flex items-center gap-1.5 text-blue-400 text-xs">
                       <Loader2 className="h-3 w-3 animate-spin shrink-0 text-blue-400" />
-                      <span>Circle forwarding to Arc (automatic mint)</span>
+                      <span>Automatic settlement in-flight on {destinationChain}</span>
                     </div>
                   ) : status === "ReadyToClaim" ? (
-                    <span className="text-xs text-indigo-400 font-medium">
-                      Ready for destination claim (switch network)
+                    <span className="text-xs text-amber-400 font-medium">
+                      Manual recovery available (switch network)
                     </span>
                   ) : status === "minting" || status === "verifying" ? (
                     <div className="flex items-center gap-1.5 text-amber-400/90 text-xs">
@@ -1198,7 +1211,7 @@ export function MainnetBridgeForm() {
                           className="h-7 text-xs bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-lg px-3 shadow-[0_2px_10px_rgba(168,85,247,0.3)] cursor-pointer"
                           onClick={() => completeDestinationMint({ transferRecord: tx })}
                         >
-                          Claim Transfer
+                          Complete Manually
                         </Button>
                       ) : tx.status === "ReconciliationRequired" ? (
                         <Button

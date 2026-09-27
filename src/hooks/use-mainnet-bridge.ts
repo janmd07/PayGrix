@@ -44,6 +44,7 @@ import {
   padAddressToBytes32,
   pollCircleForwardingStatus,
   pollCircleIrisAttestation,
+  pollDestinationSettlement,
   messageTransmitterV2Abi,
   validateDecodedMessage,
   verifyAllowance,
@@ -308,13 +309,24 @@ export function useMainnetBridge() {
 
                     const idx = updatedList.findIndex((r) => r.id === record.id);
                     if (idx !== -1) {
-                      const newStatus: MainnetBridgeTransferStatus = consumedWithRecovered
-                        ? "Completed"
-                        : "ReadyToClaim";
+                      let newStatus: MainnetBridgeTransferStatus;
+                      if (consumedWithRecovered) {
+                        newStatus = "Completed";
+                      } else if (
+                        (record.isForwarded || Boolean(irisMsg.forwardState)) &&
+                        irisMsg.forwardState !== "FAILED"
+                      ) {
+                        newStatus = "Forwarding";
+                      } else {
+                        newStatus = "ReadyToClaim";
+                      }
+
                       if (
                         updatedList[idx].status !== newStatus ||
                         updatedList[idx].finalizedNonce !== nBytes ||
-                        updatedList[idx].attestationHex !== irisMsg.attestation
+                        updatedList[idx].attestationHex !== irisMsg.attestation ||
+                        (irisMsg.forwardState && updatedList[idx].forwardState !== irisMsg.forwardState) ||
+                        (irisMsg.forwardTxHash && updatedList[idx].forwardTxHash !== irisMsg.forwardTxHash)
                       ) {
                         updatedList[idx] = {
                           ...updatedList[idx],
@@ -322,6 +334,8 @@ export function useMainnetBridge() {
                           messageHex: irisMsg.message,
                           attestationHex: irisMsg.attestation,
                           finalizedNonce: nBytes,
+                          forwardState: irisMsg.forwardState || updatedList[idx].forwardState,
+                          forwardTxHash: irisMsg.forwardTxHash || updatedList[idx].forwardTxHash,
                           updatedAt: new Date().toISOString(),
                         };
                         hasUpdates = true;
@@ -708,6 +722,12 @@ export function useMainnetBridge() {
             signal: abortController.signal,
           });
 
+          if (parsedAmount <= feeQuote.maxFee) {
+            throw new Error(
+              `Amount must be greater than network forwarding fee (${formatUnits(feeQuote.maxFee, 6)} USDC).`
+            );
+          }
+
           expectedMaxFee = feeQuote.maxFee;
           expectedMinFinalityThreshold = CCTP_V2_FAST_FINALITY_THRESHOLD;
           expectedHookData = CCTP_FORWARD_HOOK_DATA;
@@ -840,77 +860,77 @@ export function useMainnetBridge() {
             );
 
           const destinationClient = getPublicClientForChain(destinationChain);
-          const isConsumed = await checkDestinationNonceConsumed({
+
+          // Poll destination settlement on-chain until relayer consumes nonce & mints
+          const settlementRes = await pollDestinationSettlement({
             destinationPublicClient: destinationClient,
             destinationMessageTransmitter: route.destinationMessageTransmitter,
+            destinationUsdc: route.destinationUsdc,
+            recipientAddress,
+            expectedAmount: parsedAmount,
             nonceBytes32: finalizedNonce,
+            expectedNonce: finalizedDecoded.nonce,
+            expectedSourceDomain: route.sourceDomain,
+            forwardTxHash: forwardRes.forwardTxHash as `0x${string}` | undefined,
+            signal: abortController.signal,
+            maxAttempts: 30, // 30 * 2000ms = 60s
+            intervalMs: 2000,
           });
 
-          if (isConsumed) {
-            const evidence = await verifyDestinationCompletionEvidence({
-              destinationPublicClient: destinationClient,
-              destinationUsdc: route.destinationUsdc,
-              recipientAddress,
-              expectedAmount: (await import("viem")).parseUnits(amount, 6),
-              mintTxHash: forwardRes.forwardTxHash as `0x${string}` | undefined,
-              destBalanceBefore: undefined,
-              expectedNonce: finalizedDecoded.nonce,
-              expectedNonceBytes32: finalizedNonce,
-              expectedSourceDomain: route.sourceDomain,
-              expectedDestinationMessageTransmitter: route.destinationMessageTransmitter,
-            });
+          if (isStale()) return false;
 
-            if (evidence.verified) {
-              saveTransferRecord({
-                id: rawBurnTx,
-                sourceChain,
-                destinationChain,
-                amount,
-                senderAddress: address,
-                recipientAddress,
-                burnTxHash: rawBurnTx,
-                mintTxHash: forwardRes.forwardTxHash,
-                status: "Completed",
-                timestamp: new Date().toLocaleString(),
-                updatedAt: new Date().toISOString(),
-                sourceDomain: route.sourceDomain,
-                destinationDomain: route.destinationDomain,
-                messageHex: finalizedMsg,
-                attestationHex: forwardRes.attestation,
-                finalizedNonce,
-                isForwarded: true,
-                forwardState: "COMPLETE",
-                forwardTxHash: forwardRes.forwardTxHash,
-              });
-              setStatus("complete");
-              refreshBalances(sourceChain, destinationChain);
-              return true;
-            } else {
-              saveTransferRecord({
-                id: rawBurnTx,
-                sourceChain,
-                destinationChain,
-                amount,
-                senderAddress: address,
-                recipientAddress,
-                burnTxHash: rawBurnTx,
-                mintTxHash: forwardRes.forwardTxHash,
-                status: "ReconciliationRequired",
-                timestamp: new Date().toLocaleString(),
-                updatedAt: new Date().toISOString(),
-                sourceDomain: route.sourceDomain,
-                destinationDomain: route.destinationDomain,
-                messageHex: finalizedMsg,
-                attestationHex: forwardRes.attestation,
-                finalizedNonce,
-                isForwarded: true,
-                forwardState: forwardRes.forwardState,
-                forwardTxHash: forwardRes.forwardTxHash,
-              });
-              setStatus("ReconciliationRequired");
-              refreshBalances(sourceChain, destinationChain);
-              return true;
-            }
+          if (settlementRes.settled) {
+            saveTransferRecord({
+              id: rawBurnTx,
+              sourceChain,
+              destinationChain,
+              amount,
+              senderAddress: address,
+              recipientAddress,
+              burnTxHash: rawBurnTx,
+              mintTxHash: forwardRes.forwardTxHash,
+              status: "Completed",
+              timestamp: new Date().toLocaleString(),
+              updatedAt: new Date().toISOString(),
+              sourceDomain: route.sourceDomain,
+              destinationDomain: route.destinationDomain,
+              messageHex: finalizedMsg,
+              attestationHex: forwardRes.attestation,
+              finalizedNonce,
+              isForwarded: true,
+              forwardState: "COMPLETE",
+              forwardTxHash: forwardRes.forwardTxHash,
+            });
+            setStatus("complete");
+            refreshBalances(sourceChain, destinationChain);
+            return true;
+          }
+
+          if (settlementRes.consumed) {
+            saveTransferRecord({
+              id: rawBurnTx,
+              sourceChain,
+              destinationChain,
+              amount,
+              senderAddress: address,
+              recipientAddress,
+              burnTxHash: rawBurnTx,
+              mintTxHash: forwardRes.forwardTxHash,
+              status: "ReconciliationRequired",
+              timestamp: new Date().toLocaleString(),
+              updatedAt: new Date().toISOString(),
+              sourceDomain: route.sourceDomain,
+              destinationDomain: route.destinationDomain,
+              messageHex: finalizedMsg,
+              attestationHex: forwardRes.attestation,
+              finalizedNonce,
+              isForwarded: true,
+              forwardState: forwardRes.forwardState,
+              forwardTxHash: forwardRes.forwardTxHash,
+            });
+            setStatus("ReconciliationRequired");
+            refreshBalances(sourceChain, destinationChain);
+            return true;
           }
 
           // If relayer delayed or failed, fall back safely to ReadyToClaim ONLY if receiveMessage simulation succeeds!
