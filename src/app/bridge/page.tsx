@@ -28,16 +28,8 @@ import { createPublicClient, http } from "viem";
 import { arcPublicClient } from "@/lib/arc-client";
 import { basePublicClient } from "@/lib/base-client";
 
-// Swap integrations
-import { SwapForm } from "@/components/bridge/swap-form";
-import { SwapHistory } from "@/components/bridge/swap-history";
-import { useTokenBalance } from "@/hooks/use-token-balance";
-import { SwapHistoryItem } from "@/hooks/use-swap";
-import { SupportedSwapChain } from "@/config/swap-config";
-
 export default function BridgePage() {
-  const [activeTab, setActiveTab] = useState<"swap" | "bridge" | "bridge-mainnet">("swap");
-  const [selectedSwapNetwork, setSelectedSwapNetwork] = useState<SupportedSwapChain>("Arc");
+  const [activeTab, setActiveTab] = useState<"bridge" | "bridge-mainnet">("bridge");
   
   // Bridge-specific states and hooks
   const [selectedAsset, setSelectedAsset] = useState<BridgeAsset>("USDC");
@@ -94,33 +86,6 @@ export default function BridgePage() {
   const destTxHash = selectedAsset === "EURC" ? eurcDestTxHash : (isSolanaRoute ? solanaDestTxHash : evmDestTxHash);
   const bridgeError = selectedAsset === "EURC" ? eurcError : (isSolanaRoute ? solanaError : evmError);
 
-  // Swap-specific states and hooks
-  const [swaps, setSwaps] = useState<SwapHistoryItem[]>([]);
-  const {
-    balance: swapUsdcBalance,
-    isLoading: isLoadingUsdc,
-    refreshBalance: refreshUsdc,
-  } = useTokenBalance("USDC", address, selectedSwapNetwork);
-  const {
-    balance: swapEurcBalance,
-    isLoading: isLoadingEurc,
-    refreshBalance: refreshEurc,
-  } = useTokenBalance("EURC", address, selectedSwapNetwork);
-  const {
-    balance: swapCirBtcBalance,
-    isLoading: isLoadingCirBtc,
-    refreshBalance: refreshCirBtc,
-  } = useTokenBalance("cirBTC", address, selectedSwapNetwork);
-  const {
-    balance: swapEthBalance,
-    isLoading: isLoadingEth,
-    refreshBalance: refreshEth,
-  } = useTokenBalance("ETH", address, selectedSwapNetwork);
-
-  const handleRefreshSwapBalances = async () => {
-    await Promise.all([refreshUsdc(), refreshEurc(), refreshCirBtc(), refreshEth()]);
-  };
-
   const isSameAddress = (a?: string | null, b?: string | null): boolean => {
     if (!a || !b) return false;
     const cleanA = a.trim();
@@ -132,10 +97,6 @@ export default function BridgePage() {
   };
 
   const getBridgeInitiator = (item: BridgeTransfer): string | undefined => {
-    return item.walletAddress || item.userAddress || item.sender || item.initiator;
-  };
-
-  const getSwapInitiator = (item: SwapHistoryItem): string | undefined => {
     return item.walletAddress || item.userAddress || item.sender || item.initiator;
   };
 
@@ -153,7 +114,6 @@ export default function BridgePage() {
 
     if (!hasActiveWallet) {
       setTransfers([]);
-      setSwaps([]);
       return;
     }
 
@@ -229,37 +189,10 @@ export default function BridgePage() {
     });
     setTransfers(initialTransfers);
 
-    // 2. Initial synchronous load for swap history
-    let allSwaps: SwapHistoryItem[] = [];
-    try {
-      const savedSwaps = localStorage.getItem("swap_history");
-      if (savedSwaps) {
-        const parsed = JSON.parse(savedSwaps);
-        if (Array.isArray(parsed)) {
-          allSwaps = parsed;
-        }
-      }
-    } catch (err) {
-      console.error("Error parsing saved swaps:", err);
-    }
-
-    const initialSwaps = allSwaps.filter((item) => {
-      const initiator = getSwapInitiator(item);
-      if (initiator) {
-        return matchesCurrentWallet(initiator);
-      }
-      if (item.txHash && ownerCache[item.txHash.toLowerCase()]) {
-        return matchesCurrentWallet(ownerCache[item.txHash.toLowerCase()]);
-      }
-      return false;
-    });
-    setSwaps(initialSwaps);
-
-    // 3. Asynchronously resolve legacy records with missing initiator
+    // 2. Asynchronously resolve legacy records with missing initiator
     const resolveLegacyRecords = async () => {
       let cacheModified = false;
       let transfersModified = false;
-      let swapsModified = false;
 
       // Identify bridge items with a hash but no known initiator
       const unresolvedTransfers = allTransfers.filter((item) => {
@@ -328,32 +261,6 @@ export default function BridgePage() {
         }
       }
 
-      // Identify swap items with a hash but no known initiator
-      const unresolvedSwaps = allSwaps.filter((item) => {
-        const initiator = getSwapInitiator(item);
-        return !initiator && item.txHash && !ownerCache[item.txHash.toLowerCase()];
-      });
-
-      for (const item of unresolvedSwaps) {
-        if (!isMounted) return;
-        const hash = item.txHash;
-        try {
-          const client = item.network === "Base" ? basePublicClient : arcPublicClient;
-          const tx = await client.getTransaction({ hash: hash as `0x${string}` });
-          if (tx && tx.from) {
-            ownerCache[hash.toLowerCase()] = tx.from;
-            item.walletAddress = tx.from;
-            item.userAddress = tx.from;
-            cacheModified = true;
-            swapsModified = true;
-          }
-        } catch {
-          // Transaction not found; do not guess ownership
-        }
-      }
-
-      if (!isMounted) return;
-
       if (cacheModified) {
         try {
           localStorage.setItem("paygrix_tx_owner_cache", JSON.stringify(ownerCache));
@@ -373,21 +280,6 @@ export default function BridgePage() {
           return false;
         });
         setTransfers(finalTransfers);
-      }
-
-      if (swapsModified) {
-        try {
-          localStorage.setItem("swap_history", JSON.stringify(allSwaps));
-        } catch {}
-        const finalSwaps = allSwaps.filter((item) => {
-          const initiator = getSwapInitiator(item);
-          if (initiator) return matchesCurrentWallet(initiator);
-          if (item.txHash && ownerCache[item.txHash.toLowerCase()]) {
-            return matchesCurrentWallet(ownerCache[item.txHash.toLowerCase()]);
-          }
-          return false;
-        });
-        setSwaps(finalSwaps);
       }
     };
 
@@ -493,45 +385,6 @@ export default function BridgePage() {
     }
   };
 
-  const handleSwapSuccess = (
-    amountIn: string,
-    amountOut: string,
-    tokenIn: "USDC" | "EURC" | "cirBTC" | "ETH",
-    tokenOut: "USDC" | "EURC" | "cirBTC" | "ETH",
-    hash: string,
-    network?: SupportedSwapChain
-  ) => {
-    const currentWallet = address;
-    const newSwap: SwapHistoryItem = {
-      id: Math.random().toString(36).substring(2, 9),
-      tokenIn,
-      tokenOut,
-      amountIn,
-      amountOut,
-      txHash: hash,
-      timestamp: new Date().toLocaleString(),
-      network: network || selectedSwapNetwork,
-      walletAddress: currentWallet,
-      userAddress: currentWallet,
-      sender: currentWallet,
-      initiator: currentWallet,
-    };
-
-    try {
-      const savedSwaps = localStorage.getItem("swap_history");
-      const allSwaps: SwapHistoryItem[] = savedSwaps ? JSON.parse(savedSwaps) : [];
-      const updatedAll = [newSwap, ...(Array.isArray(allSwaps) ? allSwaps.filter((s) => s.id !== newSwap.id) : [])];
-      localStorage.setItem("swap_history", JSON.stringify(updatedAll));
-    } catch {
-      localStorage.setItem("swap_history", JSON.stringify([newSwap]));
-    }
-
-    setSwaps((prev) => [newSwap, ...prev]);
-
-    // Refresh balances
-    handleRefreshSwapBalances();
-    refreshBalance();
-  };
 
   const handleAssetChange = (asset: BridgeAsset) => {
     setSelectedAsset(asset);
@@ -581,17 +434,6 @@ export default function BridgePage() {
       {/* Tab Switcher */}
       <div className="flex gap-2 border-b border-white/5 pb-4 mb-6">
         <button
-          onClick={() => setActiveTab("swap")}
-          className={cn(
-            "px-4 py-2 text-sm font-semibold rounded-lg transition-all",
-            activeTab === "swap"
-              ? "bg-purple-600 text-white shadow-lg shadow-purple-600/20"
-              : "text-slate-400 hover:text-white hover:bg-white/5"
-          )}
-        >
-          Swap
-        </button>
-        <button
           onClick={() => setActiveTab("bridge")}
           className={cn(
             "px-4 py-2 text-sm font-semibold rounded-lg transition-all",
@@ -618,20 +460,7 @@ export default function BridgePage() {
         </button>
       </div>
 
-      {activeTab === "swap" ? (
-        <div className="space-y-6">
-          <SwapForm
-            balanceUSDC={swapUsdcBalance}
-            balanceEURC={swapEurcBalance}
-            balanceCirBTC={swapCirBtcBalance}
-            balanceETH={swapEthBalance}
-            isLoadingBalance={isLoadingUsdc || isLoadingEurc || isLoadingCirBtc || isLoadingEth}
-            selectedNetwork={selectedSwapNetwork}
-            onNetworkChange={setSelectedSwapNetwork}
-            onSwapSuccess={handleSwapSuccess}
-          />
-        </div>
-      ) : activeTab === "bridge-mainnet" ? (
+      {activeTab === "bridge-mainnet" ? (
         <div className="space-y-6">
           <MainnetBridgeForm />
         </div>
@@ -660,20 +489,13 @@ export default function BridgePage() {
 
       {/* Bottom: History */}
       <div className="mt-6">
-        {activeTab === "swap" ? (
-          <SwapHistory
-            swaps={swaps}
-            isConnected={Boolean(isConnected && address)}
-          />
-        ) : (
-          <TransferHistory
-            transfers={transfers}
-            isConnected={Boolean(
-              (sourceChain === "Solana Devnet" ? solanaPublicKey : (isConnected && address)) ||
-              (isConnected && address)
-            )}
-          />
-        )}
+        <TransferHistory
+          transfers={transfers}
+          isConnected={Boolean(
+            (sourceChain === "Solana Devnet" ? solanaPublicKey : (isConnected && address)) ||
+            (isConnected && address)
+          )}
+        />
       </div>
     </AppShell>
   );
