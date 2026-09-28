@@ -78,14 +78,14 @@ import { SupportedSwapChain, SWAP_CHAINS } from "@/config/swap-config";
 function SwapChainLogo({ chain }: { chain: SupportedSwapChain }) {
   const [hasFailed, setHasFailed] = useState(false);
   const logoUrl = chain === "Base" ? "/chains/base.png" : "/chains/arc.png";
-  const alt = chain === "Arc" ? "Arc Testnet" : chain === "ArcMainnet" ? "Arc Mainnet" : "Base Sepolia";
+  const alt = chain === "ArcMainnet" ? "Arc Mainnet" : "Base Sepolia";
 
   if (hasFailed) {
     return (
       <span
         className={cn(
           "h-2 w-2 rounded-full shrink-0",
-          chain === "Arc" ? "bg-purple-400" : chain === "ArcMainnet" ? "bg-emerald-400" : "bg-blue-400"
+          chain === "ArcMainnet" ? "bg-emerald-400" : "bg-blue-400"
         )}
       />
     );
@@ -129,7 +129,7 @@ export function SwapForm({
   balanceCirBTC,
   balanceETH,
   isLoadingBalance,
-  selectedNetwork = "Arc",
+  selectedNetwork = "ArcMainnet",
   onNetworkChange,
   onSwapSuccess,
 }: SwapFormProps) {
@@ -147,11 +147,6 @@ export function SwapForm({
       if (tokenIn === "cirBTC") setTokenIn("USDC");
       if (tokenOut === "cirBTC") setTokenOut("EURC");
     }
-    // If switching to Arc and token is ETH, reset tokens to USDC -> EURC
-    if (net === "Arc") {
-      if (tokenIn === "ETH") setTokenIn("USDC");
-      if (tokenOut === "ETH") setTokenOut("EURC");
-    }
     // If switching to ArcMainnet, ensure tokens are USDC and EURC
     if (net === "ArcMainnet") {
       if (tokenIn !== "USDC" && tokenIn !== "EURC") setTokenIn("USDC");
@@ -165,8 +160,6 @@ export function SwapForm({
   const [tokenOut, setTokenOut] = useState<"USDC" | "EURC" | "cirBTC" | "ETH">("EURC");
   const [amount, setAmount] = useState<string>("");
   const [hasQuote, setHasQuote] = useState<boolean>(false);
-  const [isEnabled, setIsEnabled] = useState<boolean>(true);
-  const [isLoadingStatus, setIsLoadingStatus] = useState<boolean>(false);
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [openSelectorSlot, setOpenSelectorSlot] = useState<"in" | "out" | null>(null);
   const [arcMainnetReadinessState, setArcMainnetReadinessState] = useState<
@@ -178,23 +171,7 @@ export function SwapForm({
     setLastUpdated(now.toTimeString().split(" ")[0]);
   }, []);
 
-  useEffect(() => {
-    async function checkStatus() {
-      try {
-        const res = await fetch("/api/swap/status");
-        const data = await res.json();
-        setIsEnabled(!!data.enabled);
-      } catch (err) {
-        console.error("Failed to check swap status:", err);
-        setIsEnabled(true); // default to true so Base swap is never blocked
-      } finally {
-        setIsLoadingStatus(false);
-      }
-    }
-    checkStatus();
-  }, []);
-
-  const isSwapDisabled = currentNetwork === "Arc" ? !isEnabled : false;
+  const isSwapDisabled = false;
 
   const { address, isConnected, availableConnector, connect, connector } = useArcWallet();
   const {
@@ -393,9 +370,7 @@ export function SwapForm({
   const availableOptions: ("USDC" | "EURC" | "cirBTC" | "ETH")[] =
     currentNetwork === "Base"
       ? ["ETH", "USDC", "EURC"]
-      : currentNetwork === "ArcMainnet"
-      ? ["USDC", "EURC"]
-      : ["USDC", "EURC", "cirBTC"];
+      : ["USDC", "EURC"];
 
   const renderTokenSelector = (
     value: "USDC" | "EURC" | "cirBTC" | "ETH",
@@ -502,28 +477,12 @@ export function SwapForm({
               <CardDescription className="text-xs text-slate-400">
                 {currentNetwork === "Base"
                   ? "Swap ETH, USDC, and EURC same-chain on Base Sepolia with on-chain Uniswap v3."
-                  : currentNetwork === "ArcMainnet"
-                  ? "Live read-only quotes for USDC & EURC on Arc Mainnet via Uniswap V4."
-                  : "Swap stablecoins and cirBTC same-chain on Arc Testnet instantly."}
+                  : "Live quotes and execution for USDC & EURC on Arc Mainnet via Uniswap V4."}
               </CardDescription>
             </div>
 
-            {/* Chain Selector: Arc Testnet vs Arc Mainnet vs Base Sepolia */}
+            {/* Chain Selector: Arc Mainnet vs Base Sepolia */}
             <div className="flex flex-wrap items-center gap-1 p-1 bg-[#070e1c] rounded-xl border border-white/10 shrink-0 self-start sm:self-auto">
-              <button
-                type="button"
-                onClick={() => handleNetworkChange("Arc")}
-                disabled={status === "swapping" || status === "waiting-wallet"}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
-                  currentNetwork === "Arc"
-                    ? "bg-purple-600/90 text-white shadow-[0_0_12px_rgba(168,85,247,0.4)] border border-purple-400/30"
-                    : "text-slate-400 hover:text-white hover:bg-white/5"
-                )}
-              >
-                <SwapChainLogo chain="Arc" />
-                Arc Testnet
-              </button>
               <button
                 type="button"
                 onClick={() => handleNetworkChange("ArcMainnet")}
@@ -572,22 +531,7 @@ export function SwapForm({
               </button>
             </div>
 
-            {/* Coming Soon / Setup Required Notice on Arc if disabled */}
-            {currentNetwork === "Arc" && !isEnabled && !isLoadingStatus && (
-              <div className="flex items-start gap-3 rounded-xl bg-purple-500/10 border border-purple-500/20 p-4 text-xs text-purple-300 leading-normal">
-                <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5 text-purple-400" />
-                <div className="space-y-1">
-                  <p className="font-semibold text-white">Setup Required</p>
-                  <p>Swap on Arc requires a Circle Stablecoin Kit server-side API key configuration. Please set the <code>STABLECOIN_KIT_API_KEY</code> environment variable on your server to enable swapping.</p>
-                </div>
-              </div>
-            )}
 
-            {isLoadingStatus && (
-              <div className="flex items-center justify-center py-4">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-              </div>
-            )}
 
             {/* Swap Cards Section */}
             <div className={cn("relative space-y-1.5", isSwapDisabled && "opacity-50")}>
@@ -1007,9 +951,7 @@ export function SwapForm({
                       href={
                         currentNetwork === "Base"
                           ? `https://sepolia.basescan.org/tx/${txHash}`
-                          : currentNetwork === "ArcMainnet"
-                          ? `https://explorer.arc.io/tx/${txHash}`
-                          : `https://testnet.arcscan.app/tx/${txHash}`
+                          : `https://explorer.arc.io/tx/${txHash}`
                       }
                       target="_blank"
                       rel="noopener noreferrer"

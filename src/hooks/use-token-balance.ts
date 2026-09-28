@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { formatUnits } from "viem";
-import { fetchTokenBalanceDeduped } from "@/lib/arc-client";
 import { fetchArcMainnetTokenBalanceDeduped } from "@/lib/arc-mainnet-client";
 import { fetchBaseTokenBalanceDeduped, fetchBaseNativeBalanceDeduped } from "@/lib/base-client";
 import { SWAP_CHAINS, SupportedSwapChain } from "@/config/swap-config";
@@ -10,7 +9,7 @@ import { SWAP_CHAINS, SupportedSwapChain } from "@/config/swap-config";
 export function useTokenBalance(
   tokenSymbol: "USDC" | "EURC" | "cirBTC" | "ETH",
   address?: `0x${string}`,
-  network: SupportedSwapChain = "Arc"
+  network: SupportedSwapChain = "ArcMainnet"
 ) {
   const [balance, setBalance] = useState<string>("0.00");
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -22,21 +21,14 @@ export function useTokenBalance(
       return;
     }
 
-    // cirBTC only exists on Arc Testnet
-    if ((network === "Base" || network === "ArcMainnet") && tokenSymbol === "cirBTC") {
-      setBalance("0.00");
-      setIsLoading(false);
-      return;
-    }
-
     // ETH only exists on Base Sepolia in swap
-    if ((network === "Arc" || network === "ArcMainnet") && tokenSymbol === "ETH") {
+    if (network === "ArcMainnet" && tokenSymbol === "ETH") {
       setBalance("0.00");
       setIsLoading(false);
       return;
     }
 
-    const tokenConfig = SWAP_CHAINS[network].tokens[tokenSymbol];
+    const tokenConfig = SWAP_CHAINS[network]?.tokens[tokenSymbol];
     if (!tokenConfig) {
       setBalance("0.00");
       setIsLoading(false);
@@ -53,7 +45,7 @@ export function useTokenBalance(
       } else if (network === "ArcMainnet") {
         balanceWei = await fetchArcMainnetTokenBalanceDeduped(tokenConfig.address, address);
       } else {
-        balanceWei = await fetchTokenBalanceDeduped(tokenConfig.address, address);
+        balanceWei = BigInt(0);
       }
       const decimals = tokenConfig.decimals;
       const balanceStr = formatUnits(balanceWei, decimals);

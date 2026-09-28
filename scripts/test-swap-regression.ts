@@ -1,5 +1,6 @@
-import { createPublicClient, http, parseAbi } from "viem";
 import { execSync } from "child_process";
+import fs from "fs";
+import path from "path";
 
 // Safe assertion helper
 function assert(condition: boolean, message: string) {
@@ -9,78 +10,113 @@ function assert(condition: boolean, message: string) {
   }
 }
 
-const arcTestnet = {
-  id: 5042002,
-  name: "Arc Testnet",
-  nativeCurrency: { name: "Arc Testnet Ether", symbol: "ETH", decimals: 18 },
-  rpcUrls: { default: { http: ["https://rpc.testnet.arc.network"] } },
-} as const;
-
 async function runSwapRegressionTests() {
   console.log("=== PAYGRIX SWAP REGRESSION & SAFETY SUITE ===");
 
-  const ROUTER_ADDRESS = "0xB2A97BAABaB64B389948bebB58D639a654ABac89";
-  const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
-  const EURC_ADDRESS = "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a";
-  const CIRBTC_ADDRESS = "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF";
-  const ARC_CHAIN_ID = 5042002;
+  const ROOT_DIR = process.cwd();
+  const swapConfigPath = path.join(ROOT_DIR, "src", "config", "swap-config.ts");
+  const useSwapPath = path.join(ROOT_DIR, "src", "hooks", "use-swap.ts");
+  const estimateRoutePath = path.join(ROOT_DIR, "src", "app", "api", "swap", "estimate", "route.ts");
+  const buildRoutePath = path.join(ROOT_DIR, "src", "app", "api", "swap", "build", "route.ts");
+  const executeStatusRoutePath = path.join(ROOT_DIR, "src", "app", "api", "swap", "execute-status", "route.ts");
+  const swapFormPath = path.join(ROOT_DIR, "src", "components", "bridge", "swap-form.tsx");
+  const unsupportedWarningPath = path.join(ROOT_DIR, "src", "components", "wallet", "unsupported-network-warning.tsx");
+
+  const swapConfigContent = fs.readFileSync(swapConfigPath, "utf-8");
+  const useSwapContent = fs.readFileSync(useSwapPath, "utf-8");
+  const estimateRouteContent = fs.readFileSync(estimateRoutePath, "utf-8");
+  const buildRouteContent = fs.readFileSync(buildRoutePath, "utf-8");
+  const executeStatusRouteContent = fs.readFileSync(executeStatusRoutePath, "utf-8");
+  const swapFormContent = fs.readFileSync(swapFormPath, "utf-8");
+  const unsupportedWarningContent = fs.readFileSync(unsupportedWarningPath, "utf-8");
 
   // -------------------------------------------------------------
-  // TEST 1: Token Configuration & Decimals
+  // TEST 1: Swap Configuration Audit - Supported Networks
   // -------------------------------------------------------------
-  console.log("\n[1/8] Testing Token Configuration & Decimals...");
-  assert(USDC_ADDRESS.toLowerCase() === "0x3600000000000000000000000000000000000000", "USDC address mismatch");
-  assert(EURC_ADDRESS.toLowerCase() === "0x89b50855aa3be2f677cd6303cec089b5f319d72a", "EURC address mismatch");
-  assert(CIRBTC_ADDRESS.toLowerCase() === "0xf0c4a4ce82a5746abaad9425360ab04fbBA432BF".toLowerCase(), "cirBTC address mismatch");
-  console.log("  ✓ Token addresses verified.");
-
-  // -------------------------------------------------------------
-  // TEST 2: On-Chain DEX Router Quote Audit (USDC <-> EURC)
-  // -------------------------------------------------------------
-  console.log("\n[2/8] Testing On-Chain Quote Calculations...");
-  const publicClient = createPublicClient({
-    chain: arcTestnet,
-    transport: http("https://rpc.testnet.arc.network"),
-  });
-
-  const routerAbi = parseAbi([
-    "function getAmountsOut(uint256 amountIn, address[] memory path) public view returns (uint256[] memory amounts)",
-  ]);
-
-  // Direction A: 1 USDC -> EURC
-  const usdcAmountIn = BigInt(1000000);
-  const usdcToEurcAmounts = await publicClient.readContract({
-    address: ROUTER_ADDRESS as `0x${string}`,
-    abi: routerAbi,
-    functionName: "getAmountsOut",
-    args: [usdcAmountIn, [USDC_ADDRESS as `0x${string}`, EURC_ADDRESS as `0x${string}`]],
-  });
-
-  const usdcToEurcEst = usdcToEurcAmounts[usdcToEurcAmounts.length - 1];
-  const usdcToEurcMin = (usdcToEurcEst * (BigInt(10000) - BigInt(100))) / BigInt(10000); // 1% slippage
-  assert(usdcToEurcEst > BigInt(0), "USDC -> EURC estimated amount must be > 0");
-  assert(usdcToEurcMin <= usdcToEurcEst, "minAmount must be <= estimatedAmount");
-  console.log(`  ✓ USDC -> EURC Quote: 1.00 USDC -> ${Number(usdcToEurcEst) / 1e6} EURC (Min: ${Number(usdcToEurcMin) / 1e6})`);
-
-  // Direction B: 1 EURC -> USDC
-  const eurcAmountIn = BigInt(1000000);
-  const eurcToUsdcAmounts = await publicClient.readContract({
-    address: ROUTER_ADDRESS as `0x${string}`,
-    abi: routerAbi,
-    functionName: "getAmountsOut",
-    args: [eurcAmountIn, [EURC_ADDRESS as `0x${string}`, USDC_ADDRESS as `0x${string}`]],
-  });
-
-  const eurcToUsdcEst = eurcToUsdcAmounts[eurcToUsdcAmounts.length - 1];
-  const eurcToUsdcMin = (eurcToUsdcEst * (BigInt(10000) - BigInt(100))) / BigInt(10000); // 1% slippage
-  assert(eurcToUsdcEst > BigInt(0), "EURC -> USDC estimated amount must be > 0");
-  assert(eurcToUsdcMin <= eurcToUsdcEst, "minAmount must be <= estimatedAmount");
-  console.log(`  ✓ EURC -> USDC Quote: 1.00 EURC -> ${Number(eurcToUsdcEst) / 1e6} USDC (Min: ${Number(eurcToUsdcMin) / 1e6})`);
+  console.log("\n[1/8] Verifying Supported Swap Networks in Configuration...");
+  assert(
+    swapConfigContent.includes('export type SupportedSwapChain = "ArcMainnet" | "Base";'),
+    "SupportedSwapChain must strictly be 'ArcMainnet' | 'Base'"
+  );
+  assert(!swapConfigContent.includes('"Arc" |'), "SupportedSwapChain must NOT contain 'Arc'");
+  assert(!swapConfigContent.includes('| "Arc"'), "SupportedSwapChain must NOT contain 'Arc'");
+  assert(swapConfigContent.includes("ArcMainnet: {"), "ArcMainnet must be present in SWAP_CHAINS");
+  assert(swapConfigContent.includes("Base: {"), "Base must be present in SWAP_CHAINS");
+  assert(!swapConfigContent.includes("Arc: {"), "Arc Testnet must NOT be present in SWAP_CHAINS");
+  console.log("  ✓ Supported swap networks strictly configured as ArcMainnet and Base Sepolia.");
 
   // -------------------------------------------------------------
-  // TEST 3: Slippage Math & Invariant Bounds
+  // TEST 2: Arc Testnet Rejection as Unsupported Swap Network
   // -------------------------------------------------------------
-  console.log("\n[3/8] Testing Slippage Math & Bounds...");
+  console.log("\n[2/8] Testing Complete Arc Testnet Exclusion from Swap Implementation...");
+  const ARC_TESTNET_CHAIN_ID = "5042002";
+  const ARC_TESTNET_ROUTER = "0xB2A97BAABaB64B389948bebB58D639a654ABac89";
+
+  assert(!swapConfigContent.includes(ARC_TESTNET_CHAIN_ID), "swap-config.ts must not contain 5042002");
+  assert(!swapConfigContent.includes(ARC_TESTNET_ROUTER), "swap-config.ts must not contain Arc Testnet router");
+  assert(!useSwapContent.includes(ARC_TESTNET_CHAIN_ID), "use-swap.ts must not contain 5042002");
+  assert(!useSwapContent.includes(ARC_TESTNET_ROUTER), "use-swap.ts must not contain Arc Testnet router");
+  assert(!useSwapContent.includes("ArcTestnet"), "use-swap.ts must not import or use ArcTestnet");
+  assert(!estimateRouteContent.includes(ARC_TESTNET_CHAIN_ID), "estimate route must not contain 5042002");
+  assert(!estimateRouteContent.includes(ARC_TESTNET_ROUTER), "estimate route must not contain Arc Testnet router");
+  assert(!buildRouteContent.includes(ARC_TESTNET_CHAIN_ID), "build route must not contain 5042002");
+  assert(!buildRouteContent.includes(ARC_TESTNET_ROUTER), "build route must not contain Arc Testnet router");
+  assert(!executeStatusRouteContent.includes("Arc_Testnet"), "execute-status route must not accept Arc_Testnet");
+  console.log("  ✓ Arc Testnet (5042002, 0xB2A97BAABaB64B389948bebB58D639a654ABac89) completely absent from Swap layers.");
+
+  // -------------------------------------------------------------
+  // TEST 3: Arc Testnet Execution Path Guard
+  // -------------------------------------------------------------
+  console.log("\n[3/8] Testing Execution Guard - Arc Testnet Blocked...");
+  assert(!useSwapContent.includes("BRANCH 2: ARC TESTNET SWAP"), "Branch 2 for Arc Testnet must be removed from use-swap");
+  assert(!estimateRouteContent.includes("ROUTE 2: ARC TESTNET"), "Route 2 for Arc Testnet must be removed from estimate route");
+  assert(!buildRouteContent.includes("ROUTE 2: ARC TESTNET"), "Route 2 for Arc Testnet must be removed from build route");
+  assert(
+    estimateRouteContent.includes('Supported chains are Base and Arc_Mainnet'),
+    "estimate route must enforce only Base and Arc_Mainnet"
+  );
+  assert(
+    buildRouteContent.includes('Supported chains are Arc_Mainnet and Base'),
+    "build route must enforce only Arc_Mainnet and Base"
+  );
+  assert(
+    unsupportedWarningContent.includes('isSwapPage\n    ? [5042, 84532]'),
+    "unsupported-network-warning on swap page must strictly permit [5042, 84532]"
+  );
+  console.log("  ✓ Execution guard verifies Arc Testnet cannot reach any valid swap execution path.");
+
+  // -------------------------------------------------------------
+  // TEST 4: Arc Mainnet Swap Configuration & Behavior Intact
+  // -------------------------------------------------------------
+  console.log("\n[4/8] Testing Arc Mainnet Swap Integrity...");
+  assert(swapConfigContent.includes("id: 5042"), "Arc Mainnet chain ID must be 5042");
+  assert(swapConfigContent.includes("0x4fca4a51ab4f23a7447b3284fbd7d73289a89fb1"), "Arc Mainnet router must be Universal Router");
+  assert(swapConfigContent.includes("0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94"), "Arc Mainnet quoter must be V4 Quoter");
+  assert(swapConfigContent.includes("0x3600000000000000000000000000000000000000"), "Arc Mainnet USDC token must be present");
+  assert(swapConfigContent.includes("0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1"), "Arc Mainnet EURC token must be present");
+  assert(estimateRouteContent.includes('tokenInChain === "Arc_Mainnet"'), "Arc Mainnet estimate route preserved");
+  assert(buildRouteContent.includes('tokenInChain === ARC_MAINNET_CHAIN'), "Arc Mainnet build route preserved");
+  assert(swapFormContent.includes('handleNetworkChange("ArcMainnet")'), "Arc Mainnet selector button preserved in UI");
+  console.log("  ✓ Arc Mainnet Swap functionality and configuration fully intact.");
+
+  // -------------------------------------------------------------
+  // TEST 5: Base Sepolia Swap Configuration & Behavior Intact
+  // -------------------------------------------------------------
+  console.log("\n[5/8] Testing Base Sepolia Swap Integrity...");
+  assert(swapConfigContent.includes("id: 84532"), "Base Sepolia chain ID must be 84532");
+  assert(swapConfigContent.includes("0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4"), "Base Sepolia router must be SwapRouter02");
+  assert(swapConfigContent.includes("0xC5290058841028F1614F3A6F0F5816cAd0df5E27"), "Base Sepolia quoter must be QuoterV2");
+  assert(swapConfigContent.includes("0x036CbD53842c5426634e7929541eC2318f3dCF7e"), "Base Sepolia USDC token must be present");
+  assert(swapConfigContent.includes("0x808456652fdb597867f38412077A9182bf77359F"), "Base Sepolia EURC token must be present");
+  assert(estimateRouteContent.includes("tokenInChain === BASE_CHAIN"), "Base Sepolia estimate route preserved");
+  assert(buildRouteContent.includes("tokenInChain === BASE_CHAIN"), "Base Sepolia build route preserved");
+  assert(swapFormContent.includes('handleNetworkChange("Base")'), "Base Sepolia selector button preserved in UI");
+  console.log("  ✓ Base Sepolia Swap functionality and configuration fully intact.");
+
+  // -------------------------------------------------------------
+  // TEST 6: Slippage Math & Invariant Bounds
+  // -------------------------------------------------------------
+  console.log("\n[6/8] Testing Slippage Math & Bounds...");
   const testEst = BigInt(1000000);
   const slip1Percent = (testEst * (BigInt(10000) - BigInt(100))) / BigInt(10000);
   assert(slip1Percent === BigInt(990000), "1% slippage calculation error");
@@ -93,40 +129,17 @@ async function runSwapRegressionTests() {
   console.log("  ✓ Slippage invariant calculations verified.");
 
   // -------------------------------------------------------------
-  // TEST 4: Spender Address Alignment
+  // TEST 7: Global Arc Testnet Preservation for Non-Swap Features
   // -------------------------------------------------------------
-  console.log("\n[4/8] Testing Spender & Router Address Alignment...");
-  assert(ROUTER_ADDRESS === "0xB2A97BAABaB64B389948bebB58D639a654ABac89", "Router address mismatch");
-  console.log("  ✓ Spender address verified as PayGrixArcRouter.");
-
-  // -------------------------------------------------------------
-  // TEST 5: Direct Router Execution Guard Check
-  // -------------------------------------------------------------
-  console.log("\n[5/8] Testing Direct Router Execution Guard...");
-  const targetRouter = ROUTER_ADDRESS;
-  const dummyOtherContract = "0x1111111111111111111111111111111111111111";
-
-  const isRouterTarget = targetRouter.toLowerCase() === ROUTER_ADDRESS.toLowerCase();
-  const isOtherTarget = dummyOtherContract.toLowerCase() === ROUTER_ADDRESS.toLowerCase();
-
-  assert(isRouterTarget === true, "Guard must match PayGrixArcRouter address");
-  assert(isOtherTarget === false, "Guard must NOT bypass arbitrary non-router addresses");
-  console.log("  ✓ Direct EVM execution guard verified (strictly scoped to PayGrixArcRouter).");
-
-  // -------------------------------------------------------------
-  // TEST 6: Chain ID & Network Guard
-  // -------------------------------------------------------------
-  console.log("\n[6/8] Testing Chain ID Verification...");
-  assert(ARC_CHAIN_ID === 5042002, "Chain ID must be 5042002 (Arc Testnet)");
-  console.log("  ✓ Chain ID verified.");
-
-  // -------------------------------------------------------------
-  // TEST 7: Error Message Sanitization Guard
-  // -------------------------------------------------------------
-  console.log("\n[7/8] Testing Error Sanitization Security...");
-  const sanitizedFallback = "An unexpected error occurred. Please try again.";
-  assert(sanitizedFallback === "An unexpected error occurred. Please try again.", "Error fallback format");
-  console.log("  ✓ Error sanitization guard verified.");
+  console.log("\n[7/8] Verifying Arc Testnet Is Preserved for Bridge & Non-Swap Features...");
+  const arcTestnetConfigPath = path.join(ROOT_DIR, "src", "config", "arc-testnet.ts");
+  const bridgeAssetsPath = path.join(ROOT_DIR, "src", "config", "bridge-assets.ts");
+  assert(fs.existsSync(arcTestnetConfigPath), "arc-testnet.ts must exist for non-swap features");
+  assert(fs.existsSync(bridgeAssetsPath), "bridge-assets.ts must exist for bridge");
+  const bridgeAssetsContent = fs.readFileSync(bridgeAssetsPath, "utf-8");
+  assert(bridgeAssetsContent.includes('"Arc Testnet"'), "Bridge must still support Arc Testnet in bridge-assets.ts");
+  assert(unsupportedWarningContent.includes("isBridgePage\n    ? [5042, 8453, 5042002, 84532, 421614]"), "Bridge page must retain Arc Testnet support (5042002)");
+  console.log("  ✓ Arc Testnet successfully preserved for Bridge and non-swap features.");
 
   // -------------------------------------------------------------
   // TEST 8: Lending File Isolation Guard

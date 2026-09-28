@@ -1,16 +1,8 @@
 import { NextResponse } from "next/server";
-import { createPublicClient, http, encodeFunctionData, parseAbi, encodePacked } from "viem";
-import { arcTestnet } from "@/config/arc-testnet";
+import { encodeFunctionData, parseAbi, encodePacked } from "viem";
 import { SWAP_CHAINS } from "@/config/swap-config";
 import { basePublicClient } from "@/lib/base-client";
 import { buildArcMainnetV4Swap } from "@/lib/arc-mainnet-build";
-
-// Arc Testnet Configuration
-const ARC_USDC_ADDRESS = SWAP_CHAINS.Arc.tokens.USDC.address.toLowerCase();
-const ARC_EURC_ADDRESS = SWAP_CHAINS.Arc.tokens.EURC.address.toLowerCase();
-const ARC_CIRBTC_ADDRESS = SWAP_CHAINS.Arc.tokens.cirBTC.address.toLowerCase();
-const ARC_TESTNET_CHAIN = "Arc_Testnet";
-const ARC_ROUTER_ADDRESS = SWAP_CHAINS.Arc.routerAddress;
 
 // Base Sepolia Configuration
 const BASE_WETH_ADDRESS = "0x4200000000000000000000000000000000000006".toLowerCase();
@@ -25,11 +17,6 @@ const BASE_ETH_USDC_FEE = 3000;
 // Arc Mainnet Configuration
 const ARC_MAINNET_CHAIN = "Arc_Mainnet";
 
-const arcRouterAbi = parseAbi([
-  "function getAmountsOut(uint256 amountIn, address[] memory path) public view returns (uint256[] memory amounts)",
-  "function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, address[] calldata path, address to, uint256 deadline) external returns (uint256[] memory amounts)",
-]);
-
 const baseQuoterAbi = parseAbi([
   "function quoteExactInputSingle((address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96)) external returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)",
   "function quoteExactInput(bytes path, uint256 amountIn) external returns (uint256 amountOut, uint160[] sqrtPriceX96AfterList, uint32[] initializedTicksCrossedList, uint256 gasEstimate)",
@@ -41,11 +28,6 @@ const baseSwapRouterAbi = parseAbi([
   "function unwrapWETH9(uint256 amountMinimum, address recipient) external payable",
   "function multicall(bytes[] data) external payable returns (bytes[] results)",
 ]);
-
-const arcPublicClient = createPublicClient({
-  chain: arcTestnet,
-  transport: http("https://rpc.testnet.arc.network"),
-});
 
 function isValidEvmAddress(address: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(address);
@@ -344,85 +326,6 @@ export async function POST(request: Request) {
     }
   }
 
-  // ROUTE 2: ARC TESTNET (PayGrixArcRouter)
-  if (tokenInChain === ARC_TESTNET_CHAIN && tokenOutChain === ARC_TESTNET_CHAIN) {
-    const ARC_SUPPORTED_TOKENS = [ARC_USDC_ADDRESS, ARC_EURC_ADDRESS, ARC_CIRBTC_ADDRESS];
-    const isArcSupportedPair =
-      ARC_SUPPORTED_TOKENS.includes(tokenInLower) &&
-      ARC_SUPPORTED_TOKENS.includes(tokenOutLower);
-
-    if (!isArcSupportedPair) {
-      return NextResponse.json(
-        { error: "Unsupported token pair. Only USDC, EURC, and cirBTC swaps are supported on Arc Testnet." },
-        { status: 400 }
-      );
-    }
-
-    try {
-      const rawAmountIn = BigInt(amount);
-      const path = [tokenInAddress as `0x${string}`, tokenOutAddress as `0x${string}`];
-
-      const amounts = await arcPublicClient.readContract({
-        address: ARC_ROUTER_ADDRESS,
-        abi: arcRouterAbi,
-        functionName: "getAmountsOut",
-        args: [rawAmountIn, path],
-      });
-
-      const estOut = amounts[amounts.length - 1];
-      const slipBps = BigInt(slippageBps);
-      const minOut = (estOut * (BigInt(10000) - slipBps)) / BigInt(10000);
-
-      const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200); // 20 mins
-
-      const swapData = encodeFunctionData({
-        abi: arcRouterAbi,
-        functionName: "swapExactTokensForTokens",
-        args: [rawAmountIn, minOut, path, toAddress as `0x${string}`, deadline],
-      });
-
-      return NextResponse.json({
-        transaction: {
-          routerAddress: ARC_ROUTER_ADDRESS,
-          to: ARC_ROUTER_ADDRESS,
-          data: swapData,
-          value: "0x0",
-          chainId: 5042002,
-          executionParams: {
-            instructions: [
-              {
-                target: ARC_ROUTER_ADDRESS,
-                data: swapData,
-                value: "0",
-                tokenIn: tokenInAddress,
-                amountToApprove: amount,
-                tokenOut: tokenOutAddress,
-                minTokenOut: minOut.toString(),
-              },
-            ],
-            tokens: [
-              {
-                token: tokenInAddress,
-                beneficiary: toAddress,
-              },
-            ],
-            execId: "1",
-            deadline: deadline.toString(),
-            metadata: "0x",
-          },
-          signature: "0x",
-        },
-        amount: amount,
-        estimatedAmount: estOut.toString(),
-      });
-    } catch (err) {
-      console.error("Error building on-chain swap transaction for PayGrixArcRouter:", err);
-      return NextResponse.json(
-        { error: "Failed to build transaction for selected pair and amount on Arc Testnet." },
-        { status: 404 }
-      );
-    }
-  }
 
   // ROUTE 3: ARC MAINNET (Uniswap V4 Universal Router)
   if (tokenInChain === ARC_MAINNET_CHAIN && tokenOutChain === ARC_MAINNET_CHAIN) {
@@ -447,7 +350,7 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json(
-    { error: "Unsupported chain. Supported chains are Arc_Testnet, Arc_Mainnet, and Base." },
+    { error: "Unsupported chain. Supported chains are Arc_Mainnet and Base." },
     { status: 400 }
   );
 }

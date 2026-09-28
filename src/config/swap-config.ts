@@ -1,9 +1,9 @@
-export type SupportedSwapChain = "Arc" | "ArcMainnet" | "Base";
+export type SupportedSwapChain = "ArcMainnet" | "Base";
 
 export interface SwapChainConfig {
   id: number;
   name: string;
-  chainKey: string; // for API routes ("Arc_Testnet" | "Base" | "Arc_Mainnet")
+  chainKey: string; // for API routes ("Base" | "Arc_Mainnet")
   rpcUrls: string[];
   blockExplorerUrl: string;
   routerAddress: `0x${string}`;
@@ -20,31 +20,6 @@ export interface SwapChainConfig {
 }
 
 export const SWAP_CHAINS: Record<SupportedSwapChain, SwapChainConfig> = {
-  Arc: {
-    id: 5042002,
-    name: "Arc Testnet",
-    chainKey: "Arc_Testnet",
-    rpcUrls: ["https://rpc.testnet.arc.network"],
-    blockExplorerUrl: "https://testnet.arcscan.app",
-    routerAddress: "0xB2A97BAABaB64B389948bebB58D639a654ABac89",
-    tokens: {
-      USDC: {
-        address: "0x3600000000000000000000000000000000000000",
-        decimals: 6,
-        symbol: "USDC",
-      },
-      EURC: {
-        address: "0x89B50855Aa3bE2F677cD6303Cec089B5F319D72a",
-        decimals: 6,
-        symbol: "EURC",
-      },
-      cirBTC: {
-        address: "0xf0C4a4CE82A5746AbAAd9425360Ab04fbBA432BF",
-        decimals: 8,
-        symbol: "cirBTC",
-      },
-    },
-  },
   ArcMainnet: {
     id: 5042,
     name: "Arc Mainnet",

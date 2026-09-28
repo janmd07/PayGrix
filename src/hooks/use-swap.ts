@@ -18,10 +18,7 @@ export function parseChainId(chainId: unknown): number | null {
   return null;
 }
 import { useAccount } from "wagmi";
-import { createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2";
-import { ArcTestnet } from "@circle-fin/app-kit/chains";
-import { EIP1193Provider, erc20Abi, parseUnits, createPublicClient, http, encodeFunctionData } from "viem";
-import { arcPublicClient, clearBalanceCache } from "@/lib/arc-client";
+import { EIP1193Provider, erc20Abi, parseUnits, encodeFunctionData } from "viem";
 import { basePublicClient, clearBaseBalanceCache } from "@/lib/base-client";
 import { sanitizeExecutionError } from "@/lib/arc-read-infra";
 import { SWAP_CHAINS, SupportedSwapChain } from "@/config/swap-config";
@@ -80,7 +77,7 @@ export interface SwapHistoryItem {
   initiator?: string;
 }
 
-export function useSwap(selectedNetwork: SupportedSwapChain = "Arc") {
+export function useSwap(selectedNetwork: SupportedSwapChain = "ArcMainnet") {
   const [status, setStatus] = useState<SwapStatus>("idle");
   const [estimate, setEstimate] = useState<{
     estimatedOutput: string;
@@ -642,236 +639,13 @@ type ExtendedEIP1193Provider = {
         };
       }
 
-      // ==========================================
-      // BRANCH 2: ARC TESTNET SWAP (ORIGINAL LOGIC PRESERVED)
-      // ==========================================
-      const adapterAddress = chainConfig.routerAddress; // PayGrixArcRouter (0xB2A97BAABaB64B389948bebB58D639a654ABac89)
-
-      // Ensure connected wallet provider is on Arc Testnet (5042002)
-      if (providerChainId !== 5042002) {
-        try {
-          await provider.request({
-            method: "wallet_switchEthereumChain",
-            params: [{ chainId: "0x4cef52" }],
-          });
-        } catch (switchErr: unknown) {
-          const errObj = switchErr as { code?: number; message?: string };
-          if (errObj.code === 4902 || errObj.message?.includes("Unrecognized chain")) {
-            await provider.request({
-              method: "wallet_addEthereumChain",
-              params: [
-                {
-                  chainId: "0x4cef52",
-                  chainName: "Arc Testnet",
-                  nativeCurrency: { name: "Arc Testnet Ether", symbol: "ETH", decimals: 18 },
-                  rpcUrls: ["https://rpc.testnet.arc.network"],
-                  blockExplorerUrls: ["https://testnet.arcscan.app"],
-                },
-              ],
-            });
-          } else {
-            throw switchErr;
-          }
-        }
-      }
-
-      const adapter = await createViemAdapterFromProvider({
-        provider,
-        getPublicClient: ({ chain }) => {
-          if (chain.id === 5042002) {
-            return arcPublicClient;
-          }
-          return createPublicClient({
-            chain,
-            transport: http(),
-          });
-        },
-      });
-
-      // Step 1: Check Allowance & Approve if necessary
-      setStatus("approving");
-      const client = arcPublicClient;
-
-      const currentAllowance = await client.readContract({
-        address: tokenInAddress,
-        abi: erc20Abi,
-        functionName: "allowance",
-        args: [address, adapterAddress],
-      });
-
-      if (currentAllowance < rawAmount) {
-        const preparedApprove = await adapter.prepareAction(
-          "token.approve",
-          {
-            delegate: adapterAddress,
-            amount: rawAmount,
-            tokenAddress: tokenInAddress,
-          },
-          { chain: ArcTestnet }
-        );
-        const approveTx = await preparedApprove.execute();
-        await client.waitForTransactionReceipt({ hash: approveTx as `0x${string}` });
-      }
-
-      // Step 2: Build transaction details from server proxy
-      setStatus("waiting-wallet");
-      const buildRes = await fetch("/api/swap/build", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          tokenInAddress,
-          tokenInChain: "Arc_Testnet",
-          tokenOutAddress,
-          tokenOutChain: "Arc_Testnet",
-          fromAddress: address,
-          toAddress: address,
-          amount: rawAmount.toString(),
-          slippageBps: 100, // 1%
-        }),
-      });
-
-      const buildData = await buildRes.json();
-      if (!buildRes.ok) {
-        throw new Error(buildData.error || "Failed to build transaction parameters from server.");
-      }
-
-      const rawExecParams = buildData?.transaction?.executionParams || buildData?.transaction?.executeParams;
-      if (!rawExecParams || !buildData?.transaction?.signature) {
-        throw new Error("Invalid build response structure received from server proxy.");
-      }
-
-      // Step 3: Parse and execute swap action
-      setStatus("swapping");
-
-      const targetAddress = buildData?.transaction?.to || buildData?.transaction?.routerAddress || adapterAddress;
-      const swapCalldata = buildData?.transaction?.data || buildData?.transaction?.executionParams?.instructions?.[0]?.data;
-      const isDirectRouterSwap = targetAddress.toLowerCase() === adapterAddress.toLowerCase();
-
-      let swapTx: string;
-
-      if (isDirectRouterSwap && swapCalldata) {
-        const txHashResult = (await provider.request({
-          method: "eth_sendTransaction",
-          params: [
-            {
-              from: address,
-              to: targetAddress,
-              data: swapCalldata,
-              value: "0x0",
-            },
-          ],
-        })) as string;
-
-        swapTx = txHashResult;
-        setTxHash(swapTx);
-
-        // Wait for on-chain receipt confirmation on Arc Testnet
-        const receipt = await client.waitForTransactionReceipt({ hash: swapTx as `0x${string}` });
-        if (receipt.status === "reverted") {
-          throw new Error("On-chain swap transaction reverted.");
-        }
-
-        setStatus("completed");
-        return {
-          txHash: swapTx,
-          amountOut: (parseFloat(buildData.estimatedAmount) / Math.pow(10, decimalsOut)).toString(),
-        };
-      } else {
-        // Fallback: Circle SDK path for Circle relayer swaps
-        interface InstructionItem {
-          target: string;
-          data: string;
-          value: string;
-          tokenIn: string;
-          amountToApprove: string;
-          tokenOut: string;
-          minTokenOut: string;
-        }
-
-        const executeParams = {
-          instructions: (rawExecParams.instructions as InstructionItem[]).map((ins: InstructionItem) => ({
-            target: ins.target,
-            data: ins.data,
-            value: BigInt(ins.value ?? "0"),
-            tokenIn: ins.tokenIn,
-            amountToApprove: BigInt(ins.amountToApprove ?? "0"),
-            tokenOut: ins.tokenOut,
-            minTokenOut: BigInt(ins.minTokenOut ?? "0"),
-          })),
-          tokens: rawExecParams.tokens as { token: string; beneficiary: string }[],
-          execId: BigInt(rawExecParams.execId as string),
-          deadline: BigInt(rawExecParams.deadline as string),
-          metadata: rawExecParams.metadata as string,
-        };
-
-        const signature = buildData.transaction.signature;
-        const inputAmount = BigInt(buildData.amount || rawAmount.toString());
-
-        const tokenInputs = [
-          {
-            permitType: 0,
-            token: tokenInAddress as `0x${string}`,
-            amount: inputAmount,
-            permitCalldata: "0x" as `0x${string}`,
-          },
-        ];
-
-        const preparedSwap = await adapter.prepareAction(
-          "swap.execute",
-          {
-            executeParams,
-            tokenInputs,
-            signature,
-            inputAmount,
-            tokenInAddress,
-          },
-          { chain: ArcTestnet }
-        );
-
-        swapTx = (await preparedSwap.execute()) as string;
-        setTxHash(swapTx);
-      }
-
-      // Step 4: Poll status proxy route until completed
-      let isDone = false;
-      const startTime = Date.now();
-      const timeout = 60000; // 60s
-
-      while (!isDone && Date.now() - startTime < timeout) {
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        try {
-          const statusRes = await fetch(`/api/swap/execute-status?txHash=${swapTx}&chain=Arc_Testnet`);
-          const statusData = await statusRes.json();
-
-          if (statusRes.ok && statusData.status === "DONE") {
-            isDone = true;
-            setStatus("completed");
-            return {
-              txHash: swapTx,
-              amountOut: (parseFloat(buildData.estimatedAmount) / Math.pow(10, decimalsOut)).toString(),
-            };
-          } else if (statusRes.ok && statusData.status === "FAILED") {
-            throw new Error("On-chain swap execution failed.");
-          }
-        } catch (err) {
-          console.warn("[SWAP DIAGNOSTIC] Error polling swap status:", err);
-        }
-      }
-
-      setStatus("completed");
-      return {
-        txHash: swapTx,
-        amountOut: (parseFloat(buildData.estimatedAmount) / Math.pow(10, decimalsOut)).toString(),
-      };
+      throw new Error(`Unsupported network for swap: ${network}`);
     } catch (err) {
       console.error("[SWAP] Execute swap error details:", err);
       setError(sanitizeExecutionError(err));
       setStatus("failed");
       return null;
     } finally {
-      clearBalanceCache();
       clearBaseBalanceCache();
     }
   }, [address, connector, isConnected, selectedNetwork]);

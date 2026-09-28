@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { arcPublicClient } from "@/lib/arc-client";
+import { arcMainnetPublicClient } from "@/lib/arc-mainnet-client";
 import { basePublicClient } from "@/lib/base-client";
 
-const ARC_TESTNET_CHAIN = "Arc_Testnet";
+const ARC_MAINNET_CHAIN = "Arc_Mainnet";
 const BASE_CHAIN = "Base";
 
 function isValidTxHash(hash: string): boolean {
@@ -15,9 +15,9 @@ export async function GET(request: Request) {
   const chain = searchParams.get("chain") || "";
 
   // Server-side validation
-  if (chain !== ARC_TESTNET_CHAIN && chain !== BASE_CHAIN) {
+  if (chain !== ARC_MAINNET_CHAIN && chain !== BASE_CHAIN) {
     return NextResponse.json(
-      { error: "Unsupported chain. Supported chains are Arc_Testnet and Base." },
+      { error: "Unsupported chain. Supported chains are Arc_Mainnet and Base." },
       { status: 400 }
     );
   }
@@ -30,7 +30,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const client = chain === BASE_CHAIN ? basePublicClient : arcPublicClient;
+    const client = chain === BASE_CHAIN ? basePublicClient : arcMainnetPublicClient;
     const receipt = await client.getTransactionReceipt({
       hash: txHash as `0x${string}`,
     });
