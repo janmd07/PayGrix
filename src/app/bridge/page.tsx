@@ -37,8 +37,15 @@ export default function BridgePage() {
   const [destinationChain, setDestinationChain] = useState<string>("Base Sepolia");
   const [transfers, setTransfers] = useState<BridgeTransfer[]>([]);
 
-  const { address, isConnected } = useArcWallet();
+  const { address, isConnected, chainId } = useArcWallet();
   const { publicKey: solanaPublicKey } = useWallet();
+
+  // Automatically switch to Mainnet Bridge when wallet is connected to Arc Mainnet or Base Mainnet
+  useEffect(() => {
+    if (isConnected && (chainId === 5042 || chainId === 8453)) {
+      setActiveTab("bridge-mainnet");
+    }
+  }, [isConnected, chainId]);
 
   // Route flags
   const isSolanaRoute = sourceChain === "Solana Devnet" || destinationChain === "Solana Devnet";
@@ -428,7 +435,7 @@ export default function BridgePage() {
       <PageHeader
         eyebrow="Liquidity & Bridge"
         title="Liquidity Management"
-        description="Bridge USDC and EURC tokens between networks or swap stablecoins locally on Arc Testnet and Base."
+        description="Bridge USDC and EURC tokens seamlessly across supported Mainnet and Testnet networks."
       />
 
       {/* Tab Switcher */}
