@@ -49,7 +49,14 @@ export function useArcWallet() {
   }, [accountChain, chainId, chains, isConnected]);
 
   const isArcTestnet = isConnected && chainId === arcTestnet.id;
-  const isUnsupportedNetwork = isConnected && !isArcTestnet;
+  const isArcMainnet = isConnected && chainId === 5042;
+  const isBaseMainnet = isConnected && chainId === 8453;
+  const isBaseSepolia = isConnected && chainId === 84532;
+  const isArbitrumSepolia = isConnected && chainId === 421614;
+
+  const supportedChainIds = [5042, 8453, 5042002, 84532, 421614];
+  const isSupportedNetwork = isConnected && supportedChainIds.includes(chainId);
+  const isUnsupportedNetwork = isConnected && !supportedChainIds.includes(chainId);
 
   return {
     address,
@@ -61,12 +68,21 @@ export function useArcWallet() {
     currentNetwork,
     disconnect,
     isArcTestnet,
+    isArcMainnet,
+    isBaseMainnet,
+    isBaseSepolia,
+    isArbitrumSepolia,
     isConnected,
     isConnecting: isPending || isConnecting || isReconnecting,
     isSwitching,
+    isSupportedNetwork,
     isUnsupportedNetwork,
     switchToArcTestnet: () => switchChain({ chainId: arcTestnet.id }),
     switchToArcTestnetAsync: () => switchChainAsync({ chainId: arcTestnet.id }),
+    switchToArcMainnet: () => switchChain({ chainId: 5042 }),
+    switchToArcMainnetAsync: () => switchChainAsync({ chainId: 5042 }),
+    switchToBaseMainnet: () => switchChain({ chainId: 8453 }),
+    switchToBaseMainnetAsync: () => switchChainAsync({ chainId: 8453 }),
     switchChainAsync,
   };
 }

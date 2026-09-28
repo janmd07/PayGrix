@@ -2014,10 +2014,18 @@ export default function PayrollPage() {
                       {selectedChain === "Arc"
                         ? chainId === 84532
                           ? "Wallet connected to Base Sepolia. Please switch to Arc Testnet to execute Arc payroll payouts."
-                          : "Unsupported network connected. Please switch to Arc Testnet to execute payouts."
+                          : chainId === 5042
+                          ? "Wallet connected to Arc Mainnet. Payroll contracts are deployed on Arc Testnet. Please switch to Arc Testnet to execute payouts."
+                          : chainId === 8453
+                          ? "Wallet connected to Base Mainnet. Payroll contracts are deployed on Arc Testnet. Please switch to Arc Testnet to execute payouts."
+                          : "Please switch to Arc Testnet to execute payouts."
                         : chainId === 5042002
                           ? "Wallet connected to Arc Testnet. Please switch to Base Sepolia to execute Base payroll payouts."
-                          : "Unsupported network connected. Please switch to Base Sepolia to execute Base payroll payouts."}
+                          : chainId === 5042
+                          ? "Wallet connected to Arc Mainnet. Payroll contracts are deployed on Base Sepolia. Please switch to Base Sepolia to execute Base payroll payouts."
+                          : chainId === 8453
+                          ? "Wallet connected to Base Mainnet. Payroll contracts are deployed on Base Sepolia. Please switch to Base Sepolia to execute Base payroll payouts."
+                          : "Please switch to Base Sepolia to execute Base payroll payouts."}
                     </div>
                     <div className="flex justify-end gap-3">
                       <Button

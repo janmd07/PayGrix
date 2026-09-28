@@ -1456,7 +1456,7 @@ export default function LandingPage() {
                 </div>
 
                 <p className="text-xs leading-relaxed text-slate-300 mb-4">
-                  PayGrix operates on Arc Testnet &amp; Base Sepolia. Payroll execution is intentionally not implemented yet.
+                  PayGrix operates across Arc and Base networks on both Mainnet and Testnet.
                 </p>
 
                 <div className="pt-3 border-t border-[#4f8cff]/10 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">

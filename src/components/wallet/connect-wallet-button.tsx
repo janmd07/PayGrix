@@ -611,7 +611,7 @@ export function ConnectWalletButton({ className, size = "sm" }: ConnectWalletBut
                 {/* Subtle Footer */}
                 <div className="px-5 py-3 border-t border-white/[0.06] bg-black/20 text-center shrink-0">
                   <p className="text-[11px] text-slate-500">
-                    Non-custodial connection on Arc Testnet & Base Sepolia
+                    Non-custodial connection across Mainnet & Testnet
                   </p>
                 </div>
               </div>

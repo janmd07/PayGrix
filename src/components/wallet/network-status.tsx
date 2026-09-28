@@ -9,8 +9,28 @@ import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 
 function ChainBadgeLogo({ chainId }: { chainId: number }) {
   const [hasError, setHasError] = useState(false);
-  const logoUrl = chainId === 84532 ? "/chains/base.png" : (chainId === 5042002 || chainId === 5042) ? "/chains/arc.png" : null;
-  const alt = chainId === 84532 ? "Base Sepolia" : chainId === 5042 ? "Arc Mainnet" : "Arc Testnet";
+  const logoUrl =
+    chainId === 84532 || chainId === 8453
+      ? "/chains/base.png"
+      : chainId === 5042002 || chainId === 5042
+      ? "/chains/arc.png"
+      : chainId === 421614 || chainId === 42161
+      ? "/chains/arbitrum.png"
+      : null;
+  const alt =
+    chainId === 8453
+      ? "Base Mainnet"
+      : chainId === 84532
+      ? "Base Sepolia"
+      : chainId === 5042
+      ? "Arc Mainnet"
+      : chainId === 5042002
+      ? "Arc Testnet"
+      : chainId === 421614
+      ? "Arbitrum Sepolia"
+      : chainId === 42161
+      ? "Arbitrum One"
+      : "Network";
 
   if (!logoUrl || hasError) {
     return <PlugZap className="mr-1 h-3.5 w-3.5 shrink-0" />;
@@ -54,14 +74,20 @@ export function NetworkStatus() {
   const isArc = chainId === 5042002;
   const isArcMainnet = chainId === 5042;
   const isBase = chainId === 84532;
-  const isSupported = isArc || isBase || isArcMainnet;
+  const isBaseMainnet = chainId === 8453;
+  const isArbitrumSepolia = chainId === 421614;
+  const isSupported = isArc || isBase || isArcMainnet || isBaseMainnet || isArbitrumSepolia;
 
-  const networkName = isBase
-    ? "Base Sepolia"
-    : isArcMainnet
+  const networkName = isArcMainnet
     ? "Arc Mainnet"
+    : isBaseMainnet
+    ? "Base Mainnet"
+    : isBase
+    ? "Base Sepolia"
     : isArc
     ? "Arc Testnet"
+    : isArbitrumSepolia
+    ? "Arbitrum Sepolia"
     : (currentNetwork?.name ?? "Unsupported Network");
 
   return (

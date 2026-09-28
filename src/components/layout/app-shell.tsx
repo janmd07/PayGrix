@@ -21,7 +21,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
-  const { isConnected } = useArcWallet();
+  const { isConnected, chainId } = useArcWallet();
   const ProductIcon = productNavItem.icon;
 
   useEffect(() => {
@@ -461,23 +461,59 @@ export function AppShell({ children }: { children: ReactNode }) {
         <main className="px-4 py-6 sm:px-6 lg:px-8 w-full max-w-full min-w-0 overflow-x-hidden">
           <UnsupportedNetworkWarning />
 
-          {/* Important Status Banner: Testnet Environment & Operational State */}
-          <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3 text-xs backdrop-blur-md">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <Badge variant="outline" className="text-[11px] font-semibold border-blue-500/30 text-blue-400 bg-blue-500/10 shrink-0">
-                {pathname === "/swap" ? "Live Quotes" : "Testnet Environment"}
-              </Badge>
-              <span className="text-slate-300">
-                {pathname === "/swap"
-                  ? "Arc Mainnet quotes are live. Mainnet execution is not enabled yet."
-                  : "PayGrix operates on Arc Testnet & Base Sepolia. Payroll execution is intentionally not implemented yet."}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 shrink-0 text-[11px] text-slate-400">
-              <span className={cn("inline-block h-2 w-2 rounded-full", pathname === "/swap" ? "bg-amber-400" : "bg-emerald-400 animate-pulse")} />
-              <span>{pathname === "/swap" ? "Mainnet Quotes Active (Read-Only)" : "Testnet Rails Active"}</span>
-            </div>
-          </div>
+          {/* Important Status Banner: Environment & Operational State */}
+          {(() => {
+            const isMainnet = isConnected && (chainId === 5042 || chainId === 8453);
+            return (
+              <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-blue-500/20 bg-blue-500/5 px-4 py-3 text-xs backdrop-blur-md">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "text-[11px] font-semibold shrink-0",
+                      pathname === "/swap"
+                        ? "border-blue-500/30 text-blue-400 bg-blue-500/10"
+                        : isMainnet
+                        ? "border-emerald-500/30 text-emerald-400 bg-emerald-500/10"
+                        : "border-blue-500/30 text-blue-400 bg-blue-500/10"
+                    )}
+                  >
+                    {pathname === "/swap"
+                      ? "Live Quotes"
+                      : isMainnet
+                      ? "Mainnet Environment"
+                      : "Testnet Environment"}
+                  </Badge>
+                  <span className="text-slate-300">
+                    {pathname === "/swap"
+                      ? "Arc Mainnet quotes are live. Mainnet execution is not enabled yet."
+                      : pathname === "/bridge"
+                      ? isMainnet
+                        ? "Arc Mainnet and Base Mainnet CCTP V2 bridging and settlement rails are active."
+                        : "Cross-chain bridging available across supported Mainnet and Testnet routes."
+                      : isMainnet
+                      ? `Connected to ${chainId === 5042 ? "Arc Mainnet" : "Base Mainnet"}. Mainnet rails are active.`
+                      : "PayGrix operates across Arc and Base networks on both Mainnet and Testnet."}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0 text-[11px] text-slate-400">
+                  <span
+                    className={cn(
+                      "inline-block h-2 w-2 rounded-full",
+                      pathname === "/swap" ? "bg-amber-400" : "bg-emerald-400 animate-pulse"
+                    )}
+                  />
+                  <span>
+                    {pathname === "/swap"
+                      ? "Mainnet Quotes Active (Read-Only)"
+                      : isMainnet
+                      ? "Mainnet Rails Active"
+                      : "Testnet Rails Active"}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
 
           {children}
         </main>

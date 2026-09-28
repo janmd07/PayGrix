@@ -918,10 +918,16 @@ function PayPageContent() {
                 <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
                 <div>
                   <p className="font-semibold text-amber-300">
-                    {chainId === 84532 ? "Arc Testnet Required for QR Module" : "Unsupported Network"}
+                    {chainId === 84532 || chainId === 8453 || chainId === 5042
+                      ? "Arc Testnet Required for QR Module"
+                      : "Unsupported Network"}
                   </p>
                   <p className="text-xs text-amber-400/80 mt-0.5">
-                    {chainId === 84532
+                    {chainId === 5042
+                      ? "Wallet connected to Arc Mainnet. The QR payment module is currently deployed on Arc Testnet (Chain ID: 5042002). Please switch to Arc Testnet to proceed."
+                      : chainId === 8453
+                      ? "Wallet connected to Base Mainnet. The QR payment module is currently deployed on Arc Testnet (Chain ID: 5042002). Please switch to Arc Testnet to proceed."
+                      : chainId === 84532
                       ? "PayGrix supports Base Sepolia, but the QR payment module is currently deployed on Arc Testnet (Chain ID: 5042002). Please switch to Arc Testnet to proceed."
                       : "PayGrix QR module runs exclusively on **Arc Testnet (Chain ID: 5042002)**. Switch your wallet to proceed."}
                   </p>
