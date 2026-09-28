@@ -3,7 +3,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { formatUnits } from "viem";
 import { fetchArcMainnetTokenBalanceDeduped } from "@/lib/arc-mainnet-client";
-import { fetchBaseTokenBalanceDeduped, fetchBaseNativeBalanceDeduped } from "@/lib/base-client";
+import {
+  fetchBaseTokenBalanceDeduped,
+  fetchBaseNativeBalanceDeduped,
+  fetchBaseMainnetTokenBalanceDeduped,
+} from "@/lib/base-client";
 import { SWAP_CHAINS, SupportedSwapChain } from "@/config/swap-config";
 
 export function useTokenBalance(
@@ -22,7 +26,7 @@ export function useTokenBalance(
     }
 
     // ETH only exists on Base Sepolia in swap
-    if (network === "ArcMainnet" && tokenSymbol === "ETH") {
+    if ((network === "ArcMainnet" || network === "BaseMainnet") && tokenSymbol === "ETH") {
       setBalance("0.00");
       setIsLoading(false);
       return;
@@ -42,6 +46,8 @@ export function useTokenBalance(
         balanceWei = await fetchBaseNativeBalanceDeduped(address);
       } else if (network === "Base") {
         balanceWei = await fetchBaseTokenBalanceDeduped(tokenConfig.address, address);
+      } else if (network === "BaseMainnet") {
+        balanceWei = await fetchBaseMainnetTokenBalanceDeduped(tokenConfig.address, address);
       } else if (network === "ArcMainnet") {
         balanceWei = await fetchArcMainnetTokenBalanceDeduped(tokenConfig.address, address);
       } else {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { parseAbi, encodePacked } from "viem";
 import { SWAP_CHAINS } from "@/config/swap-config";
-import { basePublicClient } from "@/lib/base-client";
+import { basePublicClient, baseMainnetPublicClient } from "@/lib/base-client";
 import { getArcMainnetV4Quote } from "@/lib/arc-mainnet-quote";
 
 // Base Sepolia Configuration
@@ -12,6 +12,13 @@ const BASE_CHAIN = "Base";
 const BASE_QUOTER_ADDRESS = SWAP_CHAINS.Base.quoterAddress!;
 const BASE_POOL_FEE = SWAP_CHAINS.Base.feeTier || 500;
 const BASE_ETH_USDC_FEE = 3000;
+
+// Base Mainnet Configuration
+const BASE_MAINNET_USDC_ADDRESS = SWAP_CHAINS.BaseMainnet.tokens.USDC.address.toLowerCase();
+const BASE_MAINNET_EURC_ADDRESS = SWAP_CHAINS.BaseMainnet.tokens.EURC.address.toLowerCase();
+const BASE_MAINNET_CHAIN = "Base_Mainnet";
+const BASE_MAINNET_QUOTER_ADDRESS = SWAP_CHAINS.BaseMainnet.quoterAddress!;
+const BASE_MAINNET_POOL_FEE = SWAP_CHAINS.BaseMainnet.feeTier || 500;
 
 const baseQuoterAbi = parseAbi([
   "function quoteExactInputSingle((address tokenIn, address tokenOut, uint256 amountIn, uint24 fee, uint160 sqrtPriceLimitX96)) external returns (uint256 amountOut, uint160 sqrtPriceX96After, uint32 initializedTicksCrossed, uint256 gasEstimate)",
@@ -202,8 +209,64 @@ export async function GET(request: Request) {
     }
   }
 
+  // ROUTE 4: BASE MAINNET (Uniswap v3 QuoterV2 - USDC <-> EURC)
+  if (tokenInChain === BASE_MAINNET_CHAIN && tokenOutChain === BASE_MAINNET_CHAIN) {
+    const isUsdcEurc =
+      (tokenInLower === BASE_MAINNET_USDC_ADDRESS && tokenOutLower === BASE_MAINNET_EURC_ADDRESS) ||
+      (tokenInLower === BASE_MAINNET_EURC_ADDRESS && tokenOutLower === BASE_MAINNET_USDC_ADDRESS);
+
+    if (!isUsdcEurc) {
+      return NextResponse.json(
+        { error: "Unsupported token pair on Base Mainnet. Only USDC and EURC are supported." },
+        { status: 400 }
+      );
+    }
+
+    try {
+      const rawAmountIn = BigInt(amount);
+      const res = await baseMainnetPublicClient.simulateContract({
+        address: BASE_MAINNET_QUOTER_ADDRESS,
+        abi: baseQuoterAbi,
+        functionName: "quoteExactInputSingle",
+        args: [
+          {
+            tokenIn: tokenInAddress as `0x${string}`,
+            tokenOut: tokenOutAddress as `0x${string}`,
+            amountIn: rawAmountIn,
+            fee: BASE_MAINNET_POOL_FEE,
+            sqrtPriceLimitX96: BigInt(0),
+          },
+        ],
+      });
+
+      const estOut = res.result[0];
+      const slipBps = BigInt(slippageBps);
+      const minOut = (estOut * (BigInt(10000) - slipBps)) / BigInt(10000);
+
+      return NextResponse.json({
+        quote: {
+          estimatedAmount: estOut.toString(),
+          minAmount: minOut.toString(),
+        },
+        fees: [
+          {
+            token: "USDC",
+            amount: "0.00",
+            type: "swap",
+          },
+        ],
+      });
+    } catch (err) {
+      console.error("Error fetching on-chain DEX quote from Uniswap v3 QuoterV2 on Base Mainnet:", err);
+      return NextResponse.json(
+        { error: "No route or insufficient liquidity for USDC/EURC on Base Mainnet." },
+        { status: 404 }
+      );
+    }
+  }
+
   return NextResponse.json(
-    { error: "Unsupported chain. Supported chains are Base and Arc_Mainnet." },
+    { error: "Unsupported chain. Supported chains are Arc_Mainnet, Base_Mainnet, and Base." },
     { status: 400 }
   );
 }

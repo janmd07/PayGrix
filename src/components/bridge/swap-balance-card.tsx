@@ -24,7 +24,8 @@ export function SwapBalanceCard({
   onRefresh,
   network = "ArcMainnet",
 }: SwapBalanceCardProps) {
-  const isBase = network === "Base";
+  const isBaseSepolia = network === "Base";
+  const isBaseMainnet = network === "BaseMainnet";
 
   return (
     <Card className="relative overflow-hidden border border-white/10 bg-[#060f24]/50 backdrop-blur-md">
@@ -39,7 +40,11 @@ export function SwapBalanceCard({
             </div>
             <div>
               <p className="text-xs font-medium text-slate-400">
-                {isBase ? "Base Sepolia Balances" : "Arc Mainnet Balances"}
+                {isBaseSepolia
+                  ? "Base Sepolia Balances"
+                  : isBaseMainnet
+                  ? "Base Mainnet Balances"
+                  : "Arc Mainnet Balances"}
               </p>
               <p className="text-[10px] text-slate-500 font-semibold">Available for Swap</p>
             </div>
@@ -55,44 +60,46 @@ export function SwapBalanceCard({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {isBase ? (
-            <div className="space-y-1">
-              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">ETH Balance</span>
-              <div className="flex items-baseline gap-1.5">
-                {isLoading ? (
-                  <div className="h-7 w-20 animate-pulse rounded bg-white/10" />
-                ) : (
-                  <span className="text-xl font-bold tracking-tight text-white font-mono">
-                    {parseFloat(ethBalance).toLocaleString(undefined, {
-                      minimumFractionDigits: 4,
-                      maximumFractionDigits: 6,
-                    })}
-                  </span>
-                )}
-                <span className="text-[10px] font-semibold text-emerald-400">ETH</span>
+        <div className={cn("grid gap-4", isBaseMainnet ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1 sm:grid-cols-3")}>
+          {!isBaseMainnet && (
+            isBaseSepolia ? (
+              <div className="space-y-1">
+                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">ETH Balance</span>
+                <div className="flex items-baseline gap-1.5">
+                  {isLoading ? (
+                    <div className="h-7 w-20 animate-pulse rounded bg-white/10" />
+                  ) : (
+                    <span className="text-xl font-bold tracking-tight text-white font-mono">
+                      {parseFloat(ethBalance).toLocaleString(undefined, {
+                        minimumFractionDigits: 4,
+                        maximumFractionDigits: 6,
+                      })}
+                    </span>
+                  )}
+                  <span className="text-[10px] font-semibold text-emerald-400">ETH</span>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">cirBTC Balance</span>
-              <div className="flex items-baseline gap-1.5">
-                {isLoading ? (
-                  <div className="h-7 w-20 animate-pulse rounded bg-white/10" />
-                ) : (
-                  <span className="text-xl font-bold tracking-tight text-white font-mono">
-                    {parseFloat(cirbtcBalance).toLocaleString(undefined, {
-                      minimumFractionDigits: 4,
-                      maximumFractionDigits: 6,
-                    })}
-                  </span>
-                )}
-                <span className="text-[10px] font-semibold text-amber-500">cirBTC</span>
+            ) : (
+              <div className="space-y-1">
+                <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">cirBTC Balance</span>
+                <div className="flex items-baseline gap-1.5">
+                  {isLoading ? (
+                    <div className="h-7 w-20 animate-pulse rounded bg-white/10" />
+                  ) : (
+                    <span className="text-xl font-bold tracking-tight text-white font-mono">
+                      {parseFloat(cirbtcBalance).toLocaleString(undefined, {
+                        minimumFractionDigits: 4,
+                        maximumFractionDigits: 6,
+                      })}
+                    </span>
+                  )}
+                  <span className="text-[10px] font-semibold text-amber-500">cirBTC</span>
+                </div>
               </div>
-            </div>
+            )
           )}
 
-          <div className="space-y-1 border-t sm:border-t-0 sm:border-l border-white/5 pt-3 sm:pt-0 sm:pl-4">
+          <div className={cn("space-y-1 border-t sm:border-t-0 sm:border-l border-white/5 pt-3 sm:pt-0 sm:pl-4", isBaseMainnet && "sm:border-l-0 sm:pl-0")}>
             <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider">USDC Balance</span>
             <div className="flex items-baseline gap-1.5">
               {isLoading ? (

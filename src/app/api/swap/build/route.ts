@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { encodeFunctionData, parseAbi, encodePacked } from "viem";
 import { SWAP_CHAINS } from "@/config/swap-config";
-import { basePublicClient } from "@/lib/base-client";
+import { basePublicClient, baseMainnetPublicClient } from "@/lib/base-client";
 import { buildArcMainnetV4Swap } from "@/lib/arc-mainnet-build";
 
 // Base Sepolia Configuration
@@ -13,6 +13,14 @@ const BASE_ROUTER_ADDRESS = SWAP_CHAINS.Base.routerAddress; // SwapRouter02
 const BASE_QUOTER_ADDRESS = SWAP_CHAINS.Base.quoterAddress!;
 const BASE_POOL_FEE = SWAP_CHAINS.Base.feeTier || 500;
 const BASE_ETH_USDC_FEE = 3000;
+
+// Base Mainnet Configuration
+const BASE_MAINNET_USDC_ADDRESS = SWAP_CHAINS.BaseMainnet.tokens.USDC.address.toLowerCase();
+const BASE_MAINNET_EURC_ADDRESS = SWAP_CHAINS.BaseMainnet.tokens.EURC.address.toLowerCase();
+const BASE_MAINNET_CHAIN = "Base_Mainnet";
+const BASE_MAINNET_ROUTER_ADDRESS = SWAP_CHAINS.BaseMainnet.routerAddress; // SwapRouter02
+const BASE_MAINNET_QUOTER_ADDRESS = SWAP_CHAINS.BaseMainnet.quoterAddress!;
+const BASE_MAINNET_POOL_FEE = SWAP_CHAINS.BaseMainnet.feeTier || 500;
 
 // Arc Mainnet Configuration
 const ARC_MAINNET_CHAIN = "Arc_Mainnet";
@@ -349,8 +357,102 @@ export async function POST(request: Request) {
     }
   }
 
+  // ROUTE 4: BASE MAINNET (Uniswap v3 SwapRouter02)
+  if (tokenInChain === BASE_MAINNET_CHAIN && tokenOutChain === BASE_MAINNET_CHAIN) {
+    const isUsdcEurc =
+      (tokenInLower === BASE_MAINNET_USDC_ADDRESS && tokenOutLower === BASE_MAINNET_EURC_ADDRESS) ||
+      (tokenInLower === BASE_MAINNET_EURC_ADDRESS && tokenOutLower === BASE_MAINNET_USDC_ADDRESS);
+
+    if (!isUsdcEurc) {
+      return NextResponse.json(
+        { error: "Unsupported token pair on Base Mainnet. Only USDC and EURC are supported." },
+        { status: 400 }
+      );
+    }
+
+    try {
+      const rawAmountIn = BigInt(amount);
+
+      const quoteParams = {
+        tokenIn: tokenInAddress as `0x${string}`,
+        tokenOut: tokenOutAddress as `0x${string}`,
+        amountIn: rawAmountIn,
+        fee: BASE_MAINNET_POOL_FEE,
+        sqrtPriceLimitX96: BigInt(0),
+      };
+
+      const result = await baseMainnetPublicClient.simulateContract({
+        address: BASE_MAINNET_QUOTER_ADDRESS,
+        abi: baseQuoterAbi,
+        functionName: "quoteExactInputSingle",
+        args: [quoteParams],
+      });
+
+      const estOut = result.result[0];
+      const minOut = (estOut * BigInt(10000 - slippageBps)) / BigInt(10000);
+      const deadline = BigInt(Math.floor(Date.now() / 1000) + 1200);
+
+      const swapData = encodeFunctionData({
+        abi: baseSwapRouterAbi,
+        functionName: "exactInputSingle",
+        args: [
+          {
+            tokenIn: tokenInAddress as `0x${string}`,
+            tokenOut: tokenOutAddress as `0x${string}`,
+            fee: BASE_MAINNET_POOL_FEE,
+            recipient: toAddress as `0x${string}`,
+            amountIn: rawAmountIn,
+            amountOutMinimum: minOut,
+            sqrtPriceLimitX96: BigInt(0),
+          },
+        ],
+      });
+
+      return NextResponse.json({
+        transaction: {
+          routerAddress: BASE_MAINNET_ROUTER_ADDRESS,
+          to: BASE_MAINNET_ROUTER_ADDRESS,
+          data: swapData,
+          value: "0x0",
+          chainId: 8453,
+          executionParams: {
+            instructions: [
+              {
+                target: BASE_MAINNET_ROUTER_ADDRESS,
+                data: swapData,
+                value: "0",
+                tokenIn: tokenInAddress,
+                amountToApprove: amount,
+                tokenOut: tokenOutAddress,
+                minTokenOut: minOut.toString(),
+              },
+            ],
+            tokens: [
+              {
+                token: tokenInAddress,
+                beneficiary: toAddress,
+              },
+            ],
+            execId: "1",
+            deadline: deadline.toString(),
+            metadata: "0x",
+          },
+          signature: "0x",
+        },
+        amount: amount,
+        estimatedAmount: estOut.toString(),
+      });
+    } catch (err) {
+      console.error("Error building on-chain swap transaction for Base Mainnet SwapRouter02:", err);
+      return NextResponse.json(
+        { error: "Failed to build transaction for selected pair and amount on Base Mainnet." },
+        { status: 404 }
+      );
+    }
+  }
+
   return NextResponse.json(
-    { error: "Unsupported chain. Supported chains are Arc_Mainnet and Base." },
+    { error: "Unsupported chain. Supported chains are Arc_Mainnet, Base_Mainnet, and Base." },
     { status: 400 }
   );
 }

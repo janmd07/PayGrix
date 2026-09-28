@@ -24,14 +24,14 @@ export function UnsupportedNetworkWarning() {
   // - Testnet: Arc Testnet (5042002), Base Sepolia (84532), Arbitrum Sepolia (421614)
   // Feature-specific support:
   // - Bridge supports all the above (Mainnet CCTP V2 routes + Testnet routes).
-  // - Swap supports Arc Mainnet (5042) and Base Sepolia (84532).
+  // - Swap supports Arc Mainnet (5042), Base Mainnet (8453), and Base Sepolia (84532).
   // - General app supports all active PayGrix networks.
   const isBridgePage = pathname === "/bridge";
   const isSwapPage = pathname === "/swap";
   const allowedChainIds = isBridgePage
     ? [5042, 8453, 5042002, 84532, 421614]
     : isSwapPage
-    ? [5042, 84532]
+    ? [5042, 8453, 84532]
     : [5042, 8453, 5042002, 84532, 421614];
   const isUnsupported = isConnected && !allowedChainIds.includes(chainId);
 
@@ -51,7 +51,7 @@ export function UnsupportedNetworkWarning() {
               {isBridgePage
                 ? "The bridge supports Arc Mainnet, Base Mainnet, Arc Testnet, Base Sepolia, and Arbitrum Sepolia. Please switch to one of these networks to bridge."
                 : isSwapPage
-                ? "Swap supports Arc Mainnet and Base Sepolia. Please switch to one of these networks."
+                ? "Swap supports Arc Mainnet, Base Mainnet, and Base Sepolia. Please switch to one of these networks."
                 : "PayGrix supports Arc Mainnet, Base Mainnet, Arc Testnet, and Base Sepolia. Please switch to one of these networks."}
             </p>
           </div>

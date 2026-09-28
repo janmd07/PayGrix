@@ -19,7 +19,7 @@ export function parseChainId(chainId: unknown): number | null {
 }
 import { useAccount } from "wagmi";
 import { EIP1193Provider, erc20Abi, parseUnits, encodeFunctionData } from "viem";
-import { basePublicClient, clearBaseBalanceCache } from "@/lib/base-client";
+import { basePublicClient, baseMainnetPublicClient, clearBaseBalanceCache } from "@/lib/base-client";
 import { sanitizeExecutionError } from "@/lib/arc-read-infra";
 import { SWAP_CHAINS, SupportedSwapChain } from "@/config/swap-config";
 import { appendBaseBuilderSuffix } from "@/config/base-builder-code";
@@ -630,6 +630,138 @@ type ExtendedEIP1193Provider = {
         const receipt = await basePublicClient.waitForTransactionReceipt({ hash: txHashResult as `0x${string}` });
         if (receipt.status === "reverted") {
           throw new Error("Swap transaction reverted on Base.");
+        }
+
+        setStatus("completed");
+        return {
+          txHash: txHashResult,
+          amountOut: (parseFloat(buildData.estimatedAmount) / Math.pow(10, decimalsOut)).toString(),
+        };
+      }
+
+      // ==========================================
+      // BRANCH 3: BASE MAINNET SWAP
+      // ==========================================
+      if (network === "BaseMainnet") {
+        const targetChainId = chainConfig.id; // 8453
+        const routerAddress = chainConfig.routerAddress; // SwapRouter02 (Base Mainnet)
+
+        if ((tokenIn !== "USDC" && tokenIn !== "EURC") || (tokenOut !== "USDC" && tokenOut !== "EURC")) {
+          throw new Error("Only USDC ↔ EURC swap is supported on Base Mainnet.");
+        }
+
+        // Switch wallet to Base Mainnet if needed
+        if (providerChainId !== targetChainId) {
+          try {
+            await provider.request({
+              method: "wallet_switchEthereumChain",
+              params: [{ chainId: "0x2105" }], // 8453
+            });
+          } catch (switchErr: unknown) {
+            const errObj = switchErr as { code?: number; message?: string };
+            if (errObj.code === 4902 || errObj.message?.includes("Unrecognized chain")) {
+              await provider.request({
+                method: "wallet_addEthereumChain",
+                params: [
+                  {
+                    chainId: "0x2105",
+                    chainName: "Base",
+                    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+                    rpcUrls: ["https://mainnet.base.org", "https://base.llamarpc.com"],
+                    blockExplorerUrls: ["https://basescan.org"],
+                  },
+                ],
+              });
+            } else {
+              throw switchErr;
+            }
+          }
+        }
+
+        // Step 1: Check Allowance & Approve for SwapRouter02 if necessary
+        setStatus("approving");
+        const currentAllowance = await baseMainnetPublicClient.readContract({
+          address: tokenInAddress,
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [address, routerAddress],
+        });
+
+        if (currentAllowance < rawAmount) {
+          console.log("[SWAP BASE MAINNET] Requesting token approval for SwapRouter02...");
+          const approveData = encodeFunctionData({
+            abi: erc20Abi,
+            functionName: "approve",
+            args: [routerAddress, rawAmount],
+          });
+
+          const approveTx = (await provider.request({
+            method: "eth_sendTransaction",
+            params: [
+              {
+                from: address,
+                to: tokenInAddress,
+                data: appendBaseBuilderSuffix(approveData),
+                value: "0x0",
+              },
+            ],
+          })) as string;
+
+          console.log("[SWAP BASE MAINNET] Approval submitted:", approveTx);
+          await baseMainnetPublicClient.waitForTransactionReceipt({ hash: approveTx as `0x${string}` });
+        }
+
+        // Step 2: Build transaction parameters from server route
+        setStatus("waiting-wallet");
+        const buildRes = await fetch("/api/swap/build", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            tokenInAddress,
+            tokenInChain: "Base_Mainnet",
+            tokenOutAddress,
+            tokenOutChain: "Base_Mainnet",
+            fromAddress: address,
+            toAddress: address,
+            amount: rawAmount.toString(),
+            slippageBps,
+          }),
+        });
+
+        const buildData = await buildRes.json();
+        if (!buildRes.ok) {
+          throw new Error(buildData.error || "Failed to build transaction parameters for Base Mainnet.");
+        }
+
+        const targetAddress = (buildData?.transaction?.to || routerAddress) as `0x${string}`;
+        const swapCalldata = buildData?.transaction?.data as `0x${string}`;
+        const swapValue = ((buildData?.transaction?.value as string) || "0x0") as `0x${string}`;
+
+        if (!swapCalldata) {
+          throw new Error("Invalid transaction payload received from server for Base Mainnet swap.");
+        }
+
+        // Step 3: Execute Swap
+        setStatus("swapping");
+        console.log("[SWAP BASE MAINNET] Executing swap on SwapRouter02:", { to: targetAddress, from: address, value: swapValue });
+        const txHashResult = (await provider.request({
+          method: "eth_sendTransaction",
+          params: [
+            {
+              from: address,
+              to: targetAddress,
+              data: appendBaseBuilderSuffix(swapCalldata),
+              value: swapValue,
+            },
+          ],
+        })) as string;
+
+        setTxHash(txHashResult);
+
+        // Step 4: Await Receipt
+        const receipt = await baseMainnetPublicClient.waitForTransactionReceipt({ hash: txHashResult as `0x${string}` });
+        if (receipt.status === "reverted") {
+          throw new Error("Swap transaction reverted on Base Mainnet.");
         }
 
         setStatus("completed");

@@ -75,17 +75,32 @@ export function TokenLogo({ symbol, className }: TokenLogoProps) {
 
 import { SupportedSwapChain, SWAP_CHAINS } from "@/config/swap-config";
 
+const NETWORK_OPTIONS: { id: SupportedSwapChain; label: string; dotClass: string }[] = [
+  { id: "ArcMainnet", label: "Arc Mainnet", dotClass: "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]" },
+  { id: "BaseMainnet", label: "Base Mainnet", dotClass: "bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.6)]" },
+  { id: "Base", label: "Base Sepolia", dotClass: "bg-slate-400 shadow-[0_0_8px_rgba(148,163,184,0.4)]" },
+];
+
 function SwapChainLogo({ chain }: { chain: SupportedSwapChain }) {
   const [hasFailed, setHasFailed] = useState(false);
-  const logoUrl = chain === "Base" ? "/chains/base.png" : "/chains/arc.png";
-  const alt = chain === "ArcMainnet" ? "Arc Mainnet" : "Base Sepolia";
+  const logoUrl = chain === "Base" || chain === "BaseMainnet" ? "/chains/base.png" : "/chains/arc.png";
+  const alt =
+    chain === "ArcMainnet"
+      ? "Arc Mainnet"
+      : chain === "BaseMainnet"
+      ? "Base Mainnet"
+      : "Base Sepolia";
 
   if (hasFailed) {
     return (
       <span
         className={cn(
           "h-2 w-2 rounded-full shrink-0",
-          chain === "ArcMainnet" ? "bg-emerald-400" : "bg-blue-400"
+          chain === "ArcMainnet"
+            ? "bg-emerald-400"
+            : chain === "BaseMainnet"
+            ? "bg-blue-500"
+            : "bg-slate-400"
         )}
       />
     );
@@ -135,6 +150,7 @@ export function SwapForm({
 }: SwapFormProps) {
   const [internalNetwork, setInternalNetwork] = useState<SupportedSwapChain>(selectedNetwork);
   const currentNetwork = onNetworkChange ? selectedNetwork : internalNetwork;
+  const [isNetworkDropdownOpen, setIsNetworkDropdownOpen] = useState(false);
 
   const handleNetworkChange = (net: SupportedSwapChain) => {
     if (onNetworkChange) {
@@ -147,8 +163,8 @@ export function SwapForm({
       if (tokenIn === "cirBTC") setTokenIn("USDC");
       if (tokenOut === "cirBTC") setTokenOut("EURC");
     }
-    // If switching to ArcMainnet, ensure tokens are USDC and EURC
-    if (net === "ArcMainnet") {
+    // If switching to ArcMainnet or BaseMainnet, ensure tokens are USDC and EURC
+    if (net === "ArcMainnet" || net === "BaseMainnet") {
       if (tokenIn !== "USDC" && tokenIn !== "EURC") setTokenIn("USDC");
       if (tokenOut !== "USDC" && tokenOut !== "EURC") setTokenOut("EURC");
     }
@@ -477,40 +493,79 @@ export function SwapForm({
               <CardDescription className="text-xs text-slate-400">
                 {currentNetwork === "Base"
                   ? "Swap ETH, USDC, and EURC same-chain on Base Sepolia with on-chain Uniswap v3."
+                  : currentNetwork === "BaseMainnet"
+                  ? "Live quotes and execution for USDC & EURC on Base Mainnet via Uniswap v3."
                   : "Live quotes and execution for USDC & EURC on Arc Mainnet via Uniswap V4."}
               </CardDescription>
             </div>
 
-            {/* Chain Selector: Arc Mainnet vs Base Sepolia */}
-            <div className="flex flex-wrap items-center gap-1 p-1 bg-[#070e1c] rounded-xl border border-white/10 shrink-0 self-start sm:self-auto">
+            {/* Single Network Dropdown Selector */}
+            <div className="relative shrink-0 self-start sm:self-auto">
               <button
                 type="button"
-                onClick={() => handleNetworkChange("ArcMainnet")}
+                onClick={() => setIsNetworkDropdownOpen((prev) => !prev)}
                 disabled={status === "swapping" || status === "waiting-wallet"}
+                aria-haspopup="listbox"
+                aria-expanded={isNetworkDropdownOpen}
                 className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
-                  currentNetwork === "ArcMainnet"
-                    ? "bg-emerald-600/90 text-white shadow-[0_0_12px_rgba(16,185,129,0.4)] border border-emerald-400/30"
-                    : "text-slate-400 hover:text-white hover:bg-white/5"
+                  "flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-[#070e1c] border border-white/10 text-white hover:border-purple-500/30 hover:bg-white/[0.04] transition-all cursor-pointer shadow-sm select-none",
+                  (status === "swapping" || status === "waiting-wallet") && "opacity-50 cursor-not-allowed pointer-events-none"
                 )}
               >
-                <SwapChainLogo chain="ArcMainnet" />
-                Arc Mainnet
+                <span
+                  className={cn(
+                    "h-2 w-2 rounded-full shrink-0",
+                    NETWORK_OPTIONS.find((n) => n.id === currentNetwork)?.dotClass
+                  )}
+                />
+                <SwapChainLogo chain={currentNetwork} />
+                <span>{NETWORK_OPTIONS.find((n) => n.id === currentNetwork)?.label}</span>
+                <ChevronDown
+                  className={cn(
+                    "h-3.5 w-3.5 text-slate-400 transition-transform duration-200",
+                    isNetworkDropdownOpen && "rotate-180"
+                  )}
+                />
               </button>
-              <button
-                type="button"
-                onClick={() => handleNetworkChange("Base")}
-                disabled={status === "swapping" || status === "waiting-wallet"}
-                className={cn(
-                  "flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer",
-                  currentNetwork === "Base"
-                    ? "bg-[#0052FF] text-white shadow-[0_0_12px_rgba(0,82,255,0.4)] border border-blue-400/30"
-                    : "text-slate-400 hover:text-white hover:bg-white/5"
-                )}
-              >
-                <SwapChainLogo chain="Base" />
-                Base Sepolia
-              </button>
+
+              {isNetworkDropdownOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-30 cursor-default"
+                    onClick={() => setIsNetworkDropdownOpen(false)}
+                  />
+                  <div
+                    role="listbox"
+                    className="absolute right-0 mt-2 w-44 rounded-xl border border-white/10 bg-[#070e1c] p-1.5 shadow-[0_8px_24px_rgba(0,0,0,0.7)] z-40 animate-in fade-in slide-in-from-top-2 duration-150 backdrop-blur-md"
+                  >
+                    {NETWORK_OPTIONS.map((net) => {
+                      const isSelected = currentNetwork === net.id;
+                      return (
+                        <button
+                          key={net.id}
+                          type="button"
+                          role="option"
+                          aria-selected={isSelected}
+                          onClick={() => {
+                            handleNetworkChange(net.id);
+                            setIsNetworkDropdownOpen(false);
+                          }}
+                          className={cn(
+                            "w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-left text-xs font-semibold transition-all cursor-pointer",
+                            isSelected
+                              ? "bg-white/10 text-white border border-white/10"
+                              : "text-slate-300 hover:text-white hover:bg-white/5 border border-transparent"
+                          )}
+                        >
+                          <span className={cn("h-2 w-2 rounded-full shrink-0", net.dotClass)} />
+                          <SwapChainLogo chain={net.id} />
+                          <span>{net.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </CardHeader>
@@ -727,6 +782,8 @@ export function SwapForm({
                   ? "Estimating..."
                   : currentNetwork === "ArcMainnet"
                   ? "Get Arc Mainnet Quote"
+                  : currentNetwork === "BaseMainnet"
+                  ? "Get Base Mainnet Quote"
                   : "Get Quote"}
               </Button>
             ) : currentNetwork === "ArcMainnet" ? (
@@ -925,7 +982,7 @@ export function SwapForm({
                       status === "swapping" ? "bg-purple-500 animate-pulse" :
                       status === "completed" ? "bg-emerald-400" : "bg-slate-700"
                     )} />
-                    <span>Executing swap on-chain ({currentNetwork})</span>
+                    <span>Executing swap on-chain ({SWAP_CHAINS[currentNetwork].name})</span>
                   </div>
 
                   <div className={cn("flex items-center gap-2",
@@ -949,7 +1006,9 @@ export function SwapForm({
                     <span>Transaction Hash</span>
                     <a
                       href={
-                        currentNetwork === "Base"
+                        currentNetwork === "BaseMainnet"
+                          ? `https://basescan.org/tx/${txHash}`
+                          : currentNetwork === "Base"
                           ? `https://sepolia.basescan.org/tx/${txHash}`
                           : `https://explorer.arc.io/tx/${txHash}`
                       }

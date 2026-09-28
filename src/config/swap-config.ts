@@ -1,9 +1,9 @@
-export type SupportedSwapChain = "ArcMainnet" | "Base";
+export type SupportedSwapChain = "ArcMainnet" | "BaseMainnet" | "Base";
 
 export interface SwapChainConfig {
   id: number;
   name: string;
-  chainKey: string; // for API routes ("Base" | "Arc_Mainnet")
+  chainKey: string; // for API routes ("Base" | "Arc_Mainnet" | "Base_Mainnet")
   rpcUrls: string[];
   blockExplorerUrl: string;
   routerAddress: `0x${string}`;
@@ -38,6 +38,29 @@ export const SWAP_CHAINS: Record<SupportedSwapChain, SwapChainConfig> = {
       },
       EURC: {
         address: "0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1",
+        decimals: 6,
+        symbol: "EURC",
+      },
+    },
+  },
+  BaseMainnet: {
+    id: 8453,
+    name: "Base Mainnet",
+    chainKey: "Base_Mainnet",
+    rpcUrls: ["https://mainnet.base.org", "https://base.llamarpc.com"],
+    blockExplorerUrl: "https://basescan.org",
+    routerAddress: "0x2626664c2603336E57B271c5C0b26F421741e481", // SwapRouter02
+    quoterAddress: "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a", // QuoterV2
+    poolAddress: "0x7279c08A36333e12c3Fc81747963264c100D66fB", // USDC/EURC 0.05%
+    feeTier: 500, // 0.05% Uniswap v3 pool
+    tokens: {
+      USDC: {
+        address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+        decimals: 6,
+        symbol: "USDC",
+      },
+      EURC: {
+        address: "0x60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42",
         decimals: 6,
         symbol: "EURC",
       },

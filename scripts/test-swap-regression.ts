@@ -33,22 +33,23 @@ async function runSwapRegressionTests() {
   // -------------------------------------------------------------
   // TEST 1: Swap Configuration Audit - Supported Networks
   // -------------------------------------------------------------
-  console.log("\n[1/8] Verifying Supported Swap Networks in Configuration...");
+  console.log("\n[1/10] Verifying Supported Swap Networks in Configuration...");
   assert(
-    swapConfigContent.includes('export type SupportedSwapChain = "ArcMainnet" | "Base";'),
-    "SupportedSwapChain must strictly be 'ArcMainnet' | 'Base'"
+    swapConfigContent.includes('export type SupportedSwapChain = "ArcMainnet" | "BaseMainnet" | "Base";'),
+    "SupportedSwapChain must strictly be 'ArcMainnet' | 'BaseMainnet' | 'Base'"
   );
   assert(!swapConfigContent.includes('"Arc" |'), "SupportedSwapChain must NOT contain 'Arc'");
   assert(!swapConfigContent.includes('| "Arc"'), "SupportedSwapChain must NOT contain 'Arc'");
   assert(swapConfigContent.includes("ArcMainnet: {"), "ArcMainnet must be present in SWAP_CHAINS");
-  assert(swapConfigContent.includes("Base: {"), "Base must be present in SWAP_CHAINS");
+  assert(swapConfigContent.includes("BaseMainnet: {"), "BaseMainnet must be present in SWAP_CHAINS");
+  assert(swapConfigContent.includes("Base: {"), "Base (Base Sepolia) must be present in SWAP_CHAINS");
   assert(!swapConfigContent.includes("Arc: {"), "Arc Testnet must NOT be present in SWAP_CHAINS");
-  console.log("  ✓ Supported swap networks strictly configured as ArcMainnet and Base Sepolia.");
+  console.log("  ✓ Supported swap networks strictly configured as ArcMainnet, BaseMainnet, and Base Sepolia.");
 
   // -------------------------------------------------------------
   // TEST 2: Arc Testnet Rejection as Unsupported Swap Network
   // -------------------------------------------------------------
-  console.log("\n[2/8] Testing Complete Arc Testnet Exclusion from Swap Implementation...");
+  console.log("\n[2/10] Testing Complete Arc Testnet Exclusion from Swap Implementation...");
   const ARC_TESTNET_CHAIN_ID = "5042002";
   const ARC_TESTNET_ROUTER = "0xB2A97BAABaB64B389948bebB58D639a654ABac89";
 
@@ -65,30 +66,34 @@ async function runSwapRegressionTests() {
   console.log("  ✓ Arc Testnet (5042002, 0xB2A97BAABaB64B389948bebB58D639a654ABac89) completely absent from Swap layers.");
 
   // -------------------------------------------------------------
-  // TEST 3: Arc Testnet Execution Path Guard
+  // TEST 3: Execution Guard & Network Restrictions
   // -------------------------------------------------------------
-  console.log("\n[3/8] Testing Execution Guard - Arc Testnet Blocked...");
+  console.log("\n[3/10] Testing Execution Guard - Arc Testnet Blocked...");
   assert(!useSwapContent.includes("BRANCH 2: ARC TESTNET SWAP"), "Branch 2 for Arc Testnet must be removed from use-swap");
   assert(!estimateRouteContent.includes("ROUTE 2: ARC TESTNET"), "Route 2 for Arc Testnet must be removed from estimate route");
   assert(!buildRouteContent.includes("ROUTE 2: ARC TESTNET"), "Route 2 for Arc Testnet must be removed from build route");
   assert(
-    estimateRouteContent.includes('Supported chains are Base and Arc_Mainnet'),
-    "estimate route must enforce only Base and Arc_Mainnet"
+    estimateRouteContent.includes("Arc_Mainnet, Base_Mainnet, and Base"),
+    "estimate route must enforce Arc_Mainnet, Base_Mainnet, and Base"
   );
   assert(
-    buildRouteContent.includes('Supported chains are Arc_Mainnet and Base'),
-    "build route must enforce only Arc_Mainnet and Base"
+    buildRouteContent.includes("Arc_Mainnet, Base_Mainnet, and Base"),
+    "build route must enforce Arc_Mainnet, Base_Mainnet, and Base"
   );
   assert(
-    unsupportedWarningContent.includes('isSwapPage\n    ? [5042, 84532]'),
-    "unsupported-network-warning on swap page must strictly permit [5042, 84532]"
+    executeStatusRouteContent.includes("Arc_Mainnet, Base_Mainnet, and Base"),
+    "execute-status route must enforce Arc_Mainnet, Base_Mainnet, and Base"
+  );
+  assert(
+    unsupportedWarningContent.includes("isSwapPage\n    ? [5042, 8453, 84532]"),
+    "unsupported-network-warning on swap page must strictly permit [5042, 8453, 84532]"
   );
   console.log("  ✓ Execution guard verifies Arc Testnet cannot reach any valid swap execution path.");
 
   // -------------------------------------------------------------
   // TEST 4: Arc Mainnet Swap Configuration & Behavior Intact
   // -------------------------------------------------------------
-  console.log("\n[4/8] Testing Arc Mainnet Swap Integrity...");
+  console.log("\n[4/10] Testing Arc Mainnet Swap Integrity (Preserved)...");
   assert(swapConfigContent.includes("id: 5042"), "Arc Mainnet chain ID must be 5042");
   assert(swapConfigContent.includes("0x4fca4a51ab4f23a7447b3284fbd7d73289a89fb1"), "Arc Mainnet router must be Universal Router");
   assert(swapConfigContent.includes("0x8Dc178eFB8111BB0973Dd9d722ebeFF267c98F94"), "Arc Mainnet quoter must be V4 Quoter");
@@ -96,13 +101,12 @@ async function runSwapRegressionTests() {
   assert(swapConfigContent.includes("0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1"), "Arc Mainnet EURC token must be present");
   assert(estimateRouteContent.includes('tokenInChain === "Arc_Mainnet"'), "Arc Mainnet estimate route preserved");
   assert(buildRouteContent.includes('tokenInChain === ARC_MAINNET_CHAIN'), "Arc Mainnet build route preserved");
-  assert(swapFormContent.includes('handleNetworkChange("ArcMainnet")'), "Arc Mainnet selector button preserved in UI");
-  console.log("  ✓ Arc Mainnet Swap functionality and configuration fully intact.");
+  console.log("  ✓ Arc Mainnet Swap functionality and Uniswap V4 configuration fully intact.");
 
   // -------------------------------------------------------------
   // TEST 5: Base Sepolia Swap Configuration & Behavior Intact
   // -------------------------------------------------------------
-  console.log("\n[5/8] Testing Base Sepolia Swap Integrity...");
+  console.log("\n[5/10] Testing Base Sepolia Swap Integrity (Preserved)...");
   assert(swapConfigContent.includes("id: 84532"), "Base Sepolia chain ID must be 84532");
   assert(swapConfigContent.includes("0x94cC0AaC535CCDB3C01d6787D6413C739ae12bc4"), "Base Sepolia router must be SwapRouter02");
   assert(swapConfigContent.includes("0xC5290058841028F1614F3A6F0F5816cAd0df5E27"), "Base Sepolia quoter must be QuoterV2");
@@ -110,13 +114,42 @@ async function runSwapRegressionTests() {
   assert(swapConfigContent.includes("0x808456652fdb597867f38412077A9182bf77359F"), "Base Sepolia EURC token must be present");
   assert(estimateRouteContent.includes("tokenInChain === BASE_CHAIN"), "Base Sepolia estimate route preserved");
   assert(buildRouteContent.includes("tokenInChain === BASE_CHAIN"), "Base Sepolia build route preserved");
-  assert(swapFormContent.includes('handleNetworkChange("Base")'), "Base Sepolia selector button preserved in UI");
-  console.log("  ✓ Base Sepolia Swap functionality and configuration fully intact.");
+  console.log("  ✓ Base Sepolia Swap functionality and token support fully intact.");
 
   // -------------------------------------------------------------
-  // TEST 6: Slippage Math & Invariant Bounds
+  // TEST 6: Base Mainnet Swap Configuration & Architecture (NEW)
   // -------------------------------------------------------------
-  console.log("\n[6/8] Testing Slippage Math & Bounds...");
+  console.log("\n[6/10] Testing Base Mainnet Swap Implementation (NEW)...");
+  assert(swapConfigContent.includes("id: 8453"), "Base Mainnet chain ID must be 8453");
+  assert(swapConfigContent.includes("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"), "Base Mainnet USDC token must be 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913");
+  assert(swapConfigContent.includes("0x60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42"), "Base Mainnet EURC token must be 0x60a3E35Cc302bFA44Cb288Bc5a4F316Fdb1adb42");
+  assert(swapConfigContent.includes("0x2626664c2603336E57B271c5C0b26F421741e481"), "Base Mainnet router must be SwapRouter02 (0x2626664c2603336E57B271c5C0b26F421741e481)");
+  assert(swapConfigContent.includes("0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a"), "Base Mainnet quoter must be QuoterV2 (0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a)");
+  assert(swapConfigContent.includes("0x7279c08A36333e12c3Fc81747963264c100D66fB"), "Base Mainnet USDC/EURC pool must be 0x7279c08A36333e12c3Fc81747963264c100D66fB");
+  assert(swapConfigContent.includes("feeTier: 500"), "Base Mainnet pool fee tier must be 500");
+  assert(estimateRouteContent.includes("BASE_MAINNET_CHAIN"), "estimate route must contain Base Mainnet route");
+  assert(buildRouteContent.includes("BASE_MAINNET_CHAIN"), "build route must contain Base Mainnet route");
+  assert(useSwapContent.includes("BRANCH 3: BASE MAINNET SWAP"), "use-swap must contain Base Mainnet execution branch");
+  assert(useSwapContent.includes("0x2105"), "use-swap must support switching to Base Mainnet chainId 8453 (0x2105)");
+  console.log("  ✓ Base Mainnet verified router, quoter, pool, and USDC ↔ EURC execution configured.");
+
+  // -------------------------------------------------------------
+  // TEST 7: Single Network Dropdown Selector Invariant
+  // -------------------------------------------------------------
+  console.log("\n[7/10] Testing Single Network Dropdown Selector Invariant...");
+  // Check that separate pill buttons were removed from CardHeader
+  assert(!swapFormContent.includes("Chain Selector: Arc Mainnet vs Base Sepolia"), "Old side-by-side pills comment removed");
+  // Check that single dropdown selector is present
+  assert(swapFormContent.includes("Single Network Dropdown Selector"), "Single dropdown selector present");
+  assert(swapFormContent.includes("NETWORK_OPTIONS"), "NETWORK_OPTIONS configured with all 3 networks");
+  assert(swapFormContent.includes("isNetworkDropdownOpen"), "Dropdown open/close state managed");
+  assert(swapFormContent.includes("role=\"listbox\""), "Accessible dropdown listbox rendered");
+  console.log("  ✓ Single network dropdown selector requirement verified.");
+
+  // -------------------------------------------------------------
+  // TEST 8: Slippage Math & Invariant Bounds
+  // -------------------------------------------------------------
+  console.log("\n[8/10] Testing Slippage Math & Bounds...");
   const testEst = BigInt(1000000);
   const slip1Percent = (testEst * (BigInt(10000) - BigInt(100))) / BigInt(10000);
   assert(slip1Percent === BigInt(990000), "1% slippage calculation error");
@@ -129,9 +162,9 @@ async function runSwapRegressionTests() {
   console.log("  ✓ Slippage invariant calculations verified.");
 
   // -------------------------------------------------------------
-  // TEST 7: Global Arc Testnet Preservation for Non-Swap Features
+  // TEST 9: Global Arc Testnet Preservation for Non-Swap Features
   // -------------------------------------------------------------
-  console.log("\n[7/8] Verifying Arc Testnet Is Preserved for Bridge & Non-Swap Features...");
+  console.log("\n[9/10] Verifying Arc Testnet Is Preserved for Bridge & Non-Swap Features...");
   const arcTestnetConfigPath = path.join(ROOT_DIR, "src", "config", "arc-testnet.ts");
   const bridgeAssetsPath = path.join(ROOT_DIR, "src", "config", "bridge-assets.ts");
   assert(fs.existsSync(arcTestnetConfigPath), "arc-testnet.ts must exist for non-swap features");
@@ -142,9 +175,9 @@ async function runSwapRegressionTests() {
   console.log("  ✓ Arc Testnet successfully preserved for Bridge and non-swap features.");
 
   // -------------------------------------------------------------
-  // TEST 8: Lending File Isolation Guard
+  // TEST 10: Lending & Bridge Isolation Guard
   // -------------------------------------------------------------
-  console.log("\n[8/8] Testing Lending Isolation Invariant...");
+  console.log("\n[10/10] Testing Lending & Bridge Isolation Invariant...");
   try {
     const gitDiffStat = execSync("git diff --name-only", { encoding: "utf-8" });
     const modifiedFiles = gitDiffStat.split("\n").filter((f) => f.trim().length > 0);
@@ -154,19 +187,21 @@ async function runSwapRegressionTests() {
       "src/components/lending/",
       "src/hooks/use-lending-data.ts",
       "paygrix-contracts/contracts/",
+      "src/config/cctp-mainnet.ts",
+      "src/components/bridge/mainnet-bridge-form.tsx",
     ];
 
     for (const file of modifiedFiles) {
       for (const pattern of FORBIDDEN_PATTERNS) {
-        assert(!file.startsWith(pattern), `SECURITY VIOLATION: Unintended modification detected in lending file: ${file}`);
+        assert(!file.startsWith(pattern), `SECURITY VIOLATION: Unintended modification detected in isolated file: ${file}`);
       }
     }
-    console.log("  ✓ Lending Isolation Invariant verified: 0 lending files modified.");
+    console.log("  ✓ Isolation Invariant verified: 0 forbidden files modified.");
   } catch (err) {
     if ((err as Error).message.includes("SECURITY VIOLATION")) {
       throw err;
     }
-    console.log("  ✓ Lending Isolation Invariant verified.");
+    console.log("  ✓ Isolation Invariant verified.");
   }
 
   console.log("\n==================================================");

@@ -14,12 +14,35 @@ export const baseSepolia = {
   },
 } as const;
 
+export const baseMainnet = {
+  id: 8453,
+  name: "Base",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: {
+    default: {
+      http: ["https://mainnet.base.org", "https://base.llamarpc.com"],
+    },
+  },
+  blockExplorers: {
+    default: { name: "Basescan", url: "https://basescan.org" },
+  },
+} as const;
+
 // 1. Single shared Base Sepolia public client at module scope with fallback transport
 export const basePublicClient = createPublicClient({
   chain: baseSepolia,
   transport: fallback([
     http("https://sepolia.base.org"),
     http("https://base-sepolia-rpc.publicnode.com"),
+  ]),
+});
+
+// Single shared Base Mainnet public client at module scope with fallback transport
+export const baseMainnetPublicClient = createPublicClient({
+  chain: baseMainnet,
+  transport: fallback([
+    http("https://mainnet.base.org"),
+    http("https://base.llamarpc.com"),
   ]),
 });
 
@@ -100,6 +123,44 @@ export async function fetchBaseNativeBalanceDeduped(
   return promise;
 }
 
+
+export async function fetchBaseMainnetTokenBalanceDeduped(
+  tokenAddress: `0x${string}`,
+  userAddress: `0x${string}`
+): Promise<bigint> {
+  const cacheKey = `base_mainnet:${tokenAddress.toLowerCase()}:${userAddress.toLowerCase()}`;
+  const now = Date.now();
+
+  const cached = balanceCache.get(cacheKey);
+  if (cached && now - cached.timestamp < CACHE_TTL_MS) {
+    return cached.value;
+  }
+
+  if (inFlightRequests.has(cacheKey)) {
+    return inFlightRequests.get(cacheKey)!;
+  }
+
+  const promise = (async () => {
+    try {
+      const val = await baseMainnetPublicClient.readContract({
+        address: tokenAddress,
+        abi: erc20Abi,
+        functionName: "balanceOf",
+        args: [userAddress],
+      });
+      balanceCache.set(cacheKey, { value: val, timestamp: Date.now() });
+      return val;
+    } catch (err) {
+      if (cached) return cached.value;
+      throw err;
+    } finally {
+      inFlightRequests.delete(cacheKey);
+    }
+  })();
+
+  inFlightRequests.set(cacheKey, promise);
+  return promise;
+}
 
 export function clearBaseBalanceCache() {
   balanceCache.clear();

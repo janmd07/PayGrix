@@ -10,7 +10,7 @@ import { useTokenBalance } from "@/hooks/use-token-balance";
 import { SwapHistoryItem } from "@/hooks/use-swap";
 import { SupportedSwapChain } from "@/config/swap-config";
 import { arcMainnetPublicClient } from "@/lib/arc-mainnet-client";
-import { basePublicClient } from "@/lib/base-client";
+import { basePublicClient, baseMainnetPublicClient } from "@/lib/base-client";
 
 export default function SwapPage() {
   const [selectedSwapNetwork, setSelectedSwapNetwork] = useState<SupportedSwapChain>("ArcMainnet");
@@ -122,7 +122,12 @@ export default function SwapPage() {
         if (!isMounted) return;
         const hash = item.txHash;
         try {
-          const client = item.network === "Base" ? basePublicClient : arcMainnetPublicClient;
+          const client =
+            item.network === "BaseMainnet"
+              ? baseMainnetPublicClient
+              : item.network === "Base"
+              ? basePublicClient
+              : arcMainnetPublicClient;
           const tx = await client.getTransaction({ hash: hash as `0x${string}` });
           if (tx && tx.from) {
             ownerCache[hash.toLowerCase()] = tx.from;
@@ -211,7 +216,7 @@ export default function SwapPage() {
       <PageHeader
         eyebrow="Swap"
         title="Token Swap"
-        description="Swap stablecoins and tokens same-chain on Arc Mainnet and Base Sepolia."
+        description="Swap stablecoins and tokens same-chain on Arc Mainnet, Base Mainnet, and Base Sepolia."
       />
 
       <div className="space-y-6">
