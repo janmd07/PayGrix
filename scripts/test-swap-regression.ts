@@ -205,7 +205,7 @@ async function runSwapRegressionTests() {
       ]),
     });
 
-    const BASE_BUILDER_SUFFIX = "62635f66337366326969750b00802180218021802180218021";
+    const BASE_BUILDER_SUFFIX = "62635f663373667a6969750b0080218021802180218021802180218021";
     function appendBaseBuilderSuffix(calldata: string) {
       if (calldata.endsWith(BASE_BUILDER_SUFFIX)) return calldata;
       return `${calldata}${BASE_BUILDER_SUFFIX}`;
@@ -237,7 +237,7 @@ async function runSwapRegressionTests() {
     });
 
     const finalCalldata = appendBaseBuilderSuffix(rawCalldata) as `0x${string}`;
-    assert(finalCalldata.endsWith("62635f66337366326969750b00802180218021802180218021"), "Base builder code must be appended");
+    assert(finalCalldata.endsWith("62635f663373667a6969750b0080218021802180218021802180218021"), "Base builder code must be appended");
 
     const estimatedGas = await baseMainnetPublicClient.estimateGas({
       account: user as `0x${string}`,
