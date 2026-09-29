@@ -667,7 +667,11 @@ type ExtendedEIP1193Provider = {
                     chainId: "0x2105",
                     chainName: "Base",
                     nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-                    rpcUrls: ["https://mainnet.base.org", "https://base.llamarpc.com"],
+                    rpcUrls: [
+                      "https://mainnet.base.org",
+                      "https://base-rpc.publicnode.com",
+                      "https://1rpc.io/base",
+                    ],
                     blockExplorerUrls: ["https://basescan.org"],
                   },
                 ],
@@ -734,39 +738,125 @@ type ExtendedEIP1193Provider = {
         }
 
         const targetAddress = (buildData?.transaction?.to || routerAddress) as `0x${string}`;
-        const swapCalldata = buildData?.transaction?.data as `0x${string}`;
+        const rawSwapCalldata = buildData?.transaction?.data as `0x${string}`;
         const swapValue = ((buildData?.transaction?.value as string) || "0x0") as `0x${string}`;
 
-        if (!swapCalldata) {
+        if (!rawSwapCalldata) {
           throw new Error("Invalid transaction payload received from server for Base Mainnet swap.");
         }
 
-        // Step 3: Execute Swap
+        // a. Build exact final transaction payload first including builder suffix
+        const finalCalldata = appendBaseBuilderSuffix(rawSwapCalldata);
+
+        // b & c. Run pre-flight gas estimation against the exact final payload
+        let gasLimitHex: `0x${string}` | undefined;
+        try {
+          const estimatedGas = await baseMainnetPublicClient.estimateGas({
+            account: address,
+            to: targetAddress,
+            data: finalCalldata,
+            value: BigInt(swapValue),
+          });
+          const bufferedGas = (estimatedGas * BigInt(120)) / BigInt(100);
+          gasLimitHex = `0x${bufferedGas.toString(16)}` as `0x${string}`;
+          console.log("[SWAP BASE MAINNET] Pre-flight gas estimated:", {
+            estimated: estimatedGas.toString(),
+            buffered: bufferedGas.toString(),
+          });
+        } catch (gasErr) {
+          console.warn("[SWAP BASE MAINNET] Pre-flight gas estimation notice:", gasErr);
+        }
+
+        // d. Submit to wallet with explicit gas envelope
+        console.log("[SWAP BASE MAINNET] Prompting wallet to sign swap on SwapRouter02:", {
+          to: targetAddress,
+          from: address,
+          value: swapValue,
+          gas: gasLimitHex,
+        });
+
+        let rawSubmittedHash: string;
+        try {
+          rawSubmittedHash = (await provider.request({
+            method: "eth_sendTransaction",
+            params: [
+              {
+                from: address,
+                to: targetAddress,
+                data: finalCalldata,
+                value: swapValue,
+                ...(gasLimitHex ? { gas: gasLimitHex } : {}),
+              },
+            ],
+          })) as string;
+        } catch (walletSendErr: unknown) {
+          const sendErrMsg = walletSendErr instanceof Error ? walletSendErr.message : String(walletSendErr);
+          console.error("[SWAP BASE MAINNET] Wallet eth_sendTransaction failed:", walletSendErr);
+          if (sendErrMsg.toLowerCase().includes("user rejected") || (walletSendErr as { code?: number })?.code === 4001) {
+            throw new Error("Transaction rejected by wallet.");
+          }
+          if (sendErrMsg.toLowerCase().includes("nonce") || sendErrMsg.toLowerCase().includes("replacement")) {
+            throw new Error("Transaction submission failed due to a nonce or gas conflict in your wallet. No funds were moved.");
+          }
+          throw new Error(`Wallet failed to submit transaction: ${sendErrMsg}`);
+        }
+
+        // e & f. Verify transaction visibility before assuming it reached sequencer
+        console.log("[SWAP BASE MAINNET] Checking transaction visibility for hash:", rawSubmittedHash);
+        let isObservable = false;
+        const visibilityStart = Date.now();
+        const MAX_VISIBILITY_WAIT_MS = 15000;
+        const POLL_INTERVAL_MS = 1500;
+
+        while (Date.now() - visibilityStart < MAX_VISIBILITY_WAIT_MS) {
+          try {
+            const observedTx = await baseMainnetPublicClient.getTransaction({
+              hash: rawSubmittedHash as `0x${string}`,
+            });
+            if (observedTx) {
+              isObservable = true;
+              break;
+            }
+          } catch {
+            try {
+              const directReceipt = await baseMainnetPublicClient.getTransactionReceipt({
+                hash: rawSubmittedHash as `0x${string}`,
+              });
+              if (directReceipt) {
+                isObservable = true;
+                break;
+              }
+            } catch {
+              // Sequencer / RPC hasn't indexed yet; continue polling
+            }
+          }
+          await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+        }
+
+        // g. If unobservable, do not enter permanent swapping state and do not set misleading txHash
+        if (!isObservable) {
+          setTxHash("");
+          throw new Error(
+            "Transaction was submitted by wallet but could not be verified on Base Mainnet. No swap funds were moved."
+          );
+        }
+
+        // h. Only set txHash and enter on-chain swapping state when observable
+        setTxHash(rawSubmittedHash);
         setStatus("swapping");
-        console.log("[SWAP BASE MAINNET] Executing swap on SwapRouter02:", { to: targetAddress, from: address, value: swapValue });
-        const txHashResult = (await provider.request({
-          method: "eth_sendTransaction",
-          params: [
-            {
-              from: address,
-              to: targetAddress,
-              data: appendBaseBuilderSuffix(swapCalldata),
-              value: swapValue,
-            },
-          ],
-        })) as string;
 
-        setTxHash(txHashResult);
+        const receipt = await baseMainnetPublicClient.waitForTransactionReceipt({
+          hash: rawSubmittedHash as `0x${string}`,
+          timeout: 60000,
+        });
 
-        // Step 4: Await Receipt
-        const receipt = await baseMainnetPublicClient.waitForTransactionReceipt({ hash: txHashResult as `0x${string}` });
         if (receipt.status === "reverted") {
           throw new Error("Swap transaction reverted on Base Mainnet.");
         }
 
         setStatus("completed");
         return {
-          txHash: txHashResult,
+          txHash: rawSubmittedHash,
           amountOut: (parseFloat(buildData.estimatedAmount) / Math.pow(10, decimalsOut)).toString(),
         };
       }
@@ -774,7 +864,22 @@ type ExtendedEIP1193Provider = {
       throw new Error(`Unsupported network for swap: ${network}`);
     } catch (err) {
       console.error("[SWAP] Execute swap error details:", err);
-      setError(sanitizeExecutionError(err));
+      if (network === "BaseMainnet") {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("could not be verified on Base Mainnet") || msg.includes("No swap funds were moved")) {
+          setError(msg);
+        } else if (msg.toLowerCase().includes("user rejected") || (err as { code?: number })?.code === 4001) {
+          setError("Transaction rejected by wallet.");
+        } else if (msg.includes("revert")) {
+          setError("Swap transaction reverted on Base Mainnet.");
+        } else if (msg.toLowerCase().includes("nonce") || msg.toLowerCase().includes("replacement")) {
+          setError("Transaction failed due to a nonce or gas fee conflict in your wallet. No swap funds were moved.");
+        } else {
+          setError(msg.length < 120 && !msg.includes("http") ? msg : "Swap transaction failed on Base Mainnet. No funds were lost.");
+        }
+      } else {
+        setError(sanitizeExecutionError(err));
+      }
       setStatus("failed");
       return null;
     } finally {

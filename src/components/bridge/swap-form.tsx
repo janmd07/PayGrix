@@ -995,15 +995,23 @@ export function SwapForm({
                   </div>
                 </div>
 
-                {error && (
+                {status === "failed" && error && (error.includes("could not be verified on Base Mainnet") || error.includes("No swap funds were moved")) ? (
+                  <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3.5 text-xs text-amber-300 leading-normal flex items-start gap-2.5">
+                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
+                    <div className="space-y-1">
+                      <div className="font-semibold text-amber-200">Transaction Not Broadcast to Base Mainnet</div>
+                      <div>The transaction was submitted by your wallet but could not be verified on the Base network. No swap funds were moved from your wallet.</div>
+                    </div>
+                  </div>
+                ) : error ? (
                   <div className="text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 leading-normal font-sans">
                     Error: {error}
                   </div>
-                )}
+                ) : null}
 
                 {txHash && (
                   <div className="flex justify-between items-center text-[10px] text-slate-500 pt-2 border-t border-white/5">
-                    <span>Transaction Hash</span>
+                    <span>{status === "failed" ? "Reverted Transaction Hash" : "Transaction Hash"}</span>
                     <a
                       href={
                         currentNetwork === "BaseMainnet"

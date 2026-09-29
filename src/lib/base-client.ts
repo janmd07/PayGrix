@@ -20,7 +20,11 @@ export const baseMainnet = {
   nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
   rpcUrls: {
     default: {
-      http: ["https://mainnet.base.org", "https://base.llamarpc.com"],
+      http: [
+        "https://mainnet.base.org",
+        "https://base-rpc.publicnode.com",
+        "https://1rpc.io/base",
+      ],
     },
   },
   blockExplorers: {
@@ -42,7 +46,8 @@ export const baseMainnetPublicClient = createPublicClient({
   chain: baseMainnet,
   transport: fallback([
     http("https://mainnet.base.org"),
-    http("https://base.llamarpc.com"),
+    http("https://base-rpc.publicnode.com"),
+    http("https://1rpc.io/base"),
   ]),
 });
 
