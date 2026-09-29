@@ -21,6 +21,7 @@ import {
 } from "@/config/bridge-assets";
 import { clearArcReadCache, sanitizeExecutionError } from "@/lib/arc-read-infra";
 import { arcPublicClient } from "@/lib/arc-client";
+import { ensureWalletNetwork, parseChainId, MinimalEIP1193Provider } from "@/lib/network-switch";
 
 export type BridgeStatus =
   | "idle"
@@ -160,22 +161,36 @@ export function useEurcBridge() {
         const route = resolveEurcBridgeRoute(fromChain, toChain);
         const parsedAmount = parseUnits(amount, 6);
 
+        const provider = (await connector.getProvider()) as MinimalEIP1193Provider;
+        if (!provider || typeof provider.request !== "function") {
+          throw new Error("Failed to get wallet provider from connector.");
+        }
+
         // 1. Network check & switch
+        const targetSourceChainId = route.sourceChainId;
         const currentChainId = chainId;
-        if (currentChainId !== route.sourceChainId) {
+        if (currentChainId !== targetSourceChainId) {
           setStatus("waiting-wallet");
-          try {
-            await switchChainAsync({ chainId: route.sourceChainId });
-          } catch {
+          const switchRes = await ensureWalletNetwork({
+            provider,
+            targetChainId: targetSourceChainId,
+            switchChainAsync,
+          });
+          if (!switchRes.success) {
             throw new Error(
-              `Please switch your wallet to ${route.sourceChain} (Chain ID: ${route.sourceChainId}) to initiate transfer.`
+              switchRes.error ||
+                `Please switch your wallet to ${route.sourceChain} (Chain ID: ${targetSourceChainId}) to initiate transfer.`
             );
           }
         }
 
-        const provider = (await connector.getProvider()) as { request: (...args: unknown[]) => Promise<unknown> };
-        if (!provider) {
-          throw new Error("Failed to get wallet provider from connector.");
+        // Post-switch verification
+        const postHex = await provider.request({ method: "eth_chainId" });
+        const verifiedSourceChainId = parseChainId(postHex);
+        if (verifiedSourceChainId !== targetSourceChainId) {
+          throw new Error(
+            `Wallet remains connected to chain ID ${verifiedSourceChainId ?? "unknown"}. Expected ${route.sourceChain} (${targetSourceChainId}). EURC bridge transaction not submitted.`
+          );
         }
 
         const sourceViemChain =

@@ -17,22 +17,19 @@ export function UnsupportedNetworkWarning() {
     setMounted(true);
   }, []);
 
-  const { currentNetwork, isSwitching, isConnected, chainId, switchToArcTestnet, switchChainAsync } = useArcWallet();
+  const { currentNetwork, isSwitching, isConnected, chainId, switchToArcTestnet } = useArcWallet();
 
-  // PayGrix supports:
-  // - Mainnet: Arc Mainnet (5042), Base Mainnet (8453)
-  // - Testnet: Arc Testnet (5042002), Base Sepolia (84532), Arbitrum Sepolia (421614)
-  // Feature-specific support:
-  // - Bridge supports all the above (Mainnet CCTP V2 routes + Testnet routes).
-  // - Swap supports Arc Mainnet (5042), Base Mainnet (8453), and Base Sepolia (84532).
-  // - General app supports all active PayGrix networks.
-  const isBridgePage = pathname === "/bridge";
-  const isSwapPage = pathname === "/swap";
-  const allowedChainIds = isBridgePage
-    ? [5042, 8453, 5042002, 84532, 421614]
-    : isSwapPage
-    ? [5042, 8453, 84532]
-    : [5042, 8453, 5042002, 84532, 421614];
+  // On transaction routes such as Swap, PayGrix automatically requests the wallet
+  // to switch to the required execution network upon initiating an action.
+  // Never show route-specific warning banners or warning CTAs on Swap.
+  if (pathname === "/swap") {
+    return null;
+  }
+
+  // PayGrix platform networks:
+  // Mainnet: Arc Mainnet (5042), Base Mainnet (8453)
+  // Testnet: Arc Testnet (5042002), Base Sepolia (84532), Arbitrum Sepolia (421614)
+  const allowedChainIds = [5042, 8453, 5042002, 84532, 421614];
   const isUnsupported = isConnected && !allowedChainIds.includes(chainId);
 
   if (!mounted || !isUnsupported) {
@@ -48,25 +45,13 @@ export function UnsupportedNetworkWarning() {
             <p className="text-sm font-semibold">Unsupported network connected</p>
             <p className="mt-1 text-sm leading-6">
               Current network: {currentNetwork?.name ?? "Unknown network"}.{" "}
-              {isBridgePage
-                ? "The bridge supports Arc Mainnet, Base Mainnet, Arc Testnet, Base Sepolia, and Arbitrum Sepolia. Please switch to one of these networks to bridge."
-                : isSwapPage
-                ? "Swap supports Arc Mainnet, Base Mainnet, and Base Sepolia. Please switch to one of these networks."
-                : "PayGrix supports Arc Mainnet, Base Mainnet, Arc Testnet, and Base Sepolia. Please switch to one of these networks."}
+              PayGrix supports Arc Mainnet, Base Mainnet, Arc Testnet, Base Sepolia, and Arbitrum Sepolia.
             </p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
-            size="sm"
-            disabled={isSwitching}
-            onClick={() => switchChainAsync?.({ chainId: 5042 })}
-          >
-            {isSwitching ? "Switching..." : "Switch To Arc Mainnet"}
-          </Button>
-          <Button
-            variant="ghost"
             size="sm"
             disabled={isSwitching}
             onClick={switchToArcTestnet}

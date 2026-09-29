@@ -17,7 +17,8 @@ export function parseChainId(chainId: unknown): number | null {
   }
   return null;
 }
-import { useAccount } from "wagmi";
+import { useAccount, useSwitchChain } from "wagmi";
+import { ensureWalletNetwork } from "@/lib/network-switch";
 import { EIP1193Provider, erc20Abi, parseUnits, encodeFunctionData } from "viem";
 import { basePublicClient, baseMainnetPublicClient, clearBaseBalanceCache } from "@/lib/base-client";
 import { sanitizeExecutionError } from "@/lib/arc-read-infra";
@@ -92,6 +93,7 @@ export function useSwap(selectedNetwork: SupportedSwapChain = "ArcMainnet") {
   const [error, setError] = useState<string | null>(null);
 
   const { address, connector, isConnected } = useAccount();
+  const { switchChainAsync } = useSwitchChain();
 
   const [providerChainId, setProviderChainId] = useState<number | null>(null);
   const [approvalPipelineStage, setApprovalPipelineStage] = useState<ArcMainnetPipelineStage>("idle");
@@ -368,17 +370,44 @@ type ExtendedEIP1193Provider = {
         console.error("[SWAP] Failed to read provider chain ID:", err);
       }
 
+      // Pre-transaction Network Check & Auto-Switch:
+      // The user may have their wallet connected to ANY network.
+      // PayGrix automatically requests the wallet to switch to the exact network required for THAT transaction.
+      const targetChainId = chainConfig.id;
+      if (providerChainId !== targetChainId) {
+        setStatus("waiting-wallet");
+        const switchRes = await ensureWalletNetwork({
+          provider,
+          targetChainId,
+          switchChainAsync,
+        });
+        if (!switchRes.success) {
+          throw new Error(
+            switchRes.error ||
+              `Please switch your wallet to ${chainConfig.name} (Chain ID: ${targetChainId}) to continue swap.`
+          );
+        }
+        // Verify post-switch chain ID from provider
+        const postHex = (await provider.request({ method: "eth_chainId" })) as string;
+        providerChainId = parseChainId(postHex);
+        setProviderChainId(providerChainId);
+        if (providerChainId !== targetChainId) {
+          throw new Error(
+            `Wallet remains connected to chain ID ${providerChainId ?? "unknown"}. Expected ${chainConfig.name} (${targetChainId}). Swap transaction not submitted.`
+          );
+        }
+      }
+
       // ==========================================
       // BRANCH 0: ARC MAINNET (UNISWAP V4) SWAP
       // ==========================================
       if (network === "ArcMainnet") {
-        const targetChainId = 5042;
+        const arcTargetChainId = 5042;
 
-        // STEP 2: Verify connected wallet chainId === 5042. If not: BLOCK execution.
-        // Do NOT automatically switch networks.
-        if (providerChainId !== targetChainId) {
+        // STEP 2: Strict safety guard: verify connected wallet chainId === 5042.
+        if (providerChainId !== arcTargetChainId) {
           throw new Error(
-            `Wrong network: Connected wallet chain ID is ${providerChainId ?? "unknown"}, but Arc Mainnet requires 5042. Please switch your wallet to Arc Mainnet (Chain ID 5042).`
+            `Wrong network: Connected wallet chain ID is ${providerChainId ?? "unknown"}, but Arc Mainnet requires ${arcTargetChainId}.`
           );
         }
 
@@ -515,32 +544,11 @@ type ExtendedEIP1193Provider = {
         const targetChainId = chainConfig.id; // 84532
         const routerAddress = chainConfig.routerAddress; // SwapRouter02 (Base Sepolia)
 
-        // Switch wallet to Base Sepolia if needed
+        // Strict safety guard: verify wallet is connected to Base Sepolia (0x14a34 / 84532)
         if (providerChainId !== targetChainId) {
-          try {
-            await provider.request({
-              method: "wallet_switchEthereumChain",
-              params: [{ chainId: "0x14a34" }],
-            });
-          } catch (switchErr: unknown) {
-            const errObj = switchErr as { code?: number; message?: string };
-            if (errObj.code === 4902 || errObj.message?.includes("Unrecognized chain")) {
-              await provider.request({
-                method: "wallet_addEthereumChain",
-                params: [
-                  {
-                    chainId: "0x14a34",
-                    chainName: "Base Sepolia",
-                    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-                    rpcUrls: ["https://sepolia.base.org", "https://base-sepolia-rpc.publicnode.com"],
-                    blockExplorerUrls: ["https://sepolia.basescan.org"],
-                  },
-                ],
-              });
-            } else {
-              throw switchErr;
-            }
-          }
+          throw new Error(
+            `Wrong network: Connected wallet chain ID is ${providerChainId ?? "unknown"}, but Base Sepolia requires ${targetChainId} (0x14a34).`
+          );
         }
 
         // Step 1: Check Allowance & Approve for SwapRouter02 if necessary (native ETH requires NO approval)
@@ -650,36 +658,11 @@ type ExtendedEIP1193Provider = {
           throw new Error("Only USDC ↔ EURC swap is supported on Base Mainnet.");
         }
 
-        // Switch wallet to Base Mainnet if needed
+        // Strict safety guard: verify wallet is connected to Base Mainnet (0x2105 / 8453)
         if (providerChainId !== targetChainId) {
-          try {
-            await provider.request({
-              method: "wallet_switchEthereumChain",
-              params: [{ chainId: "0x2105" }], // 8453
-            });
-          } catch (switchErr: unknown) {
-            const errObj = switchErr as { code?: number; message?: string };
-            if (errObj.code === 4902 || errObj.message?.includes("Unrecognized chain")) {
-              await provider.request({
-                method: "wallet_addEthereumChain",
-                params: [
-                  {
-                    chainId: "0x2105",
-                    chainName: "Base",
-                    nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
-                    rpcUrls: [
-                      "https://mainnet.base.org",
-                      "https://base-rpc.publicnode.com",
-                      "https://1rpc.io/base",
-                    ],
-                    blockExplorerUrls: ["https://basescan.org"],
-                  },
-                ],
-              });
-            } else {
-              throw switchErr;
-            }
-          }
+          throw new Error(
+            `Wrong network: Connected wallet chain ID is ${providerChainId ?? "unknown"}, but Base Mainnet requires ${targetChainId} (0x2105).`
+          );
         }
 
         // Step 1: Check Allowance & Approve for SwapRouter02 if necessary
@@ -885,7 +868,7 @@ type ExtendedEIP1193Provider = {
     } finally {
       clearBaseBalanceCache();
     }
-  }, [address, connector, isConnected, selectedNetwork]);
+  }, [address, connector, isConnected, selectedNetwork, switchChainAsync]);
 
 
   const getArcMainnetPreflight = useCallback(async (
@@ -1054,9 +1037,25 @@ type ExtendedEIP1193Provider = {
     }
 
     if (providerChainId !== 5042) {
-      throw new Error(
-        `Wrong network: Connected wallet chain ID is ${providerChainId ?? "unknown"}, but Arc Mainnet requires 5042. Please switch your wallet to Arc Mainnet (Chain ID 5042).`
-      );
+      const switchRes = await ensureWalletNetwork({
+        provider,
+        targetChainId: 5042,
+        switchChainAsync,
+      });
+      if (!switchRes.success) {
+        throw new Error(
+          switchRes.error ||
+            "Please switch your wallet to Arc Mainnet (Chain ID 5042) for Permit2 approval."
+        );
+      }
+      const postHex = (await provider.request({ method: "eth_chainId" })) as string;
+      providerChainId = parseChainId(postHex);
+      setProviderChainId(providerChainId);
+      if (providerChainId !== 5042) {
+        throw new Error(
+          `Wrong network: Connected wallet chain ID is ${providerChainId ?? "unknown"}, but Arc Mainnet requires 5042.`
+        );
+      }
     }
 
     const rawAmount = parseUnits(amountIn, 6).toString();
@@ -1105,7 +1104,7 @@ type ExtendedEIP1193Provider = {
 
     setStatus("idle");
     return { success: true, txHash };
-  }, [address, connector, isConnected]);
+  }, [address, connector, isConnected, switchChainAsync]);
 
   const startApprovalPipeline = useCallback(async (
     token: "USDC" | "EURC",
@@ -1149,9 +1148,27 @@ type ExtendedEIP1193Provider = {
       }
 
       if (currentChainId !== 5042) {
-        throw new Error(
-          `Wrong network: Connected wallet chain ID is ${currentChainId ?? "unknown"}, but Arc Mainnet requires 5042. Please switch your wallet to Arc Mainnet.`
-        );
+        setStatus("waiting-wallet");
+        const switchRes = await ensureWalletNetwork({
+          provider,
+          targetChainId: 5042,
+          switchChainAsync,
+        });
+        if (!switchRes.success) {
+          throw new Error(
+            switchRes.error ||
+              "Please switch your wallet to Arc Mainnet (Chain ID 5042) to proceed with approvals."
+          );
+        }
+        const postHex = (await provider.request({ method: "eth_chainId" })) as string;
+        currentChainId = parseChainId(postHex);
+        setProviderChainId(currentChainId);
+        providerChainIdRef.current = currentChainId;
+        if (currentChainId !== 5042) {
+          throw new Error(
+            `Wrong network: Connected wallet chain ID is ${currentChainId ?? "unknown"}, but Arc Mainnet requires 5042.`
+          );
+        }
       }
 
       // 2. Run pure approval pipeline engine
@@ -1199,7 +1216,7 @@ type ExtendedEIP1193Provider = {
       pipelineInFlightRef.current = false;
       abortControllerRef.current = null;
     }
-  }, [address, connector, isConnected]);
+  }, [address, connector, isConnected, switchChainAsync]);
 
   const resetSwapState = useCallback(() => {
     setStatus("idle");

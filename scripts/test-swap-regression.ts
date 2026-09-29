@@ -87,8 +87,8 @@ async function runSwapRegressionTests() {
     "execute-status route must enforce Arc_Mainnet, Base_Mainnet, and Base"
   );
   assert(
-    unsupportedWarningContent.includes("isSwapPage\n    ? [5042, 8453, 84532]"),
-    "unsupported-network-warning on swap page must strictly permit [5042, 8453, 84532]"
+    unsupportedWarningContent.includes('pathname === "/swap"') && unsupportedWarningContent.includes("return null;"),
+    "unsupported-network-warning on swap page must never show warning banners"
   );
   console.log("  ✓ Execution guard verifies Arc Testnet cannot reach any valid swap execution path.");
 
@@ -187,7 +187,7 @@ async function runSwapRegressionTests() {
   assert(fs.existsSync(bridgeAssetsPath), "bridge-assets.ts must exist for bridge");
   const bridgeAssetsContent = fs.readFileSync(bridgeAssetsPath, "utf-8");
   assert(bridgeAssetsContent.includes('"Arc Testnet"'), "Bridge must still support Arc Testnet in bridge-assets.ts");
-  assert(unsupportedWarningContent.includes("isBridgePage\n    ? [5042, 8453, 5042002, 84532, 421614]"), "Bridge page must retain Arc Testnet support (5042002)");
+  assert(unsupportedWarningContent.includes("[5042, 8453, 5042002, 84532, 421614]"), "Global networks must retain Arc Testnet support (5042002)");
   console.log("  ✓ Arc Testnet successfully preserved for Bridge and non-swap features.");
 
   // -------------------------------------------------------------

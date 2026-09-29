@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { useSwap, SwapToken } from "@/hooks/use-swap";
 import { useEthMarketPrice } from "@/hooks/use-eth-market-price";
-import { ensureArcMainnetNetwork, parseChainId } from "@/lib/arc-mainnet-network";
+import { ensureWalletNetwork, MinimalEIP1193Provider, parseChainId } from "@/lib/network-switch";
 
 export interface TokenLogoProps {
   symbol: "USDC" | "EURC" | "cirBTC" | "ETH";
@@ -189,7 +189,7 @@ export function SwapForm({
 
   const isSwapDisabled = false;
 
-  const { address, isConnected, availableConnector, connect, connector } = useArcWallet();
+  const { address, isConnected, availableConnector, connect, connector, switchChainAsync } = useArcWallet();
   const {
     status,
     estimate,
@@ -323,12 +323,11 @@ export function SwapForm({
     try {
       // 1. Network check & assisted switch/add when providerChainId !== 5042
       if (providerChainId !== 5042) {
-        type MinimalProvider = { request: (args: { method: string; params?: unknown[] }) => Promise<unknown> };
-        let provider: MinimalProvider | null = null;
+        let provider: MinimalEIP1193Provider | null = null;
         if (connector && typeof connector.getProvider === "function") {
-          provider = (await connector.getProvider()) as MinimalProvider;
-        } else if (typeof window !== "undefined" && (window as unknown as { ethereum?: MinimalProvider }).ethereum) {
-          provider = (window as unknown as { ethereum: MinimalProvider }).ethereum;
+          provider = (await connector.getProvider()) as MinimalEIP1193Provider;
+        } else if (typeof window !== "undefined" && (window as unknown as { ethereum?: MinimalEIP1193Provider }).ethereum) {
+          provider = (window as unknown as { ethereum: MinimalEIP1193Provider }).ethereum;
         }
 
         if (!provider) {
@@ -338,7 +337,11 @@ export function SwapForm({
 
         setIsSwitchingNetwork(true);
         try {
-          const networkRes = await ensureArcMainnetNetwork(provider);
+          const networkRes = await ensureWalletNetwork({
+            provider,
+            targetChainId: 5042,
+            switchChainAsync,
+          });
           if (!networkRes.success) {
             setApprovalError(networkRes.error || "Failed to switch wallet to Arc Mainnet.");
             return;
@@ -803,37 +806,6 @@ export function SwapForm({
                   >
                     Connect Wallet
                   </Button>
-                ) : providerChainId !== 5042 ? (
-                  <div className="space-y-2.5">
-                    <Button
-                      type="button"
-                      disabled={isFormInvalid || isSwapDisabled || !hasQuote || isSwitchingNetwork}
-                      variant="default"
-                      className={cn(
-                        "w-full text-xs font-bold py-3.5 rounded-xl transition-all duration-300 active:scale-[0.98]",
-                        "bg-gradient-to-r from-amber-500 via-[#9d4edd] to-[#7b2cbf] hover:from-amber-600 hover:via-[#8c3ed9] hover:to-[#6a1cb0]",
-                        "text-white shadow-[0_4px_14px_rgba(245,158,11,0.3)] hover:shadow-[0_4px_20px_rgba(245,158,11,0.5)]",
-                        (isFormInvalid || isSwapDisabled || !hasQuote || isSwitchingNetwork) &&
-                          "opacity-60 cursor-not-allowed hover:shadow-none"
-                      )}
-                      onClick={handleReviewArcMainnetSwap}
-                    >
-                      {isSwitchingNetwork
-                        ? "Switching to Arc Mainnet..."
-                        : "Switch to Arc Mainnet & Review"}
-                    </Button>
-                    <div className="flex items-start gap-2.5 rounded-xl bg-amber-500/10 border border-amber-500/30 p-3.5 text-xs text-amber-300 leading-normal">
-                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-amber-400" />
-                      <div className="space-y-1">
-                        <p className="font-semibold text-white">Wrong network</p>
-                        <p>
-                          Connected wallet chain ID is{" "}
-                          <span className="font-mono text-white">{providerChainId ?? "unknown"}</span>, but Arc
-                          Mainnet requires <span className="font-mono text-white">5042</span>. Click above to switch or add Arc Mainnet.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
                 ) : isOverBalance ? (
                   <Button
                     type="button"
@@ -856,7 +828,8 @@ export function SwapForm({
                         approvalPipelineStage === "erc20_wallet" ||
                         approvalPipelineStage === "erc20_receipt" ||
                         approvalPipelineStage === "permit2_wallet" ||
-                        approvalPipelineStage === "permit2_receipt"
+                        approvalPipelineStage === "permit2_receipt" ||
+                        isSwitchingNetwork
                       }
                       variant="default"
                       className={cn(
@@ -871,7 +844,8 @@ export function SwapForm({
                           approvalPipelineStage === "erc20_wallet" ||
                           approvalPipelineStage === "erc20_receipt" ||
                           approvalPipelineStage === "permit2_wallet" ||
-                          approvalPipelineStage === "permit2_receipt") &&
+                          approvalPipelineStage === "permit2_receipt" ||
+                          isSwitchingNetwork) &&
                           "opacity-60 cursor-not-allowed hover:shadow-none hover:from-[#4f8cff] hover:via-[#9d4edd] hover:to-[#7b2cbf]"
                       )}
                       onClick={handleReviewArcMainnetSwap}
@@ -888,8 +862,8 @@ export function SwapForm({
                         ? "Confirm in Wallet..."
                         : status === "swapping"
                         ? "Swapping..."
-                        : providerChainId !== 5042
-                        ? "Switch to Arc Mainnet & Review"
+                        : isSwitchingNetwork
+                        ? "Switching to Arc Mainnet..."
                         : "Review Arc Mainnet Swap"}
                     </Button>
                     {approvalPipelineStage === "erc20_wallet" || approvalPipelineStage === "erc20_receipt" ? (

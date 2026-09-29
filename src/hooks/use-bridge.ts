@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { useAccount } from "wagmi";
+import { useAccount, useSwitchChain } from "wagmi";
 import { AppKit } from "@circle-fin/app-kit";
 import { createViemAdapterFromProvider } from "@circle-fin/adapter-viem-v2";
+import { ensureWalletNetwork, parseChainId } from "@/lib/network-switch";
 import { ArcTestnet, BaseSepolia, ArbitrumSepolia } from "@circle-fin/app-kit/chains";
 
 export type BridgeStatus =
@@ -25,6 +26,12 @@ const APP_KIT_CHAINS: Record<
   "Arc Testnet": ArcTestnet,
   "Base Sepolia": BaseSepolia,
   "Arbitrum Sepolia": ArbitrumSepolia,
+};
+
+const APP_KIT_CHAIN_IDS: Record<string, number> = {
+  "Arc Testnet": 5042002,
+  "Base Sepolia": 84532,
+  "Arbitrum Sepolia": 421614,
 };
 
 interface BridgeEventPayload {
@@ -51,6 +58,7 @@ export function useBridge() {
   const [error, setError] = useState<string | null>(null);
 
   const { connector, isConnected } = useAccount();
+  const { switchChainAsync } = useSwitchChain();
 
   const bridgeUSDC = useCallback(async (amount: string, fromChain: string, toChain: string) => {
     if (!amount || parseFloat(amount) <= 0) return;
@@ -82,6 +90,27 @@ export function useBridge() {
     } catch (err) {
       console.error("Error getting provider:", err);
       setError("Failed to initialize wallet provider.");
+      setStatus("failed");
+      return;
+    }
+
+    // Pre-transaction Network Check & Auto-Switch:
+    // Ensure wallet is switched to the selected source network before executing bridge.
+    const targetSourceChainId = APP_KIT_CHAIN_IDS[fromChain];
+    const switchRes = await ensureWalletNetwork({
+      provider,
+      targetChainId: targetSourceChainId,
+      switchChainAsync,
+    });
+    if (!switchRes.success) {
+      setError(switchRes.error || `Please switch your wallet to ${fromChain} (Chain ID: ${targetSourceChainId}) to bridge.`);
+      setStatus("failed");
+      return;
+    }
+    const postHex = await provider.request({ method: "eth_chainId" });
+    const verifiedSourceChainId = parseChainId(postHex);
+    if (verifiedSourceChainId !== targetSourceChainId) {
+      setError(`Wallet remains connected to chain ID ${verifiedSourceChainId ?? "unknown"}. Expected ${fromChain} (${targetSourceChainId}). Source bridge transaction not submitted.`);
       setStatus("failed");
       return;
     }
@@ -188,7 +217,7 @@ export function useBridge() {
       kit.off("bridge.fetchAttestation", fetchAttestationHandler);
       kit.off("bridge.mint", mintHandler);
     }
-  }, [connector, isConnected]);
+  }, [connector, isConnected, switchChainAsync]);
 
   const resetStatus = useCallback(() => {
     setStatus("idle");

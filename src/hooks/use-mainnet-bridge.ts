@@ -53,6 +53,7 @@ import {
   verifyDestinationCompletionEvidence,
   CircleForwardingState,
 } from "@/lib/cctp-mainnet-engine";
+import { ensureWalletNetwork } from "@/lib/network-switch";
 
 export interface MainnetBridgeTransferRecord {
   id: string;
@@ -128,6 +129,8 @@ export function useMainnetBridge() {
   chainIdRef.current = chainId;
   const isClaimSwitchingNetworkRef = useRef(false);
   const expectedDestinationChainIdRef = useRef<number | null>(null);
+  const isSourceSwitchingNetworkRef = useRef(false);
+  const expectedSourceChainIdRef = useRef<number | null>(null);
   const isSettlementPollingRef = useRef(false);
   const burnTxHashRef = useRef(burnTxHash);
   burnTxHashRef.current = burnTxHash;
@@ -520,6 +523,16 @@ export function useMainnetBridge() {
         return;
       }
 
+      // If this switch is the expected source network switch for initiating a bridge, permit it
+      if (
+        isSourceSwitchingNetworkRef.current &&
+        expectedSourceChainIdRef.current !== null &&
+        chainId === expectedSourceChainIdRef.current
+      ) {
+        prevChainIdRef.current = chainId;
+        return;
+      }
+
       if (
         bridgeInFlightRef.current &&
         status !== "ReadyToClaim" &&
@@ -651,14 +664,34 @@ export function useMainnetBridge() {
         }
 
         // 1. Verify correct network on source
-        if (chainIdRef.current !== route.sourceConfig.chainId) {
+        const targetSourceChainId = route.sourceConfig.chainId;
+        if (chainIdRef.current !== targetSourceChainId) {
+          isSourceSwitchingNetworkRef.current = true;
+          expectedSourceChainIdRef.current = targetSourceChainId;
           try {
-            await switchChainAsync({ chainId: route.sourceConfig.chainId });
-          } catch {
-            throw new Error(
-              `Please switch your wallet to ${sourceChain} (Chain ID: ${route.sourceConfig.chainId}) to initiate the bridge.`
-            );
+            const switchRes = await ensureWalletNetwork({
+              provider,
+              targetChainId: targetSourceChainId,
+              switchChainAsync,
+            });
+            if (!switchRes.success) {
+              throw new Error(
+                switchRes.error ||
+                  `Please switch your wallet to ${sourceChain} (Chain ID: ${targetSourceChainId}) to initiate the bridge.`
+              );
+            }
+          } finally {
+            isSourceSwitchingNetworkRef.current = false;
+            expectedSourceChainIdRef.current = null;
           }
+        }
+
+        const postHex = await provider.request({ method: "eth_chainId" });
+        const verifiedSourceChainId = parseChainId(postHex);
+        if (verifiedSourceChainId !== targetSourceChainId) {
+          throw new Error(
+            `Wallet remains connected to chain ID ${verifiedSourceChainId ?? "unknown"}. Expected ${sourceChain} (${targetSourceChainId}). Source bridge transaction not submitted.`
+          );
         }
 
         if (isStale()) return false;
