@@ -5,6 +5,7 @@ import { useAccount, useSwitchChain } from "wagmi";
 import {
   createPublicClient,
   erc20Abi,
+  fallback,
   formatUnits,
   http,
   parseUnits,
@@ -90,6 +91,26 @@ export const baseMainnetPublicClient = createPublicClient({
   transport: http(MAINNET_CHAINS["Base Mainnet"].rpcUrl, { timeout: 15_000 }),
 });
 
+/**
+ * Resilient Base Mainnet public client specifically for Arc Mainnet -> Base Mainnet destination reads.
+ * Provides fallback transports across multiple public RPC providers with bounded retries,
+ * preventing transient 503 "service temporarily unavailable" errors on mainnet.base.org.
+ *
+ * NOTE: Base Mainnet -> Arc Mainnet remains 100% isolated and unchanged.
+ */
+export const arcToBaseDestinationClient = createPublicClient({
+  chain: base,
+  transport: fallback([
+    http("https://mainnet.base.org", { timeout: 12_000, retryCount: 2 }),
+    http("https://base-rpc.publicnode.com", { timeout: 12_000, retryCount: 2 }),
+    http("https://gateway.tenderly.co/public/base", { timeout: 12_000, retryCount: 2 }),
+  ], { rank: false }),
+});
+
+export function getArcToBaseDestinationClient() {
+  return arcToBaseDestinationClient;
+}
+
 export function getPublicClientForChain(chain: MainnetChainKey) {
   if (chain === "Arc Mainnet") return arcMainnetPublicClient;
   if (chain === "Base Mainnet") return baseMainnetPublicClient;
@@ -151,7 +172,10 @@ export function useMainnetBridge() {
         const dstCfg = MAINNET_CHAINS[destChain];
 
         const srcClient = getPublicClientForChain(sourceChain);
-        const dstClient = getPublicClientForChain(destChain);
+        const dstClient =
+          sourceChain === "Arc Mainnet" && destChain === "Base Mainnet"
+            ? arcToBaseDestinationClient
+            : getPublicClientForChain(destChain);
 
         const [sBal, dBal] = await Promise.all([
           srcClient
@@ -254,7 +278,10 @@ export function useMainnetBridge() {
             const srcChain = record.sourceChain;
             const dstChain = record.destinationChain;
             const dstCfg = MAINNET_CHAINS[dstChain];
-            const dstClient = getPublicClientForChain(dstChain);
+            const dstClient =
+              srcChain === "Arc Mainnet" && dstChain === "Base Mainnet"
+                ? arcToBaseDestinationClient
+                : getPublicClientForChain(dstChain);
 
             let nonceBytes32 = record.finalizedNonce as `0x${string}` | undefined;
             let messageHex = record.messageHex as `0x${string}` | undefined;
@@ -697,7 +724,10 @@ export function useMainnetBridge() {
         if (isStale()) return false;
 
         const sourcePublic = getPublicClientForChain(sourceChain);
-        const destPublic = getPublicClientForChain(destinationChain);
+        const destPublic =
+          sourceChain === "Arc Mainnet" && destinationChain === "Base Mainnet"
+            ? arcToBaseDestinationClient
+            : getPublicClientForChain(destinationChain);
 
         // 2. On-chain deployment checks
         const [srcCheck, dstCheck] = await Promise.all([
@@ -949,7 +979,10 @@ export function useMainnetBridge() {
               { size: 32 }
             );
 
-          const destinationClient = getPublicClientForChain(destinationChain);
+          const destinationClient =
+            sourceChain === "Arc Mainnet" && destinationChain === "Base Mainnet"
+              ? arcToBaseDestinationClient
+              : getPublicClientForChain(destinationChain);
 
           // Poll destination settlement on-chain until relayer consumes nonce & mints
           isSettlementPollingRef.current = true;
@@ -1085,7 +1118,10 @@ export function useMainnetBridge() {
               { size: 32 }
             );
 
-          const destinationClient = getPublicClientForChain(destinationChain);
+          const destinationClient =
+            sourceChain === "Arc Mainnet" && destinationChain === "Base Mainnet"
+              ? arcToBaseDestinationClient
+              : getPublicClientForChain(destinationChain);
           const isConsumed = await checkDestinationNonceConsumed({
             destinationPublicClient: destinationClient,
             destinationMessageTransmitter: route.destinationMessageTransmitter,
@@ -1301,8 +1337,10 @@ export function useMainnetBridge() {
         setMessageHex(irisMsg);
         setAttestationHex(irisAttest);
 
-        // 3. Destination nonce consumption check
-        const destClient = getPublicClientForChain(details.destinationChain);
+        const destClient =
+          details.sourceChain === "Arc Mainnet" && details.destinationChain === "Base Mainnet"
+            ? arcToBaseDestinationClient
+            : getPublicClientForChain(details.destinationChain);
         const isConsumed = await checkDestinationNonceConsumed({
           destinationPublicClient: destClient,
           destinationMessageTransmitter: details.destinationMessageTransmitter,
@@ -1466,7 +1504,10 @@ export function useMainnetBridge() {
         }
 
         const route = resolveMainnetCctpRoute(sourceChain, destinationChain);
-        const destPublic = getPublicClientForChain(destinationChain);
+        const destPublic =
+          sourceChain === "Arc Mainnet" && destinationChain === "Base Mainnet"
+            ? arcToBaseDestinationClient
+            : getPublicClientForChain(destinationChain);
         const rawRecipient =
           targetRecord?.recipientAddress ||
           decoded.mintRecipientAddress ||
