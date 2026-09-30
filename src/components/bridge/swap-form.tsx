@@ -19,6 +19,9 @@ import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { useSwap, SwapToken } from "@/hooks/use-swap";
 import { useEthMarketPrice } from "@/hooks/use-eth-market-price";
 import { ensureWalletNetwork, MinimalEIP1193Provider, parseChainId } from "@/lib/network-switch";
+import { parseUnits } from "viem";
+import { fetchArcMainnetTokenBalanceDeduped, clearArcMainnetBalanceCache } from "@/lib/arc-mainnet-client";
+import { extractApprovalErrorMessage } from "@/lib/arc-mainnet-approval";
 
 export interface TokenLogoProps {
   symbol: "USDC" | "EURC" | "cirBTC" | "ETH";
@@ -309,7 +312,13 @@ export function SwapForm({
   };
 
   const handleReviewArcMainnetSwap = async () => {
-    if (isFormInvalid || isSwapDisabled || !hasQuote) return;
+    if (isSwapDisabled || !hasQuote || !isValidAmount) return;
+
+    if (isOverBalance) {
+      setApprovalError(`Insufficient ${tokenIn} balance`);
+      return;
+    }
+
     if (!isConnected) {
       if (availableConnector) {
         connect({ connector: availableConnector });
@@ -363,6 +372,36 @@ export function SwapForm({
         }
       }
 
+      // Fresh authoritative balance validation before entering Arc Mainnet approval pipeline
+      if (currentNetwork === "ArcMainnet" && address) {
+        const tokenConfig = SWAP_CHAINS.ArcMainnet.tokens[tokenIn];
+        if (tokenConfig) {
+          let actualBalanceWei: bigint | null = null;
+          try {
+            clearArcMainnetBalanceCache(tokenConfig.address, address as `0x${string}`);
+            actualBalanceWei = await fetchArcMainnetTokenBalanceDeduped(
+              tokenConfig.address,
+              address as `0x${string}`
+            );
+          } catch (balErr) {
+            console.warn("[Swap] Failed to fetch fresh Arc Mainnet balance for validation:", balErr);
+          }
+
+          let parsedAmountIn: bigint = BigInt(0);
+          try {
+            parsedAmountIn = parseUnits(amount, tokenConfig.decimals);
+          } catch {
+            setApprovalError("Enter a valid amount to swap.");
+            return;
+          }
+
+          if (actualBalanceWei !== null && parsedAmountIn > actualBalanceWei) {
+            setApprovalError(`Insufficient ${tokenIn} balance`);
+            return;
+          }
+        }
+      }
+
       // 2. Start streamlined approval pipeline
       const ok = await startApprovalPipeline(tokenIn as "USDC" | "EURC", amount);
       if (ok) {
@@ -370,7 +409,7 @@ export function SwapForm({
         setShowConfirmModal(true);
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to verify swap readiness.";
+      const msg = extractApprovalErrorMessage(err);
       setApprovalError(msg);
     }
   };

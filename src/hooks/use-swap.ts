@@ -38,6 +38,7 @@ import {
   ArcMainnetPipelineStage,
   executeArcMainnetApprovalPipeline,
   MinimalApprovalProvider,
+  extractApprovalErrorMessage,
 } from "@/lib/arc-mainnet-approval";
 import {
   prepareArcMainnetReadiness,
@@ -1198,7 +1199,8 @@ type ExtendedEIP1193Provider = {
       });
 
       if (!pipelineRes.success) {
-        setApprovalPipelineError(pipelineRes.error || "Approval pipeline failed.");
+        const errorMsg = pipelineRes.error?.trim() || "Approval pipeline failed.";
+        setApprovalPipelineError(errorMsg);
         setStatus("failed");
         return false;
       }
@@ -1207,7 +1209,7 @@ type ExtendedEIP1193Provider = {
       setStatus("idle");
       return true;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Approval pipeline failed.";
+      const msg = extractApprovalErrorMessage(err);
       setApprovalPipelineStage("aborted");
       setApprovalPipelineError(msg);
       setStatus("failed");

@@ -672,6 +672,76 @@ export async function auditAndPrepareArcMainnetApprovals(
   };
 }
 
+/**
+ * Robust extraction of human-readable error messages from EIP-1193, viem,
+ * RPC, and browser wallet exceptions.
+ */
+export function extractApprovalErrorMessage(err: unknown): string {
+  if (!err) return "Approval pipeline failed.";
+
+  const errObj = typeof err === "object" && err !== null ? (err as Record<string, unknown>) : null;
+
+  // 1. Check for standard EIP-1193 user rejection code 4001 or ACTION_REJECTED
+  const code = errObj?.code ?? (errObj?.cause as Record<string, unknown> | undefined)?.code;
+  if (code === 4001 || code === "ACTION_REJECTED") {
+    return "User rejected the approval request.";
+  }
+
+  // 2. Extract raw message from diverse error shapes (viem, EIP-1193, ethers, RPC)
+  let rawMsg = "";
+  if (err instanceof Error) {
+    rawMsg = err.message;
+  } else if (typeof err === "string") {
+    rawMsg = err;
+  } else if (errObj) {
+    if (typeof errObj.shortMessage === "string" && errObj.shortMessage.trim()) {
+      rawMsg = errObj.shortMessage;
+    } else if (
+      errObj.data &&
+      typeof errObj.data === "object" &&
+      typeof (errObj.data as Record<string, unknown>).message === "string" &&
+      ((errObj.data as Record<string, unknown>).message as string).trim()
+    ) {
+      rawMsg = ((errObj.data as Record<string, unknown>).message as string).trim();
+    } else if (typeof errObj.message === "string" && errObj.message.trim()) {
+      rawMsg = errObj.message;
+    } else if (typeof errObj.reason === "string" && errObj.reason.trim()) {
+      rawMsg = errObj.reason;
+    } else if (typeof errObj.details === "string" && errObj.details.trim()) {
+      rawMsg = errObj.details;
+    }
+  }
+
+  if (!rawMsg || !rawMsg.trim()) {
+    return "Approval pipeline failed.";
+  }
+
+  const trimmed = rawMsg.trim();
+  const lower = trimmed.toLowerCase();
+
+  // 3. User rejection / cancellation text check
+  if (
+    lower.includes("user rejected") ||
+    lower.includes("user denied") ||
+    lower.includes("rejected the request") ||
+    lower.includes("rejected by user") ||
+    lower.includes("transaction rejected") ||
+    lower.includes("signature rejected") ||
+    lower.includes("user cancelled") ||
+    lower.includes("user canceled")
+  ) {
+    return "User rejected the approval request.";
+  }
+
+  // 4. Sanitize and avoid exposing sensitive or excessively verbose stack/provider details
+  const firstLine = trimmed.split("\n")[0].trim();
+  if (firstLine.length > 200) {
+    return firstLine.slice(0, 200).trim() + "...";
+  }
+
+  return firstLine;
+}
+
 // -----------------------------------------------------------------------------
 // 8. Pure / Reusable Arc Mainnet Approval Pipeline Engine
 // -----------------------------------------------------------------------------
@@ -913,7 +983,7 @@ export async function executeArcMainnetApprovalPipeline(
     };
   } catch (err: unknown) {
     setStage("aborted");
-    const msg = err instanceof Error ? err.message : "Approval pipeline failed.";
+    const msg = extractApprovalErrorMessage(err);
     return {
       success: false,
       stage: "aborted",
