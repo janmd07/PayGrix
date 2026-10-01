@@ -55,6 +55,13 @@ import {
   CircleForwardingState,
 } from "@/lib/cctp-mainnet-engine";
 import { ensureWalletNetwork } from "@/lib/network-switch";
+import { BridgeTransfer } from "@/components/bridge/transfer-history";
+import { BRIDGE_EXPLORER_URLS } from "@/config/bridge-assets";
+
+if (typeof BRIDGE_EXPLORER_URLS !== "undefined") {
+  BRIDGE_EXPLORER_URLS["Base Mainnet"] = "https://basescan.org";
+  BRIDGE_EXPLORER_URLS["Arc Mainnet"] = "https://explorer.arc.io";
+}
 
 export interface MainnetBridgeTransferRecord {
   id: string;
@@ -79,6 +86,96 @@ export interface MainnetBridgeTransferRecord {
   isForwarded?: boolean;
   forwardState?: CircleForwardingState;
   forwardTxHash?: string;
+}
+
+/**
+ * Helper to upsert a Mainnet transfer into the universal BridgeTransfer schema
+ * stored in localStorage['bridge_transfers'].
+ */
+export function syncMainnetTransferToUniversalHistory(
+  record: MainnetBridgeTransferRecord,
+  walletAddress?: string
+): void {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  const currentWallet = (walletAddress || record.senderAddress)?.toLowerCase();
+  const burnTx = record.burnTxHash;
+  const transferId = record.id || burnTx;
+  if (!transferId && !burnTx) return;
+
+  const destHash = record.mintTxHash || record.forwardTxHash;
+
+  try {
+    const raw = localStorage.getItem("bridge_transfers");
+    const existingTransfers: BridgeTransfer[] = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(existingTransfers)) return;
+
+    // Stable matching by transfer ID or source burn transaction hash (case-insensitive)
+    const existingIdx = existingTransfers.findIndex((t) => {
+      if (transferId && t.id && t.id.toLowerCase() === transferId.toLowerCase()) return true;
+      if (burnTx) {
+        const sHash = t.sourceTxHash || t.sourceTx;
+        if (sHash && sHash.toLowerCase() === burnTx.toLowerCase()) return true;
+      }
+      return false;
+    });
+
+    const statusMapped: "Completed" | "Pending" | "Failed" =
+      record.status === "Completed"
+        ? "Completed"
+        : record.status === "Failed"
+        ? "Failed"
+        : "Pending";
+
+    if (existingIdx !== -1) {
+      const existing = existingTransfers[existingIdx];
+      // Never overwrite a known destinationTxHash with undefined
+      const effectiveDestHash = destHash || existing.destinationTxHash || existing.destTx;
+      const updated: BridgeTransfer = {
+        ...existing,
+        id: existing.id || transferId,
+        fromChain: record.sourceChain || existing.fromChain,
+        toChain: record.destinationChain || existing.toChain,
+        amount: record.amount || existing.amount,
+        token: "USDC",
+        asset: "USDC",
+        status: statusMapped,
+        date: existing.date || record.timestamp || new Date().toLocaleString(),
+        sourceTx: burnTx || existing.sourceTx,
+        sourceTxHash: burnTx || existing.sourceTxHash,
+        destTx: effectiveDestHash,
+        destinationTxHash: effectiveDestHash,
+        walletAddress: existing.walletAddress || currentWallet,
+        userAddress: existing.userAddress || currentWallet,
+        sender: existing.sender || currentWallet,
+        initiator: existing.initiator || currentWallet,
+      };
+      existingTransfers[existingIdx] = updated;
+    } else {
+      const newTransfer: BridgeTransfer = {
+        id: transferId,
+        fromChain: record.sourceChain,
+        toChain: record.destinationChain,
+        amount: record.amount,
+        token: "USDC",
+        asset: "USDC",
+        status: statusMapped,
+        date: record.timestamp || new Date().toLocaleString(),
+        sourceTx: burnTx,
+        sourceTxHash: burnTx,
+        destTx: destHash,
+        destinationTxHash: destHash,
+        walletAddress: currentWallet,
+        userAddress: currentWallet,
+        sender: currentWallet,
+        initiator: currentWallet,
+      };
+      existingTransfers.unshift(newTransfer);
+    }
+
+    localStorage.setItem("bridge_transfers", JSON.stringify(existingTransfers));
+  } catch (err) {
+    console.warn("[Mainnet Bridge] Failed to sync to universal bridge history:", err);
+  }
 }
 
 export const arcMainnetPublicClient = createPublicClient({
@@ -232,6 +329,8 @@ export function useMainnetBridge() {
       if (existing) {
         const list: MainnetBridgeTransferRecord[] = JSON.parse(existing);
         setPendingTransfers(list.filter(isRecordActive));
+        // Synchronize wallet-scoped Mainnet transfers to universal history
+        list.forEach((r) => syncMainnetTransferToUniversalHistory(r, address));
       } else {
         setPendingTransfers([]);
       }
@@ -252,15 +351,21 @@ export function useMainnetBridge() {
         if (!existing) return;
 
         const list: MainnetBridgeTransferRecord[] = JSON.parse(existing);
-        const candidates = list.filter(isRecordActive);
+        // Candidates include active transfers and Completed transfers missing destination hash (for backfilling)
+        const candidates = list.filter(
+          (r) => isRecordActive(r) || (r.status === "Completed" && !r.forwardTxHash && !r.mintTxHash)
+        );
         if (candidates.length === 0) return;
 
         let hasUpdates = false;
         const updatedList = [...list];
 
         for (const record of candidates) {
-          // Terminal guard: if record is already Completed, it cannot be reverted
-          if (record.status === "Completed") {
+          // Terminal guard: if record is already Completed and has a destination transaction hash, skip
+          if (
+            record.status === "Completed" &&
+            (record.forwardTxHash || record.mintTxHash)
+          ) {
             continue;
           }
 
@@ -348,31 +453,72 @@ export function useMainnetBridge() {
               });
 
               if (isConsumed) {
-                const idx = updatedList.findIndex((r) => r.id === record.id);
-                if (idx !== -1) {
-                  updatedList[idx] = {
-                    ...updatedList[idx],
-                    status: "Completed",
-                    finalizedNonce: nonceBytes32,
-                    messageHex: messageHex || updatedList[idx].messageHex,
-                    attestationHex: attestationHex || updatedList[idx].attestationHex,
-                    updatedAt: new Date().toISOString(),
-                  };
-                  hasUpdates = true;
+                let destinationHash = record.forwardTxHash || record.mintTxHash;
+
+                // For forwarded CCTP transfers, query Circle Iris if forwardTxHash is missing
+                if (!destinationHash && (record.isForwarded || record.sourceChain === "Base Mainnet")) {
+                  try {
+                    const srcCfg = MAINNET_CHAINS[srcChain];
+                    const srcDom = srcCfg?.domain ?? (srcChain === "Arc Mainnet" ? 26 : 6);
+                    const irisUrl = `${CIRCLE_IRIS_PRODUCTION_API}/v2/messages/${srcDom}?transactionHash=${record.burnTxHash}`;
+                    const res = await fetch(irisUrl);
+                    if (res.ok) {
+                      const irisData = await res.json();
+                      const irisMsg = irisData.messages?.[0];
+                      if (irisMsg?.forwardTxHash) {
+                        destinationHash = irisMsg.forwardTxHash;
+                      }
+                      if (irisMsg?.message && !messageHex) {
+                        messageHex = irisMsg.message;
+                      }
+                    }
+                  } catch (irisErr) {
+                    console.warn("[Mainnet Bridge] Error querying Circle Iris during reconciliation:", irisErr);
+                  }
                 }
-                // Synchronize active form state if this matches active burn
-                if (
-                  burnTxHashRef.current &&
-                  record.burnTxHash &&
-                  burnTxHashRef.current.toLowerCase() === record.burnTxHash.toLowerCase()
-                ) {
-                  setStatus("complete");
-                  setForwardState("COMPLETE");
-                  if (record.forwardTxHash) setForwardTxHash(record.forwardTxHash);
-                  bridgeInFlightRef.current = false;
-                  refreshBalances(record.sourceChain, record.destinationChain);
+
+                // If destinationHash is still missing for a forwarded transfer, do not prematurely mark Completed
+                // and skip out. Allow Step 4 or next reconciliation cycle to resolve it.
+                if (record.isForwarded && !destinationHash) {
+                  // Fall through to Step 4
+                } else {
+                  const idx = updatedList.findIndex((r) => r.id === record.id);
+                  if (idx !== -1) {
+                    const existingRec = updatedList[idx];
+                    const finalDestHash = destinationHash || existingRec.forwardTxHash || existingRec.mintTxHash;
+                    updatedList[idx] = {
+                      ...existingRec,
+                      status: "Completed",
+                      finalizedNonce: nonceBytes32,
+                      messageHex: messageHex || existingRec.messageHex,
+                      attestationHex: attestationHex || existingRec.attestationHex,
+                      forwardTxHash: finalDestHash || existingRec.forwardTxHash,
+                      mintTxHash: finalDestHash || existingRec.mintTxHash,
+                      forwardState: record.isForwarded ? "COMPLETE" : existingRec.forwardState,
+                      updatedAt: new Date().toISOString(),
+                    };
+                    hasUpdates = true;
+                    syncMainnetTransferToUniversalHistory(updatedList[idx], activeAddr);
+                  }
+
+                  // Synchronize active form state if this matches active burn
+                  if (
+                    burnTxHashRef.current &&
+                    record.burnTxHash &&
+                    burnTxHashRef.current.toLowerCase() === record.burnTxHash.toLowerCase()
+                  ) {
+                    setStatus("complete");
+                    setForwardState("COMPLETE");
+                    const effectiveHash = destinationHash || record.forwardTxHash || record.mintTxHash;
+                    if (effectiveHash) {
+                      setForwardTxHash(effectiveHash);
+                      setMintTxHash(effectiveHash);
+                    }
+                    bridgeInFlightRef.current = false;
+                    refreshBalances(record.sourceChain, record.destinationChain);
+                  }
+                  continue;
                 }
-                continue;
               }
             }
 
@@ -423,12 +569,14 @@ export function useMainnetBridge() {
                         continue;
                       }
 
+                      const candidateDestHash = irisMsg.forwardTxHash || updatedList[idx].forwardTxHash || updatedList[idx].mintTxHash;
+
                       if (
                         updatedList[idx].status !== newStatus ||
                         updatedList[idx].finalizedNonce !== nBytes ||
                         updatedList[idx].attestationHex !== irisMsg.attestation ||
                         (irisMsg.forwardState && updatedList[idx].forwardState !== irisMsg.forwardState) ||
-                        (irisMsg.forwardTxHash && updatedList[idx].forwardTxHash !== irisMsg.forwardTxHash)
+                        (candidateDestHash && updatedList[idx].forwardTxHash !== candidateDestHash)
                       ) {
                         updatedList[idx] = {
                           ...updatedList[idx],
@@ -437,10 +585,12 @@ export function useMainnetBridge() {
                           attestationHex: irisMsg.attestation,
                           finalizedNonce: nBytes,
                           forwardState: irisMsg.forwardState || updatedList[idx].forwardState,
-                          forwardTxHash: irisMsg.forwardTxHash || updatedList[idx].forwardTxHash,
+                          forwardTxHash: candidateDestHash || updatedList[idx].forwardTxHash,
+                          mintTxHash: candidateDestHash || updatedList[idx].mintTxHash,
                           updatedAt: new Date().toISOString(),
                         };
                         hasUpdates = true;
+                        syncMainnetTransferToUniversalHistory(updatedList[idx], activeAddr);
                       }
 
                       // Synchronize active form state if this matches active burn
@@ -452,13 +602,16 @@ export function useMainnetBridge() {
                         if (newStatus === "Completed") {
                           setStatus("complete");
                           setForwardState("COMPLETE");
-                          if (irisMsg.forwardTxHash) setForwardTxHash(irisMsg.forwardTxHash);
+                          if (candidateDestHash) {
+                            setForwardTxHash(candidateDestHash);
+                            setMintTxHash(candidateDestHash);
+                          }
                           bridgeInFlightRef.current = false;
                           refreshBalances(record.sourceChain, record.destinationChain);
                         } else if (newStatus === "Forwarding" && statusRef.current !== "complete") {
                           setStatus("forwarding");
                           if (irisMsg.forwardState) setForwardState(irisMsg.forwardState);
-                          if (irisMsg.forwardTxHash) setForwardTxHash(irisMsg.forwardTxHash);
+                          if (candidateDestHash) setForwardTxHash(candidateDestHash);
                         } else if (newStatus === "ReadyToClaim" && statusRef.current !== "complete") {
                           setStatus("ReadyToClaim");
                           bridgeInFlightRef.current = false;
@@ -600,7 +753,7 @@ export function useMainnetBridge() {
     setError(null);
   }, []);
 
-  // Save history (strictly wallet-scoped)
+  // Save history (strictly wallet-scoped + sync to universal history)
   const saveTransferRecord = useCallback(
     (record: MainnetBridgeTransferRecord) => {
       const walletAddr = record.senderAddress || address;
@@ -609,12 +762,19 @@ export function useMainnetBridge() {
         const key = `paygrix_mainnet_bridge_transfers_${walletAddr.toLowerCase()}`;
         const existing = localStorage.getItem(key);
         const list: MainnetBridgeTransferRecord[] = existing ? JSON.parse(existing) : [];
+        const existingRec = list.find((r) => r.id === record.id || r.burnTxHash === record.burnTxHash);
+        const mergedRecord: MainnetBridgeTransferRecord = {
+          ...record,
+          forwardTxHash: record.forwardTxHash || existingRec?.forwardTxHash,
+          mintTxHash: record.mintTxHash || record.forwardTxHash || existingRec?.mintTxHash || existingRec?.forwardTxHash,
+        };
         const updated = [
-          record,
+          mergedRecord,
           ...list.filter((r) => r.id !== record.id && r.burnTxHash !== record.burnTxHash),
         ];
         localStorage.setItem(key, JSON.stringify(updated));
         loadWalletTransfers();
+        syncMainnetTransferToUniversalHistory(mergedRecord, walletAddr);
       } catch {
         // ignore
       }
@@ -1010,6 +1170,11 @@ export function useMainnetBridge() {
 
           // If already reconciled to Completed by background polling, preserve terminal state
           if (statusRef.current === "complete") {
+            const destHash = forwardRes.forwardTxHash;
+            if (destHash) {
+              setForwardTxHash(destHash);
+              setMintTxHash(destHash);
+            }
             return true;
           }
 
@@ -1349,39 +1514,45 @@ export function useMainnetBridge() {
 
         if (isStale()) return false;
 
-        const effectiveMintTx =
+        const existingRecord = pendingTransfers.find(
+          (r) => r.burnTxHash?.toLowerCase() === details.burnTxHash.toLowerCase()
+        );
+        const destinationHash =
           recForwardTxHash ||
-          pendingTransfers.find(
-            (r) => r.burnTxHash?.toLowerCase() === details.burnTxHash.toLowerCase()
-          )?.mintTxHash;
+          existingRecord?.forwardTxHash ||
+          existingRecord?.mintTxHash;
 
         if (isConsumed) {
-            saveTransferRecord({
-              id: details.burnTxHash,
-              sourceChain: details.sourceChain,
-              destinationChain: details.destinationChain,
-              sourceDomain: details.sourceDomain,
-              destinationDomain: details.destinationDomain,
-              amount: details.amountFormatted,
-              senderAddress: details.senderAddress,
-              recipientAddress: details.recipientAddress,
-              burnTxHash: details.burnTxHash,
-              mintTxHash: effectiveMintTx,
-              status: "Completed",
-              timestamp: new Date().toLocaleString(),
-              updatedAt: new Date().toISOString(),
-              messageHex: irisMsg,
-              attestationHex: irisAttest,
-              finalizedNonce,
-              isForwarded: isForwarding,
-              forwardState: isForwarding ? "COMPLETE" : undefined,
-              forwardTxHash: recForwardTxHash,
-            });
-            setStatus("complete");
-            bridgeInFlightRef.current = false;
-            refreshBalances(details.sourceChain, details.destinationChain);
-            return true;
+          saveTransferRecord({
+            id: details.burnTxHash,
+            sourceChain: details.sourceChain,
+            destinationChain: details.destinationChain,
+            sourceDomain: details.sourceDomain,
+            destinationDomain: details.destinationDomain,
+            amount: details.amountFormatted,
+            senderAddress: details.senderAddress,
+            recipientAddress: details.recipientAddress,
+            burnTxHash: details.burnTxHash,
+            mintTxHash: destinationHash || existingRecord?.mintTxHash,
+            status: "Completed",
+            timestamp: existingRecord?.timestamp || new Date().toLocaleString(),
+            updatedAt: new Date().toISOString(),
+            messageHex: irisMsg,
+            attestationHex: irisAttest,
+            finalizedNonce,
+            isForwarded: isForwarding,
+            forwardState: isForwarding ? "COMPLETE" : undefined,
+            forwardTxHash: destinationHash || existingRecord?.forwardTxHash,
+          });
+          setStatus("complete");
+          if (destinationHash) {
+            setForwardTxHash(destinationHash);
+            setMintTxHash(destinationHash);
           }
+          bridgeInFlightRef.current = false;
+          refreshBalances(details.sourceChain, details.destinationChain);
+          return true;
+        }
 
         // 4. Preflight simulate receiveMessage before transitioning to ReadyToClaim
         let simulationPassed = true;

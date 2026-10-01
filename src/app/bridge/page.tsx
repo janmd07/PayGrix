@@ -7,10 +7,16 @@ import { useBridgeBalance } from "@/hooks/use-bridge-balance";
 import { useBridge } from "@/hooks/use-bridge";
 import { useEurcBridge } from "@/hooks/use-eurc-bridge";
 import { useSolanaBridge } from "@/hooks/use-solana-bridge";
-import { BridgeAsset, getCctpDomain, IRIS_SANDBOX_BASE } from "@/config/bridge-assets";
+import { BridgeAsset, getCctpDomain, IRIS_SANDBOX_BASE, BRIDGE_EXPLORER_URLS } from "@/config/bridge-assets";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { TransferHistory, BridgeTransfer } from "@/components/bridge/transfer-history";
+import { syncMainnetTransferToUniversalHistory, MainnetBridgeTransferRecord } from "@/hooks/use-mainnet-bridge";
+
+if (typeof BRIDGE_EXPLORER_URLS !== "undefined") {
+  BRIDGE_EXPLORER_URLS["Base Mainnet"] = "https://basescan.org";
+  BRIDGE_EXPLORER_URLS["Arc Mainnet"] = "https://explorer.arc.io";
+}
 import { cn } from "@/lib/utils";
 import dynamic from "next/dynamic";
 
@@ -147,6 +153,24 @@ export default function BridgePage() {
       ownerCache = {};
     }
 
+    // Merge existing wallet-scoped Mainnet transfers into universal history on load/wallet switch
+    if (currentWallet) {
+      try {
+        const mainnetKey = `paygrix_mainnet_bridge_transfers_${currentWallet.toLowerCase()}`;
+        const mainnetSaved = localStorage.getItem(mainnetKey);
+        if (mainnetSaved) {
+          const mainnetList: MainnetBridgeTransferRecord[] = JSON.parse(mainnetSaved);
+          if (Array.isArray(mainnetList)) {
+            mainnetList.forEach((mRec) => {
+              syncMainnetTransferToUniversalHistory(mRec, currentWallet);
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Error syncing mainnet transfers to universal history:", err);
+      }
+    }
+
     // 1. Initial synchronous load for bridge transfers
     let allTransfers: BridgeTransfer[] = [];
     try {
@@ -237,17 +261,23 @@ export default function BridgePage() {
         const sHash = item.sourceTxHash || item.sourceTx;
         const dHash = item.destinationTxHash || item.destTx;
         const domain = getCctpDomain(item.fromChain);
-        return Boolean(sHash && !dHash && domain !== undefined);
+        const isMainnet = item.fromChain === "Base Mainnet" || item.fromChain === "Arc Mainnet";
+        return Boolean(sHash && !dHash && (domain !== undefined || isMainnet));
       });
 
       for (const item of pendingDestTransfers) {
         if (!isMounted) return;
         const sHash = item.sourceTxHash || item.sourceTx!;
-        const domain = getCctpDomain(item.fromChain);
+        const isMainnet = item.fromChain === "Base Mainnet" || item.fromChain === "Arc Mainnet";
+        const domain = isMainnet
+          ? (item.fromChain === "Base Mainnet" ? 6 : 26)
+          : getCctpDomain(item.fromChain);
         if (domain === undefined) continue;
 
+        const irisBaseUrl = isMainnet ? "https://iris-api.circle.com" : IRIS_SANDBOX_BASE;
+
         try {
-          const res = await fetch(`${IRIS_SANDBOX_BASE}/v2/messages/${domain}?transactionHash=${sHash}`);
+          const res = await fetch(`${irisBaseUrl}/v2/messages/${domain}?transactionHash=${sHash}`);
           if (res.ok) {
             const data = await res.json();
             const msg = data?.messages?.[0];
@@ -260,6 +290,9 @@ export default function BridgePage() {
             ) {
               item.destTx = candidate;
               item.destinationTxHash = candidate;
+              if (item.status !== "Completed") {
+                item.status = "Completed";
+              }
               transfersModified = true;
             }
           }
