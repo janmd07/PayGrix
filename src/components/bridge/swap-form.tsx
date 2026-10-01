@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import {
   ArrowUpDown,
@@ -216,6 +216,9 @@ export function SwapForm({
   const isEthOnBase = currentNetwork === "Base" && (tokenIn === "ETH" || tokenOut === "ETH");
   const { marketPrice: ethMarketPrice, source: ethPriceSource } = useEthMarketPrice(isEthOnBase);
 
+  const isCompletedRef = useRef(false);
+  const prevTokensRef = useRef({ tokenIn, tokenOut, currentNetwork });
+
   const currentBalance =
     tokenIn === "USDC"
       ? balanceUSDC
@@ -224,7 +227,7 @@ export function SwapForm({
       : tokenIn === "ETH"
       ? (balanceETH || "0.00")
       : balanceCirBTC;
-  const isOverBalance = parseFloat(amount) > parseFloat(currentBalance);
+  const isOverBalance = status !== "completed" && parseFloat(amount) > parseFloat(currentBalance);
   const isValidAmount = amount !== "" && parseFloat(amount) > 0;
   const isFormInvalid = isOverBalance || !isValidAmount;
 
@@ -259,10 +262,26 @@ export function SwapForm({
 
   // Recalculate quote if amount or tokens change
   useEffect(() => {
+    const tokensChanged =
+      prevTokensRef.current.tokenIn !== tokenIn ||
+      prevTokensRef.current.tokenOut !== tokenOut ||
+      prevTokensRef.current.currentNetwork !== currentNetwork;
+
+    prevTokensRef.current = { tokenIn, tokenOut, currentNetwork };
+
+    if (isCompletedRef.current) {
+      isCompletedRef.current = false;
+      return;
+    }
+
+    if (status === "completed" && amount === "" && !tokensChanged) {
+      return;
+    }
+
     setHasQuote(false);
     setArcMainnetReadinessState("Quote Only");
     resetSwapState();
-  }, [amount, tokenIn, tokenOut, currentNetwork, resetSwapState]);
+  }, [amount, tokenIn, tokenOut, currentNetwork, resetSwapState, status]);
 
   const handleSwapDirection = () => {
     if (isSwapDisabled) return;
@@ -420,6 +439,10 @@ export function SwapForm({
     if (result && result.txHash) {
       const outputVal = result.amountOut || estimate.estimatedOutput;
       onSwapSuccess(amount, outputVal, tokenIn, tokenOut, result.txHash, currentNetwork);
+      isCompletedRef.current = true;
+      setAmount("");
+      setHasQuote(false);
+      setApprovalError(null);
     }
   };
 
