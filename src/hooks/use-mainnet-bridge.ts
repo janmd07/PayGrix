@@ -173,10 +173,15 @@ export function syncMainnetTransferToUniversalHistory(
     }
 
     localStorage.setItem("bridge_transfers", JSON.stringify(existingTransfers));
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("paygrix_bridge_history_updated"));
+    }
   } catch (err) {
     console.warn("[Mainnet Bridge] Failed to sync to universal bridge history:", err);
   }
 }
+
+export { padAddressToBytes32 };
 
 export const arcMainnetPublicClient = createPublicClient({
   chain: arcMainnet,

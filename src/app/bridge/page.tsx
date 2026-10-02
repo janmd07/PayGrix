@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { AppShell } from "@/components/layout/app-shell";
 import { PageHeader } from "@/components/layout/page-header";
 import { useBridgeBalance } from "@/hooks/use-bridge-balance";
@@ -11,7 +11,11 @@ import { BridgeAsset, getCctpDomain, IRIS_SANDBOX_BASE, BRIDGE_EXPLORER_URLS } f
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useArcWallet } from "@/components/wallet/use-arc-wallet";
 import { TransferHistory, BridgeTransfer } from "@/components/bridge/transfer-history";
-import { syncMainnetTransferToUniversalHistory, MainnetBridgeTransferRecord } from "@/hooks/use-mainnet-bridge";
+import {
+  syncMainnetTransferToUniversalHistory,
+  MainnetBridgeTransferRecord,
+  padAddressToBytes32,
+} from "@/hooks/use-mainnet-bridge";
 
 if (typeof BRIDGE_EXPLORER_URLS !== "undefined") {
   BRIDGE_EXPLORER_URLS["Base Mainnet"] = "https://basescan.org";
@@ -119,7 +123,11 @@ export default function BridgePage() {
     eurcResetBridgeStatus();
   }, [isConnected, address, solanaPublicKey, sourceChain, evmResetBridgeStatus, solanaResetBridgeStatus, eurcResetBridgeStatus]);
 
-  useEffect(() => {
+  const isSyncingRef = useRef(false);
+
+  const loadHistory = useCallback(() => {
+    if (typeof window === "undefined" || !window.localStorage) return [];
+
     const hasActiveWallet = Boolean(
       (sourceChain === "Solana Devnet" ? (solanaPublicKey && activeAddress) : (isConnected && address)) ||
       (isConnected && address)
@@ -127,10 +135,147 @@ export default function BridgePage() {
 
     if (!hasActiveWallet) {
       setTransfers([]);
-      return;
+      return [];
     }
 
+    if (isSyncingRef.current) return [];
+    isSyncingRef.current = true;
+
+    try {
+      const currentWallet = address;
+      const solanaWallet = activeAddress;
+
+      const matchesCurrentWallet = (addr?: string | null): boolean => {
+        if (!addr) return false;
+        return (
+          isSameAddress(addr, currentWallet) ||
+          (solanaWallet ? isSameAddress(addr, solanaWallet) : false)
+        );
+      };
+
+      // Load tx owner cache from localStorage to avoid redundant RPC calls
+      let ownerCache: Record<string, string> = {};
+      try {
+        const cached = localStorage.getItem("paygrix_tx_owner_cache");
+        if (cached) {
+          ownerCache = JSON.parse(cached) || {};
+        }
+      } catch {
+        ownerCache = {};
+      }
+
+      // Merge existing wallet-scoped Mainnet transfers into universal history on load/wallet switch
+      if (currentWallet) {
+        const keysToScan: string[] = [
+          `paygrix_mainnet_bridge_transfers_${currentWallet.toLowerCase()}`,
+        ];
+        try {
+          const padded = padAddressToBytes32(currentWallet).toLowerCase();
+          const paddedKey = `paygrix_mainnet_bridge_transfers_${padded}`;
+          if (!keysToScan.includes(paddedKey)) {
+            keysToScan.push(paddedKey);
+          }
+        } catch {
+          // Ignore invalid address formatting for padding
+        }
+
+        for (const key of keysToScan) {
+          try {
+            const mainnetSaved = localStorage.getItem(key);
+            if (mainnetSaved) {
+              const mainnetList: MainnetBridgeTransferRecord[] = JSON.parse(mainnetSaved);
+              if (Array.isArray(mainnetList)) {
+                mainnetList.forEach((mRec) => {
+                  syncMainnetTransferToUniversalHistory(mRec, currentWallet);
+                });
+              }
+            }
+          } catch (err) {
+            console.error(`Error syncing mainnet transfers to universal history from ${key}:`, err);
+          }
+        }
+      }
+
+      // 1. Initial synchronous load for bridge transfers
+      let allTransfers: BridgeTransfer[] = [];
+      try {
+        const savedTransfers = localStorage.getItem("bridge_transfers");
+        if (savedTransfers) {
+          const parsed = JSON.parse(savedTransfers);
+          if (Array.isArray(parsed)) {
+            let sanitized = false;
+            allTransfers = parsed.map((item) => {
+              const sHash = item.sourceTxHash || item.sourceTx;
+              const dHash = item.destinationTxHash || item.destTx;
+              const isCorrupted = Boolean(
+                dHash && sHash && dHash.toLowerCase() === sHash.toLowerCase()
+              );
+              if (isCorrupted) {
+                sanitized = true;
+              }
+              const cleanDest = isCorrupted ? undefined : dHash;
+              return {
+                ...item,
+                sourceTx: sHash,
+                sourceTxHash: sHash,
+                destTx: cleanDest,
+                destinationTxHash: cleanDest,
+              };
+            });
+            if (sanitized) {
+              try {
+                localStorage.setItem("bridge_transfers", JSON.stringify(allTransfers));
+              } catch {}
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error parsing saved transfers:", err);
+      }
+
+      const initialTransfers = allTransfers.filter((item) => {
+        const initiator = getBridgeInitiator(item);
+        if (initiator) {
+          return matchesCurrentWallet(initiator);
+        }
+        if (item.sourceTx && ownerCache[item.sourceTx.toLowerCase()]) {
+          return matchesCurrentWallet(ownerCache[item.sourceTx.toLowerCase()]);
+        }
+        return false;
+      });
+      setTransfers(initialTransfers);
+      return allTransfers;
+    } finally {
+      isSyncingRef.current = false;
+    }
+  }, [isConnected, address, activeAddress, sourceChain, solanaPublicKey]);
+
+  useEffect(() => {
     let isMounted = true;
+    const allTransfers = loadHistory();
+
+    const handleHistoryUpdate = () => {
+      if (isMounted) {
+        loadHistory();
+      }
+    };
+
+    const handleStorage = (e: StorageEvent) => {
+      if (
+        isMounted &&
+        (!e.key ||
+          e.key === "bridge_transfers" ||
+          e.key.startsWith("paygrix_mainnet_bridge_transfers"))
+      ) {
+        loadHistory();
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("paygrix_bridge_history_updated", handleHistoryUpdate);
+      window.addEventListener("storage", handleStorage);
+    }
+
     const currentWallet = address;
     const solanaWallet = activeAddress;
 
@@ -142,7 +287,6 @@ export default function BridgePage() {
       );
     };
 
-    // Load tx owner cache from localStorage to avoid redundant RPC calls
     let ownerCache: Record<string, string> = {};
     try {
       const cached = localStorage.getItem("paygrix_tx_owner_cache");
@@ -153,75 +297,9 @@ export default function BridgePage() {
       ownerCache = {};
     }
 
-    // Merge existing wallet-scoped Mainnet transfers into universal history on load/wallet switch
-    if (currentWallet) {
-      try {
-        const mainnetKey = `paygrix_mainnet_bridge_transfers_${currentWallet.toLowerCase()}`;
-        const mainnetSaved = localStorage.getItem(mainnetKey);
-        if (mainnetSaved) {
-          const mainnetList: MainnetBridgeTransferRecord[] = JSON.parse(mainnetSaved);
-          if (Array.isArray(mainnetList)) {
-            mainnetList.forEach((mRec) => {
-              syncMainnetTransferToUniversalHistory(mRec, currentWallet);
-            });
-          }
-        }
-      } catch (err) {
-        console.error("Error syncing mainnet transfers to universal history:", err);
-      }
-    }
-
-    // 1. Initial synchronous load for bridge transfers
-    let allTransfers: BridgeTransfer[] = [];
-    try {
-      const savedTransfers = localStorage.getItem("bridge_transfers");
-      if (savedTransfers) {
-        const parsed = JSON.parse(savedTransfers);
-        if (Array.isArray(parsed)) {
-          let sanitized = false;
-          allTransfers = parsed.map((item) => {
-            const sHash = item.sourceTxHash || item.sourceTx;
-            const dHash = item.destinationTxHash || item.destTx;
-            const isCorrupted = Boolean(
-              dHash && sHash && dHash.toLowerCase() === sHash.toLowerCase()
-            );
-            if (isCorrupted) {
-              sanitized = true;
-            }
-            const cleanDest = isCorrupted ? undefined : dHash;
-            return {
-              ...item,
-              sourceTx: sHash,
-              sourceTxHash: sHash,
-              destTx: cleanDest,
-              destinationTxHash: cleanDest,
-            };
-          });
-          if (sanitized) {
-            try {
-              localStorage.setItem("bridge_transfers", JSON.stringify(allTransfers));
-            } catch {}
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Error parsing saved transfers:", err);
-    }
-
-    const initialTransfers = allTransfers.filter((item) => {
-      const initiator = getBridgeInitiator(item);
-      if (initiator) {
-        return matchesCurrentWallet(initiator);
-      }
-      if (item.sourceTx && ownerCache[item.sourceTx.toLowerCase()]) {
-        return matchesCurrentWallet(ownerCache[item.sourceTx.toLowerCase()]);
-      }
-      return false;
-    });
-    setTransfers(initialTransfers);
-
     // 2. Asynchronously resolve legacy records with missing initiator
     const resolveLegacyRecords = async () => {
+      if (!allTransfers || allTransfers.length === 0) return;
       let cacheModified = false;
       let transfersModified = false;
 
@@ -319,7 +397,9 @@ export default function BridgePage() {
           }
           return false;
         });
-        setTransfers(finalTransfers);
+        if (isMounted) {
+          setTransfers(finalTransfers);
+        }
       }
     };
 
@@ -327,8 +407,12 @@ export default function BridgePage() {
 
     return () => {
       isMounted = false;
+      if (typeof window !== "undefined") {
+        window.removeEventListener("paygrix_bridge_history_updated", handleHistoryUpdate);
+        window.removeEventListener("storage", handleStorage);
+      }
     };
-  }, [isConnected, address, activeAddress]);
+  }, [loadHistory, activeTab, address, activeAddress]);
 
   const handleBridge = async (amount: string) => {
     try {
